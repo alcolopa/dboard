@@ -16,6 +16,13 @@ struct MyApp: App {
             ToolbarCommands()
             TextEditingCommands()
 
+            CommandGroup(after: .toolbar) {
+                Button("Toggle Full Screen") {
+                    NSApp.keyWindow?.toggleFullScreen(nil)
+                }
+                .keyboardShortcut("f", modifiers: [.control, .command])
+            }
+
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
                     TabManager.shared.openSettingsTab()

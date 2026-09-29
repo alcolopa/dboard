@@ -235,6 +235,11 @@ public struct TableDataBrowserView: View {
             copySelection(wholeRow: press.modifiers.contains(.shift))
             return .handled
         }
+        .onKeyPress(characters: CharacterSet(charactersIn: "v"), phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            pasteIntoSelection()
+            return .handled
+        }
     }
 
     private func moveSelection(for key: KeyEquivalent) {
@@ -271,6 +276,27 @@ public struct TableDataBrowserView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         ToastManager.shared.show(wholeRow ? "Copied row" : "Copied cell", style: .success, duration: 1.0)
+    }
+
+    /// Replaces the selected cell's content with the clipboard text (⌘V).
+    private func pasteIntoSelection() {
+        guard let row = queryResult.rows.first(where: { $0.id == selectedRowId }),
+              let colName = selectedColumnName,
+              let column = queryResult.columns.first(where: { $0.name == colName }),
+              let text = NSPasteboard.general.string(forType: .string) else { return }
+        guard hasPrimaryKey else {
+            ToastManager.shared.show("Cannot paste", subtitle: "No primary key available for this table", style: .error)
+            return
+        }
+        let newValue = DataValue.parseFromInput(text, targetType: column.dataTypeName)
+        if newValue == row[colName] { return }
+        Task {
+            do {
+                try await commitCellEdit(row: row, column: column, newValue: newValue)
+            } catch {
+                ToastManager.shared.show("Paste failed", subtitle: error.localizedDescription, style: .error)
+            }
+        }
     }
 
     private func headerRow(widths: [String: CGFloat]) -> some View {
