@@ -24,7 +24,7 @@ public struct ConnectionManagerModal: View {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .bold))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HitAreaButtonStyle(minWidth: 28, minHeight: 28))
                 }
                 .padding(12)
                 .background(ThemeTokens.bgSidebar(for: scheme))
@@ -91,7 +91,7 @@ public struct ConnectionManagerModal: View {
                             .font(.system(size: 18))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HitAreaButtonStyle(minWidth: 28, minHeight: 28))
                     .help("Close")
                 }
                 .padding(.horizontal, 16)
@@ -116,7 +116,7 @@ public struct ConnectionManagerModal: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Database Engine")
                                     .font(ThemeTokens.uiFont(size: 11, weight: .medium))
-                                Picker("", selection: Binding(
+                                DropdownPicker(selection: Binding(
                                     get: { draftConfig.type },
                                     set: { newType in
                                         draftConfig.type = newType
@@ -132,12 +132,8 @@ public struct ConnectionManagerModal: View {
                                             draftConfig.databaseName = newType.defaultDatabase
                                         }
                                     }
-                                )) {
-                                    ForEach(DatabaseType.allCases) { type in
-                                        Text(type.rawValue).tag(type)
-                                    }
-                                }
-                                .pickerStyle(.menu)
+                                ), options: Array(DatabaseType.allCases),
+                                   value: { $0 }, title: { $0.rawValue })
                             }
                         }
 
@@ -146,23 +142,17 @@ public struct ConnectionManagerModal: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Environment Classification")
                                     .font(ThemeTokens.uiFont(size: 11, weight: .medium))
-                                Picker("", selection: $draftConfig.environment) {
-                                    ForEach(ConnectionEnvironment.allCases) { env in
-                                        Text(env.rawValue).tag(env)
-                                    }
-                                }
-                                .pickerStyle(.menu)
+                                DropdownPicker(selection: $draftConfig.environment,
+                                               options: Array(ConnectionEnvironment.allCases),
+                                               value: { $0 }, title: { $0.rawValue })
                             }
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("SSL / TLS Mode")
                                     .font(ThemeTokens.uiFont(size: 11, weight: .medium))
-                                Picker("", selection: $draftConfig.sslMode) {
-                                    ForEach(SSLMode.allCases) { mode in
-                                        Text(mode.rawValue).tag(mode)
-                                    }
-                                }
-                                .pickerStyle(.menu)
+                                DropdownPicker(selection: $draftConfig.sslMode,
+                                               options: Array(SSLMode.allCases),
+                                               value: { $0 }, title: { $0.rawValue })
                             }
                         }
 
@@ -265,6 +255,7 @@ public struct ConnectionManagerModal: View {
                         Task { await testConnection() }
                     }
                     .font(ThemeTokens.uiFont(size: 11.5))
+                    .buttonStyle(BoxButtonStyle())
                     .disabled(isTesting)
 
                     if isTesting {
@@ -278,6 +269,7 @@ public struct ConnectionManagerModal: View {
                             connectionManager.duplicateConnection(config: draftConfig)
                         }
                         .font(ThemeTokens.uiFont(size: 11.5))
+                        .buttonStyle(BoxButtonStyle())
 
                         Button("Delete") {
                             connectionManager.deleteConnection(config: draftConfig)
@@ -288,6 +280,7 @@ public struct ConnectionManagerModal: View {
                             }
                         }
                         .font(ThemeTokens.uiFont(size: 11.5))
+                        .buttonStyle(BoxButtonStyle())
                         .foregroundColor(ThemeTokens.accentCrimson)
                     }
 
@@ -295,12 +288,13 @@ public struct ConnectionManagerModal: View {
                         saveOnly()
                     }
                     .font(ThemeTokens.uiFont(size: 11.5))
+                    .buttonStyle(BoxButtonStyle())
 
                     Button("Connect") {
                         saveAndConnect()
                     }
                     .font(ThemeTokens.uiFont(size: 12, weight: .bold))
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BoxButtonStyle(prominent: true))
                 }
                 .padding(12)
                 .background(ThemeTokens.bgElevated(for: scheme))

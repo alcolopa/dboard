@@ -78,8 +78,6 @@ public struct ContentView: View {
                     .keyboardShortcut("k", modifiers: [.command])
                 Button("") { isGlobalSearchOpen.toggle() }
                     .keyboardShortcut("p", modifiers: [.command])
-                Button("") { tabManager.openQueryTab() }
-                    .keyboardShortcut("n", modifiers: [.command])
                 Button("") {
                     if let id = tabManager.activeTabId { tabManager.closeTab(id: id) }
                 }
@@ -101,7 +99,7 @@ public struct ContentView: View {
                         }
                     }
                 }
-                .keyboardShortcut("z", modifiers: [.command])
+                .keyboardShortcut("z", modifiers: [.command, .option])
                 Button("") {
                     withAnimation { isInspectorOpen.toggle() }
                 }
