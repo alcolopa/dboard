@@ -65,6 +65,10 @@ public struct AppToolbarView: View {
                 EnvironmentBadgeView(environment: active.environment)
             }
 
+            if connectionManager.activeDriver?.isDemoData == true {
+                DemoDataBadgeView()
+            }
+
             // Database Selector
             if let driver = connectionManager.activeDriver {
                 Menu {

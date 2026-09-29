@@ -37,6 +37,31 @@ public struct EnvironmentBadgeView: View {
     }
 }
 
+public struct DemoDataBadgeView: View {
+    public init() {}
+
+    public var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "flask.fill")
+                .font(.system(size: 9))
+            Text("DEMO DATA")
+                .font(ThemeTokens.uiFont(size: 9.5, weight: .bold))
+        }
+        .foregroundColor(ThemeTokens.accentAmber)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(ThemeTokens.accentAmber.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(ThemeTokens.accentAmber.opacity(0.3), lineWidth: 0.8)
+                )
+        )
+        .help("This connection is showing generated sample data, not a live database.")
+    }
+}
+
 public struct ConnectionStatusIndicatorView: View {
     public let status: ConnectionStatus
     @Environment(\.colorScheme) var scheme

@@ -6,6 +6,7 @@ public final class PostgreSQLDriver: DatabaseDriver {
     public private(set) var metadata: DatabaseMetadata
     private let client: PostgreSQLClient
     private var mockDataStore: [String: [DataRow]] = [:]
+    public var isDemoData: Bool { !mockDataStore.isEmpty }
 
     public init(config: ConnectionConfig) {
         self.config = config

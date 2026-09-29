@@ -21,6 +21,7 @@ public struct TableDataBrowserView: View {
     @State private var columnWidths: [String: CGFloat] = [:]
     @State private var isExportSheetOpen: Bool = false
     @State private var isInsertRowSheetOpen: Bool = false
+    @State private var isDeleteRowModalOpen: Bool = false
     @State private var insertValues: [String: String] = [:]
     @State private var editingJSONContext: (row: DataRow, column: ColumnDefinition, value: String)? = nil
     @Environment(\.colorScheme) var scheme
@@ -118,6 +119,10 @@ public struct TableDataBrowserView: View {
                 },
                 onInsertRowClick: {
                     isInsertRowSheetOpen = true
+                },
+                canDeleteRow: hasPrimaryKey && selectedRowId != nil,
+                onDeleteRowClick: {
+                    isDeleteRowModalOpen = true
                 }
             )
         }
@@ -141,6 +146,18 @@ public struct TableDataBrowserView: View {
         }
         .sheet(isPresented: $isInsertRowSheetOpen) {
             insertRowSheet
+        }
+        .sheet(isPresented: $isDeleteRowModalOpen) {
+            DestructiveConfirmationModal(
+                isPresented: $isDeleteRowModalOpen,
+                title: "Delete selected row from '\(tableName)'?",
+                message: "This permanently deletes the row from the database. Use Edit History to revert.",
+                environment: connectionManager.activeConnection?.environment ?? .local,
+                requiredPhrase: connectionManager.activeConnection?.environment == .production ? tableName : nil,
+                onConfirm: {
+                    Task { await deleteSelectedRow() }
+                }
+            )
         }
         .sheet(isPresented: Binding(
             get: { editingJSONContext != nil },
@@ -332,6 +349,32 @@ public struct TableDataBrowserView: View {
         } catch {
             self.isLoading = false
             ToastManager.shared.show("Failed to load table", subtitle: error.localizedDescription, style: .error)
+        }
+    }
+
+    private func deleteSelectedRow() async {
+        guard let driver = connectionManager.activeDriver,
+              let rowId = selectedRowId,
+              let row = queryResult.rows.first(where: { $0.id == rowId }) else { return }
+
+        var pks: [String: DataValue] = [:]
+        for pkName in tableMeta?.primaryKeyColumnNames ?? [] {
+            pks[pkName] = row[pkName]
+        }
+        // Refuse to run a DELETE without a WHERE clause.
+        guard !pks.isEmpty else {
+            ToastManager.shared.show("Cannot delete row", subtitle: "No primary key available for this table", style: .error)
+            return
+        }
+
+        do {
+            try await driver.deleteRow(schema: schema, table: tableName, primaryKeys: pks)
+            selectedRowId = nil
+            selectedColumnName = nil
+            ToastManager.shared.show("Row Deleted", style: .success, duration: 1.5)
+            await loadData()
+        } catch {
+            ToastManager.shared.show("Failed to delete row", subtitle: error.localizedDescription, style: .error)
         }
     }
 

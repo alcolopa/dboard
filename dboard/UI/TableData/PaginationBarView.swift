@@ -8,6 +8,8 @@ public struct PaginationBarView: View {
     public let onPageChange: (Int) -> Void
     public let onExportClick: () -> Void
     public let onInsertRowClick: () -> Void
+    public var canDeleteRow: Bool = false
+    public var onDeleteRowClick: () -> Void = {}
     @Environment(\.colorScheme) var scheme
 
     @State private var isJumpPagePopoverOpen: Bool = false
@@ -83,6 +85,24 @@ public struct PaginationBarView: View {
                 .cornerRadius(4)
             }
             .buttonStyle(.plain)
+
+            // Delete Row Button
+            Button(action: onDeleteRowClick) {
+                HStack(spacing: 3) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                    Text("Delete Row")
+                        .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(ThemeTokens.bgSecondary(for: scheme))
+                .foregroundColor(canDeleteRow ? ThemeTokens.accentCrimson : ThemeTokens.textMuted(for: scheme))
+                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canDeleteRow)
+            .help("Delete the selected row")
 
             // Export Button
             Button(action: onExportClick) {
