@@ -6,6 +6,7 @@ public final class MySQLDriver: DatabaseDriver {
     public private(set) var metadata: DatabaseMetadata
 
     private var tableDataStore: [String: [DataRow]] = [:]
+    public var isDemoData: Bool { true }
 
     public init(config: ConnectionConfig) {
         self.config = config

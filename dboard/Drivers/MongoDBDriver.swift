@@ -6,6 +6,7 @@ public final class MongoDBDriver: DatabaseDriver {
     public private(set) var metadata: DatabaseMetadata
 
     public var supportsMongoDocuments: Bool { true }
+    public var isDemoData: Bool { true }
     private var collectionStore: [String: [DataRow]] = [:]
 
     public init(config: ConnectionConfig) {

@@ -21,8 +21,10 @@ public struct TableDataBrowserView: View {
     @State private var columnWidths: [String: CGFloat] = [:]
     @State private var isExportSheetOpen: Bool = false
     @State private var isInsertRowSheetOpen: Bool = false
+    @State private var isDeleteRowModalOpen: Bool = false
     @State private var insertValues: [String: String] = [:]
     @State private var editingJSONContext: (row: DataRow, column: ColumnDefinition, value: String)? = nil
+    @FocusState private var gridFocused: Bool
     @Environment(\.colorScheme) var scheme
 
     private var tableMeta: TableMetadata? {
@@ -118,6 +120,10 @@ public struct TableDataBrowserView: View {
                 },
                 onInsertRowClick: {
                     isInsertRowSheetOpen = true
+                },
+                canDeleteRow: hasPrimaryKey && selectedRowId != nil,
+                onDeleteRowClick: {
+                    isDeleteRowModalOpen = true
                 }
             )
         }
@@ -141,6 +147,18 @@ public struct TableDataBrowserView: View {
         }
         .sheet(isPresented: $isInsertRowSheetOpen) {
             insertRowSheet
+        }
+        .sheet(isPresented: $isDeleteRowModalOpen) {
+            DestructiveConfirmationModal(
+                isPresented: $isDeleteRowModalOpen,
+                title: "Delete selected row from '\(tableName)'?",
+                message: "This permanently deletes the row from the database. Use Edit History to revert.",
+                environment: connectionManager.activeConnection?.environment ?? .local,
+                requiredPhrase: connectionManager.activeConnection?.environment == .production ? tableName : nil,
+                onConfirm: {
+                    Task { await deleteSelectedRow() }
+                }
+            )
         }
         .sheet(isPresented: Binding(
             get: { editingJSONContext != nil },
@@ -179,17 +197,70 @@ public struct TableDataBrowserView: View {
                     .zIndex(2)
 
                 // High-performance single-axis virtualized vertical scroll view
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(queryResult.rows.enumerated()), id: \.element.id) { index, row in
-                            dataRowView(index: index, row: row)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(queryResult.rows.enumerated()), id: \.element.id) { index, row in
+                                dataRowView(index: index, row: row)
+                            }
                         }
+                        .frame(width: totalTableWidth)
                     }
-                    .frame(width: totalTableWidth)
+                    .onChange(of: selectedRowId) { _, newId in
+                        if let newId { proxy.scrollTo(newId) }
+                    }
                 }
             }
             .frame(width: totalTableWidth)
         }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($gridFocused)
+        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+            moveSelection(for: press.key)
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "c"), phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            copySelection(wholeRow: press.modifiers.contains(.shift))
+            return .handled
+        }
+    }
+
+    private func moveSelection(for key: KeyEquivalent) {
+        let rows = queryResult.rows
+        let cols = queryResult.columns
+        guard !rows.isEmpty, !cols.isEmpty else { return }
+
+        let rowIdx = rows.firstIndex(where: { $0.id == selectedRowId }) ?? -1
+        let colIdx = cols.firstIndex(where: { $0.name == selectedColumnName }) ?? 0
+
+        var newRow = max(rowIdx, 0)
+        var newCol = colIdx
+        switch key {
+        case .upArrow: newRow = max(0, rowIdx - 1)
+        case .downArrow: newRow = min(rows.count - 1, rowIdx + 1)
+        case .leftArrow: newCol = max(0, colIdx - 1)
+        case .rightArrow: newCol = min(cols.count - 1, colIdx + 1)
+        default: return
+        }
+        selectedRowId = rows[newRow].id
+        selectedColumnName = cols[newCol].name
+    }
+
+    private func copySelection(wholeRow: Bool) {
+        guard let row = queryResult.rows.first(where: { $0.id == selectedRowId }) else { return }
+        let text: String
+        if wholeRow {
+            text = queryResult.columns.map { row[$0.name].displayText }.joined(separator: "\t")
+        } else if let colName = selectedColumnName {
+            text = row[colName].displayText
+        } else {
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        ToastManager.shared.show(wholeRow ? "Copied row" : "Copied cell", style: .success, duration: 1.0)
     }
 
     private var headerRow: some View {
@@ -224,8 +295,10 @@ public struct TableDataBrowserView: View {
             scheme: scheme,
             onSelectRow: {
                 selectedRowId = row.id
+                gridFocused = true
             },
             onSelectCell: { colName in
+                gridFocused = true
                 selectedRowId = row.id
                 selectedColumnName = colName
             },
@@ -335,6 +408,32 @@ public struct TableDataBrowserView: View {
         }
     }
 
+    private func deleteSelectedRow() async {
+        guard let driver = connectionManager.activeDriver,
+              let rowId = selectedRowId,
+              let row = queryResult.rows.first(where: { $0.id == rowId }) else { return }
+
+        var pks: [String: DataValue] = [:]
+        for pkName in tableMeta?.primaryKeyColumnNames ?? [] {
+            pks[pkName] = row[pkName]
+        }
+        // Refuse to run a DELETE without a WHERE clause.
+        guard !pks.isEmpty else {
+            ToastManager.shared.show("Cannot delete row", subtitle: "No primary key available for this table", style: .error)
+            return
+        }
+
+        do {
+            try await driver.deleteRow(schema: schema, table: tableName, primaryKeys: pks)
+            selectedRowId = nil
+            selectedColumnName = nil
+            ToastManager.shared.show("Row Deleted", style: .success, duration: 1.5)
+            await loadData()
+        } catch {
+            ToastManager.shared.show("Failed to delete row", subtitle: error.localizedDescription, style: .error)
+        }
+    }
+
     private func commitCellEdit(row: DataRow, column: ColumnDefinition, newValue: DataValue) async throws {
         guard let driver = connectionManager.activeDriver else { return }
 
@@ -441,6 +540,8 @@ public struct TableDataRowView: View, Equatable {
     public let onCommitCell: (ColumnDefinition, DataValue) async throws -> Void
     public let defaultWidthForColumn: (ColumnDefinition) -> CGFloat
 
+    @State private var pendingEditColumn: String? = nil
+
     public static func == (lhs: TableDataRowView, rhs: TableDataRowView) -> Bool {
         lhs.index == rhs.index &&
         lhs.globalIndex == rhs.globalIndex &&
@@ -467,23 +568,49 @@ public struct TableDataRowView: View, Equatable {
                 let width = columnWidths[col.name] ?? defaultWidthForColumn(col)
                 let isCellSelected = isSelected && selectedColumnName == col.name
 
-                TableCellView(
-                    column: col,
-                    value: row[col.name],
-                    isSelected: isCellSelected,
-                    isReadOnly: !hasPrimaryKey,
-                    onRequestJSONEdit: { currentVal in
-                        onRequestJSONEdit(col, currentVal)
-                    },
-                    onCommit: { newVal in
-                        try await onCommitCell(col, newVal)
-                    },
-                    onSelect: {
-                        onSelectCell(col.name)
-                    }
-                )
-                .frame(width: width, height: 26)
-                .background(isSelected ? ThemeTokens.tableRowSelected(for: scheme) : (index % 2 == 0 ? ThemeTokens.tableRowEven(for: scheme) : ThemeTokens.tableRowOdd(for: scheme)))
+                let bg = isSelected ? ThemeTokens.tableRowSelected(for: scheme) : (index % 2 == 0 ? ThemeTokens.tableRowEven(for: scheme) : ThemeTokens.tableRowOdd(for: scheme))
+                let val = row[col.name]
+
+                // Only the selected cell (and cells with inline controls) pay for the full
+                // interactive view; every other cell is a plain Text so scrolling stays cheap.
+                if isCellSelected || val.needsInteractiveCell {
+                    TableCellView(
+                        column: col,
+                        value: val,
+                        isSelected: isCellSelected,
+                        isReadOnly: !hasPrimaryKey,
+                        onRequestJSONEdit: { currentVal in
+                            onRequestJSONEdit(col, currentVal)
+                        },
+                        onCommit: { newVal in
+                            try await onCommitCell(col, newVal)
+                        },
+                        onSelect: {
+                            onSelectCell(col.name)
+                        },
+                        autoEdit: isCellSelected && pendingEditColumn == col.name,
+                        onAutoEditConsumed: { pendingEditColumn = nil }
+                    )
+                    .frame(width: width, height: 26)
+                    .background(bg)
+                } else {
+                    Text(val.displayText)
+                        .font(val.isNumeric ? ThemeTokens.codeFont(size: 11.5) : ThemeTokens.uiFont(size: 11.5))
+                        .foregroundColor(ThemeTokens.textPrimary(for: scheme))
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .frame(width: width, height: 26, alignment: .leading)
+                        .background(bg)
+                        .border(ThemeTokens.borderColor(for: scheme).opacity(0.6), width: 0.5)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            onSelectCell(col.name)
+                            if hasPrimaryKey { pendingEditColumn = col.name }
+                        }
+                        .onTapGesture {
+                            onSelectCell(col.name)
+                        }
+                }
             }
         }
         .contentShape(Rectangle())

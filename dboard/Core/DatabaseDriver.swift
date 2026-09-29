@@ -66,6 +66,8 @@ public protocol DatabaseDriver: AnyObject {
 
     // MongoDB operations
     var supportsMongoDocuments: Bool { get }
+    /// True when the driver is serving generated sample data instead of a live server.
+    var isDemoData: Bool { get }
     func fetchMongoDocuments(collection: String, filterJSON: String, sortJSON: String, limit: Int, skip: Int) async throws -> QueryResult
     func updateMongoDocument(collection: String, documentId: String, newDocumentJSON: String) async throws -> CellEditResult
     func insertMongoDocument(collection: String, documentJSON: String) async throws -> String
@@ -76,6 +78,7 @@ public protocol DatabaseDriver: AnyObject {
 // Default extension for drivers where Mongo methods are not applicable
 public extension DatabaseDriver {
     var supportsMongoDocuments: Bool { false }
+    var isDemoData: Bool { false }
 
     func fetchMongoDocuments(collection: String, filterJSON: String, sortJSON: String, limit: Int, skip: Int) async throws -> QueryResult {
         throw NSError(domain: "DatabaseDriver", code: 400, userInfo: [NSLocalizedDescriptionKey: "MongoDB document operations not supported on relational SQL drivers."])

@@ -8,6 +8,8 @@ public struct TableCellView: View, Equatable {
     public let onRequestJSONEdit: ((String) -> Void)?
     public let onCommit: (DataValue) async throws -> Void
     public let onSelect: () -> Void
+    public let autoEdit: Bool
+    public let onAutoEditConsumed: (() -> Void)?
 
     @State private var isEditing: Bool = false
     @State private var editText: String = ""
@@ -22,7 +24,9 @@ public struct TableCellView: View, Equatable {
         isReadOnly: Bool = false,
         onRequestJSONEdit: ((String) -> Void)? = nil,
         onCommit: @escaping (DataValue) async throws -> Void,
-        onSelect: @escaping () -> Void
+        onSelect: @escaping () -> Void,
+        autoEdit: Bool = false,
+        onAutoEditConsumed: (() -> Void)? = nil
     ) {
         self.column = column
         self.value = value
@@ -31,13 +35,16 @@ public struct TableCellView: View, Equatable {
         self.onRequestJSONEdit = onRequestJSONEdit
         self.onCommit = onCommit
         self.onSelect = onSelect
+        self.autoEdit = autoEdit
+        self.onAutoEditConsumed = onAutoEditConsumed
     }
 
     public static func == (lhs: TableCellView, rhs: TableCellView) -> Bool {
         lhs.column == rhs.column &&
         lhs.value == rhs.value &&
         lhs.isSelected == rhs.isSelected &&
-        lhs.isReadOnly == rhs.isReadOnly
+        lhs.isReadOnly == rhs.isReadOnly &&
+        lhs.autoEdit == rhs.autoEdit
     }
 
     public var body: some View {
@@ -93,6 +100,12 @@ public struct TableCellView: View, Equatable {
             }
         }
         .frame(height: 26)
+        .onAppear {
+            if autoEdit {
+                if !isReadOnly { startEdit() }
+                onAutoEditConsumed?()
+            }
+        }
         .overlay(
             // Focus / Selection Border
             Rectangle()

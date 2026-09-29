@@ -34,6 +34,14 @@ public enum DataValue: Codable, Equatable, Hashable, CustomStringConvertible {
         return false
     }
 
+    // ISO8601DateFormatter is expensive to create; displayText runs per cell on every render.
+    private static let displayDateFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let rawDateFormatter = ISO8601DateFormatter()
+
     public var displayText: String {
         switch self {
         case .null:
@@ -47,9 +55,7 @@ public enum DataValue: Codable, Equatable, Hashable, CustomStringConvertible {
         case .boolean(let bool):
             return bool ? "TRUE" : "FALSE"
         case .date(let date):
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return formatter.string(from: date)
+            return DataValue.displayDateFormatter.string(from: date)
         case .json(let jsonStr):
             return jsonStr
         case .array(let elements):
@@ -61,6 +67,14 @@ public enum DataValue: Codable, Equatable, Hashable, CustomStringConvertible {
         }
     }
 
+    /// Values rendered with inline controls (badges, toggles) that need the full cell view.
+    public var needsInteractiveCell: Bool {
+        switch self {
+        case .null, .boolean, .json: return true
+        default: return false
+        }
+    }
+
     public var rawStringValue: String {
         switch self {
         case .null: return ""
@@ -69,8 +83,7 @@ public enum DataValue: Codable, Equatable, Hashable, CustomStringConvertible {
         case .double(let d): return "\(d)"
         case .boolean(let b): return b ? "true" : "false"
         case .date(let d):
-            let formatter = ISO8601DateFormatter()
-            return formatter.string(from: d)
+            return DataValue.rawDateFormatter.string(from: d)
         case .json(let j): return j
         case .array(let a): return "[" + a.map { $0.rawStringValue }.joined(separator: ",") + "]"
         case .binary(let b): return b.base64EncodedString()
