@@ -441,6 +441,8 @@ public struct TableDataRowView: View, Equatable {
     public let onCommitCell: (ColumnDefinition, DataValue) async throws -> Void
     public let defaultWidthForColumn: (ColumnDefinition) -> CGFloat
 
+    @State private var pendingEditColumn: String? = nil
+
     public static func == (lhs: TableDataRowView, rhs: TableDataRowView) -> Bool {
         lhs.index == rhs.index &&
         lhs.globalIndex == rhs.globalIndex &&
@@ -467,23 +469,49 @@ public struct TableDataRowView: View, Equatable {
                 let width = columnWidths[col.name] ?? defaultWidthForColumn(col)
                 let isCellSelected = isSelected && selectedColumnName == col.name
 
-                TableCellView(
-                    column: col,
-                    value: row[col.name],
-                    isSelected: isCellSelected,
-                    isReadOnly: !hasPrimaryKey,
-                    onRequestJSONEdit: { currentVal in
-                        onRequestJSONEdit(col, currentVal)
-                    },
-                    onCommit: { newVal in
-                        try await onCommitCell(col, newVal)
-                    },
-                    onSelect: {
-                        onSelectCell(col.name)
-                    }
-                )
-                .frame(width: width, height: 26)
-                .background(isSelected ? ThemeTokens.tableRowSelected(for: scheme) : (index % 2 == 0 ? ThemeTokens.tableRowEven(for: scheme) : ThemeTokens.tableRowOdd(for: scheme)))
+                let bg = isSelected ? ThemeTokens.tableRowSelected(for: scheme) : (index % 2 == 0 ? ThemeTokens.tableRowEven(for: scheme) : ThemeTokens.tableRowOdd(for: scheme))
+                let val = row[col.name]
+
+                // Only the selected cell (and cells with inline controls) pay for the full
+                // interactive view; every other cell is a plain Text so scrolling stays cheap.
+                if isCellSelected || val.needsInteractiveCell {
+                    TableCellView(
+                        column: col,
+                        value: val,
+                        isSelected: isCellSelected,
+                        isReadOnly: !hasPrimaryKey,
+                        onRequestJSONEdit: { currentVal in
+                            onRequestJSONEdit(col, currentVal)
+                        },
+                        onCommit: { newVal in
+                            try await onCommitCell(col, newVal)
+                        },
+                        onSelect: {
+                            onSelectCell(col.name)
+                        },
+                        autoEdit: isCellSelected && pendingEditColumn == col.name,
+                        onAutoEditConsumed: { pendingEditColumn = nil }
+                    )
+                    .frame(width: width, height: 26)
+                    .background(bg)
+                } else {
+                    Text(val.displayText)
+                        .font(val.isNumeric ? ThemeTokens.codeFont(size: 11.5) : ThemeTokens.uiFont(size: 11.5))
+                        .foregroundColor(ThemeTokens.textPrimary(for: scheme))
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .frame(width: width, height: 26, alignment: .leading)
+                        .background(bg)
+                        .border(ThemeTokens.borderColor(for: scheme).opacity(0.6), width: 0.5)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            onSelectCell(col.name)
+                            if hasPrimaryKey { pendingEditColumn = col.name }
+                        }
+                        .onTapGesture {
+                            onSelectCell(col.name)
+                        }
+                }
             }
         }
         .contentShape(Rectangle())
