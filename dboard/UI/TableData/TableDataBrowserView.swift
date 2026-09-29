@@ -19,6 +19,7 @@ public struct TableDataBrowserView: View {
     @State private var selectedRowId: UUID? = nil
     @State private var selectedColumnName: String? = nil
     @State private var columnWidths: [String: CGFloat] = [:]
+    @State private var resizeStartWidths: [String: CGFloat] = [:]
     @State private var isExportSheetOpen: Bool = false
     @State private var isInsertRowSheetOpen: Bool = false
     @State private var isDeleteRowModalOpen: Bool = false
@@ -190,28 +191,19 @@ public struct TableDataBrowserView: View {
         return max(colsWidth + 44, 400)
     }
 
-    /// Column widths for display. When the columns don't fill the panel, the last column
-    /// absorbs the slack so the table (and its vertical scroller) spans the full panel width.
-    private func displayColumnWidths(viewportWidth: CGFloat) -> [String: CGFloat] {
+    private func tableScrollView(viewportWidth: CGFloat) -> some View {
+        // Columns keep their own widths; any spare panel width stays empty so the
+        // vertical scroller still sits at the panel's right edge.
         var widths: [String: CGFloat] = [:]
         for col in queryResult.columns {
             widths[col.name] = columnWidths[col.name] ?? defaultWidthForColumn(col)
         }
-        let natural = widths.values.reduce(0, +) + 44
-        if let last = queryResult.columns.last, viewportWidth > natural {
-            widths[last.name, default: 0] += viewportWidth - natural
-        }
-        return widths
-    }
-
-    private func tableScrollView(viewportWidth: CGFloat) -> some View {
-        let widths = displayColumnWidths(viewportWidth: viewportWidth)
-        let totalTableWidth = max(self.totalTableWidth, widths.values.reduce(0, +) + 44)
+        let totalTableWidth = max(self.totalTableWidth, viewportWidth)
         return ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
                 // Pinned Header Row (always visible when scrolling vertically)
                 headerRow(widths: widths)
-                    .frame(width: totalTableWidth, height: 26)
+                    .frame(width: totalTableWidth, height: 26, alignment: .leading)
                     .zIndex(2)
 
                 // High-performance single-axis virtualized vertical scroll view
@@ -222,14 +214,14 @@ public struct TableDataBrowserView: View {
                                 dataRowView(index: index, row: row, widths: widths)
                             }
                         }
-                        .frame(width: totalTableWidth)
+                        .frame(width: totalTableWidth, alignment: .leading)
                     }
                     .onChange(of: selectedRowId) { _, newId in
                         if let newId { proxy.scrollTo(newId) }
                     }
                 }
             }
-            .frame(width: totalTableWidth)
+            .frame(width: totalTableWidth, alignment: .leading)
         }
         .focusable()
         .focusEffectDisabled()
@@ -365,7 +357,7 @@ public struct TableDataBrowserView: View {
                 }
             }
             .padding(.horizontal, 6)
-            .frame(width: max(30, width - 6), height: 26)
+            .frame(width: max(30, width - 8), height: 26)
             .contentShape(Rectangle())
             .onTapGesture {
                 if sortColumn == col.name {
@@ -380,13 +372,21 @@ public struct TableDataBrowserView: View {
             // Interactive Column Resize Handle
             Rectangle()
                 .fill(ThemeTokens.borderColor(for: scheme).opacity(0.6))
-                .frame(width: 6, height: 26)
+                .frame(width: 8, height: 26)
                 .contentShape(Rectangle())
+                .onHover { inside in
+                    if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                }
                 .gesture(
-                    DragGesture()
+                    DragGesture(minimumDistance: 0)
                         .onChanged { gesture in
-                            let current = columnWidths[col.name] ?? defaultWidthForColumn(col)
-                            columnWidths[col.name] = max(55, current + gesture.translation.width)
+                            // Drag translation is cumulative, so measure from the width at drag start.
+                            let start = resizeStartWidths[col.name] ?? width
+                            resizeStartWidths[col.name] = start
+                            columnWidths[col.name] = max(55, start + gesture.translation.width)
+                        }
+                        .onEnded { _ in
+                            resizeStartWidths[col.name] = nil
                         }
                 )
         }
