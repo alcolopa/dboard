@@ -21,7 +21,7 @@ public struct MongoAggregationView: View {
     @Environment(\.colorScheme) var scheme
 
     public var body: some View {
-        VSplitView {
+        VResizableSplit(initialHeight: 260, minTop: 200, minBottom: 140) {
             // Pipeline Stages Builder
             VStack(alignment: .leading, spacing: 0) {
                 // Header
@@ -70,8 +70,7 @@ public struct MongoAggregationView: View {
                     .padding(10)
                 }
             }
-            .frame(minHeight: 200)
-
+        } bottom: {
             // Results Panel
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
@@ -102,7 +101,6 @@ public struct MongoAggregationView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(minHeight: 140)
         }
     }
 

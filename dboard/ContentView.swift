@@ -24,39 +24,11 @@ public struct ContentView: View {
                 )
 
                 // 3-Pane Developer Layout
-                HSplitView {
+                HResizableSplit(initialWidth: 260, minLeading: 180, maxLeading: 480) {
                     // Left Pane: Database Tree Sidebar
                     SidebarView(isConnectionManagerOpen: $isConnectionManagerOpen)
-
-                    // Center Pane: Multi-tab Workspace
-                    VStack(spacing: 0) {
-                        WorkspaceTabBarView()
-
-                        if let activeTab = tabManager.activeTab {
-                            tabContent(for: activeTab)
-                        } else {
-                            VStack(spacing: 12) {
-                                Image(systemName: "square.grid.2x2")
-                                    .font(.system(size: 32))
-                                    .foregroundColor(ThemeTokens.textMuted(for: scheme))
-                                Text("No open tabs")
-                                    .font(ThemeTokens.uiFont(size: 13, weight: .medium))
-                                    .foregroundColor(ThemeTokens.textSecondary(for: scheme))
-                                Button("Open New Query (⌘N)") {
-                                    tabManager.openQueryTab()
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(ThemeTokens.bgPrimary(for: scheme))
-                        }
-                    }
-                    .frame(minWidth: 400)
-
-                    // Right Pane: Context Inspector (Activity, History, Info)
-                    if isInspectorOpen {
-                        ContextInspectorView()
-                    }
+                } trailing: {
+                    workspaceAndInspector
                 }
             }
 
@@ -138,6 +110,45 @@ public struct ContentView: View {
             .opacity(0)
             .allowsHitTesting(false)
         )
+    }
+
+    @ViewBuilder
+    private var workspaceAndInspector: some View {
+        // Center Pane: Multi-tab Workspace
+        let workspace = VStack(spacing: 0) {
+            WorkspaceTabBarView()
+
+            if let activeTab = tabManager.activeTab {
+                tabContent(for: activeTab)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 32))
+                        .foregroundColor(ThemeTokens.textMuted(for: scheme))
+                    Text("No open tabs")
+                        .font(ThemeTokens.uiFont(size: 13, weight: .medium))
+                        .foregroundColor(ThemeTokens.textSecondary(for: scheme))
+                    Button("Open New Query (⌘N)") {
+                        tabManager.openQueryTab()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(ThemeTokens.bgPrimary(for: scheme))
+            }
+        }
+        .frame(minWidth: 400)
+
+        // Right Pane: Context Inspector (Activity, History, Info)
+        if isInspectorOpen {
+            HResizableTrailingSplit(initialWidth: 280, minTrailing: 220, maxTrailing: 520) {
+                workspace
+            } trailing: {
+                ContextInspectorView()
+            }
+        } else {
+            workspace
+        }
     }
 
     @ViewBuilder
