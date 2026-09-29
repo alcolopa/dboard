@@ -38,7 +38,7 @@ public struct ExportModalView: View {
                     Image(systemName: "xmark")
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             Divider().background(ThemeTokens.borderColor(for: scheme))

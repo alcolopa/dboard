@@ -96,10 +96,10 @@ public struct ToastContainerView: View {
 
                     Button(action: { toastManager.dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)

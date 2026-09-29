@@ -122,7 +122,7 @@ public struct MongoWorkspaceView: View {
             Button(action: { isInsertDocOpen = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                     Text("Insert Document")
                         .font(ThemeTokens.uiFont(size: 11, weight: .semibold))
                 }
@@ -132,14 +132,14 @@ public struct MongoWorkspaceView: View {
                 .foregroundColor(.white)
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
 
             Button(action: {
                 tabManager.openMongoAggregationTab(collection: collectionName)
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.triangle.merge")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     Text("Aggregation")
                         .font(ThemeTokens.uiFont(size: 11))
                 }
@@ -149,7 +149,7 @@ public struct MongoWorkspaceView: View {
                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -223,10 +223,10 @@ public struct MongoWorkspaceView: View {
                                 deleteDoc(docId: docId)
                             }) {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 15))
+                                    .font(.system(size: 12))
                                     .foregroundColor(ThemeTokens.accentCrimson)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.hit)
                         }
 
                         // Preview Fields
@@ -315,7 +315,7 @@ public struct MongoWorkspaceView: View {
                 Button(action: { isInsertDocOpen = false }) {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             Text("Enter document JSON with valid BSON fields:")
@@ -363,7 +363,7 @@ public struct MongoWorkspaceView: View {
                 Button(action: { activeDocForEdit = nil }) {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             TextEditor(text: $editDocJSON)

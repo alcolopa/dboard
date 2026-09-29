@@ -40,10 +40,10 @@ public struct SidebarView: View {
 
                     Button(action: { isConnectionManagerOpen = true }) {
                         Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                     .help("Add Connection")
                 }
 
@@ -52,7 +52,7 @@ public struct SidebarView: View {
                 // Search Filter inside Sidebar
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     TextField("Filter objects...", text: $objectFilterText)
                         .textFieldStyle(.plain)
@@ -61,10 +61,10 @@ public struct SidebarView: View {
                     if !objectFilterText.isEmpty {
                         Button(action: { objectFilterText = "" }) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14))
+                                .font(.system(size: 12))
                                 .foregroundColor(ThemeTokens.textMuted(for: scheme))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.hit)
                     }
                 }
                 .padding(.horizontal, 6)
@@ -194,12 +194,12 @@ public struct SidebarView: View {
         Button(action: { withAnimation(.easeInOut(duration: 0.15)) { isExpanded.wrappedValue.toggle() } }) {
             HStack(spacing: 4) {
                 Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     .frame(width: 14)
 
                 Image(systemName: icon)
-                    .font(.system(size: 14))
+                    .font(.system(size: 12))
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
 
                 Text(title)
@@ -212,14 +212,14 @@ public struct SidebarView: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.hit)
     }
 
     private func tableRow(_ table: TableMetadata) -> some View {
         let isSelected = tabManager.activeTab?.title == table.name
         return HStack(spacing: 6) {
             Image(systemName: table.type.iconName)
-                .font(.system(size: 16))
+                .font(.system(size: 13))
                 .foregroundColor(isSelected ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
                 .frame(width: 20)
 
@@ -280,7 +280,7 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == coll.name
         return HStack(spacing: 6) {
             Image(systemName: "leaf.fill")
-                .font(.system(size: 16))
+                .font(.system(size: 13))
                 .foregroundColor(ThemeTokens.accentEmerald)
                 .frame(width: 20)
 
@@ -327,7 +327,7 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == p.name
         return HStack(spacing: 6) {
             Image(systemName: "gearshape.2.fill")
-                .font(.system(size: 15))
+                .font(.system(size: 12))
                 .foregroundColor(isSelected ? ThemeTokens.accentPurple : ThemeTokens.accentPurple.opacity(0.85))
                 .frame(width: 20)
 
@@ -368,7 +368,7 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == f.name
         return HStack(spacing: 6) {
             Image(systemName: "function")
-                .font(.system(size: 15))
+                .font(.system(size: 12))
                 .foregroundColor(isSelected ? ThemeTokens.accentBlue : ThemeTokens.accentBlue.opacity(0.85))
                 .frame(width: 20)
 
@@ -414,7 +414,7 @@ public struct SidebarView: View {
     private func triggerRow(_ trg: TriggerMetadata) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "bolt.badge.clock")
-                .font(.system(size: 15))
+                .font(.system(size: 12))
                 .foregroundColor(ThemeTokens.accentAmber)
                 .frame(width: 20)
 
@@ -453,7 +453,7 @@ public struct SidebarView: View {
     private func sequenceRow(_ s: SequenceMetadata) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "number")
-                .font(.system(size: 15))
+                .font(.system(size: 12))
                 .foregroundColor(ThemeTokens.textMuted(for: scheme))
                 .frame(width: 20)
 

@@ -17,7 +17,7 @@ public struct TableFilterBarView: View {
     public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.system(size: 17))
+                .font(.system(size: 13))
                 .foregroundColor(filterText.isEmpty ? ThemeTokens.textMuted(for: scheme) : ThemeTokens.accentBlue)
 
             // SQL WHERE input field
@@ -39,10 +39,10 @@ public struct TableFilterBarView: View {
                         onClearFilter()
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 15))
+                            .font(.system(size: 12))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
             }
             .padding(.horizontal, 8)
@@ -58,7 +58,7 @@ public struct TableFilterBarView: View {
             Button(action: { isVisualBuilderOpen.toggle() }) {
                 HStack(spacing: 3) {
                     Image(systemName: "slider.horizontal.2.square")
-                        .font(.system(size: 16))
+                        .font(.system(size: 13))
                     Text("Builder")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -68,7 +68,7 @@ public struct TableFilterBarView: View {
                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
             .popover(isPresented: $isVisualBuilderOpen) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Visual Filter Builder")
@@ -123,7 +123,7 @@ public struct TableFilterBarView: View {
                     .foregroundColor(ThemeTokens.accentBlue)
                     .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

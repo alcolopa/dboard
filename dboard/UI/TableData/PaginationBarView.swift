@@ -59,7 +59,7 @@ public struct PaginationBarView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text(String(format: "%.1f ms", executionDurationMs))
                         .font(ThemeTokens.codeFont(size: 11))
@@ -92,7 +92,7 @@ public struct PaginationBarView: View {
             Button(action: onInsertRowClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                     if !compact {
                         Text("Insert Row")
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
@@ -104,14 +104,14 @@ public struct PaginationBarView: View {
                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(4)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
             .help("Insert a new row")
 
             // Delete Row Button
             Button(action: onDeleteRowClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "trash")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     if !compact {
                         Text("Delete Row")
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
@@ -123,7 +123,7 @@ public struct PaginationBarView: View {
                 .foregroundColor(canDeleteRow ? ThemeTokens.accentCrimson : ThemeTokens.textMuted(for: scheme))
                 .cornerRadius(4)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
             .disabled(!canDeleteRow)
             .help("Delete the selected row")
 
@@ -131,7 +131,7 @@ public struct PaginationBarView: View {
             Button(action: onExportClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     if !compact {
                         Text("Export")
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
@@ -143,7 +143,7 @@ public struct PaginationBarView: View {
                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(4)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
             .help("Export")
 
             Divider()
@@ -180,10 +180,10 @@ public struct PaginationBarView: View {
                     onPageChange(0)
                 }) {
                     Image(systemName: "backward.end.fill")
-                        .font(.system(size: 14))
-                        .frame(width: 28, height: 28)
+                        .font(.system(size: 12))
+                        .frame(width: 26, height: 26)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .disabled(currentPage == 0)
                 .help("First Page")
 
@@ -194,10 +194,10 @@ public struct PaginationBarView: View {
                     }
                 }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 28, height: 28)
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 26)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .disabled(currentPage == 0)
                 .help("Previous Page")
 
@@ -214,7 +214,7 @@ public struct PaginationBarView: View {
                         .background(ThemeTokens.accentBlue.opacity(0.08))
                         .cornerRadius(3)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Click to jump to any page or row")
                 .popover(isPresented: $isJumpPagePopoverOpen) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -251,10 +251,10 @@ public struct PaginationBarView: View {
                     }
                 }) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 28, height: 28)
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 26)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .disabled(currentPage >= totalPages - 1)
                 .help("Next Page")
 
@@ -263,10 +263,10 @@ public struct PaginationBarView: View {
                     onPageChange(totalPages - 1)
                 }) {
                     Image(systemName: "forward.end.fill")
-                        .font(.system(size: 14))
-                        .frame(width: 28, height: 28)
+                        .font(.system(size: 12))
+                        .frame(width: 26, height: 26)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .disabled(currentPage >= totalPages - 1)
                 .help("Last Page")
             }

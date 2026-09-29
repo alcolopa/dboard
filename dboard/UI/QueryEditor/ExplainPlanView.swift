@@ -57,7 +57,7 @@ public struct PlanNodeCardView: View {
                 }
 
                 Image(systemName: iconForNodeType(node.nodeType))
-                    .font(.system(size: 16))
+                    .font(.system(size: 13))
                     .foregroundColor(colorForNodeType(node.nodeType))
 
                 Text(node.nodeType)

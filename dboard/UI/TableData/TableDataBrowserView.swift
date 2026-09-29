@@ -356,11 +356,11 @@ public struct TableDataBrowserView: View {
             HStack(spacing: 4) {
                 if col.isPrimaryKey {
                     Image(systemName: "key.fill")
-                        .font(.system(size: 13))
+                        .font(.system(size: 11))
                         .foregroundColor(ThemeTokens.accentAmber)
                 } else if col.isForeignKey {
                     Image(systemName: "arrow.turn.down.right")
-                        .font(.system(size: 13))
+                        .font(.system(size: 11))
                         .foregroundColor(ThemeTokens.accentBlue)
                 }
 
@@ -378,7 +378,7 @@ public struct TableDataBrowserView: View {
 
                 if sortColumn == col.name {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundColor(ThemeTokens.accentBlue)
                 }
             }
@@ -519,7 +519,7 @@ public struct TableDataBrowserView: View {
                 Button(action: { isInsertRowSheetOpen = false }) {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             ScrollView {

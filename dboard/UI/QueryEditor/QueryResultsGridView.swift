@@ -53,19 +53,19 @@ public struct QueryResultsGridView: View {
                         Text("Copy TSV")
                             .font(ThemeTokens.uiFont(size: 10.5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
 
                     Button(action: copyAsCSV) {
                         Text("Copy CSV")
                             .font(ThemeTokens.uiFont(size: 10.5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
 
                     Button(action: copyAsJSON) {
                         Text("Copy JSON")
                             .font(ThemeTokens.uiFont(size: 10.5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
             }
             .padding(.horizontal, 10)
