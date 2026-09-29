@@ -40,7 +40,7 @@ public struct MongoWorkspaceView: View {
             } else if queryResult.rows.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "leaf")
-                        .font(.system(size: 28))
+                        .font(.system(size: 32))
                         .foregroundColor(ThemeTokens.accentEmerald)
                     Text("No documents in collection \(collectionName)")
                         .font(ThemeTokens.uiFont(size: 13, weight: .medium))
@@ -80,7 +80,7 @@ public struct MongoWorkspaceView: View {
             HStack(spacing: 5) {
                 Image(systemName: "leaf.fill")
                     .foregroundColor(ThemeTokens.accentEmerald)
-                    .font(.system(size: 12))
+                    .font(.system(size: 16))
                 Text(collectionName)
                     .font(ThemeTokens.uiFont(size: 13, weight: .bold))
                     .foregroundColor(ThemeTokens.textPrimary(for: scheme))
@@ -122,7 +122,7 @@ public struct MongoWorkspaceView: View {
             Button(action: { isInsertDocOpen = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                     Text("Insert Document")
                         .font(ThemeTokens.uiFont(size: 11, weight: .semibold))
                 }
@@ -139,7 +139,7 @@ public struct MongoWorkspaceView: View {
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.triangle.merge")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("Aggregation")
                         .font(ThemeTokens.uiFont(size: 11))
                 }
@@ -223,7 +223,7 @@ public struct MongoWorkspaceView: View {
                                 deleteDoc(docId: docId)
                             }) {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 15))
                                     .foregroundColor(ThemeTokens.accentCrimson)
                             }
                             .buttonStyle(.plain)

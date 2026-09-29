@@ -125,6 +125,7 @@ public struct ConnectionConfig: Identifiable, Codable, Equatable {
     public var environment: ConnectionEnvironment
     public var colorTag: String?
     public var isReadOnly: Bool
+    public var useDemoData: Bool // Serve generated sample data instead of a live database
     public var isFavorite: Bool
     public var groupName: String
     public var connectionTimeoutSeconds: Int
@@ -147,6 +148,7 @@ public struct ConnectionConfig: Identifiable, Codable, Equatable {
         environment: ConnectionEnvironment = .local,
         colorTag: String? = nil,
         isReadOnly: Bool = false,
+        useDemoData: Bool = false,
         isFavorite: Bool = false,
         groupName: String = "Default",
         connectionTimeoutSeconds: Int = 10,
@@ -168,6 +170,7 @@ public struct ConnectionConfig: Identifiable, Codable, Equatable {
         self.environment = environment
         self.colorTag = colorTag ?? environment.badgeColorHex
         self.isReadOnly = isReadOnly
+        self.useDemoData = useDemoData
         self.isFavorite = isFavorite
         self.groupName = groupName
         self.connectionTimeoutSeconds = connectionTimeoutSeconds

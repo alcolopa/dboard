@@ -44,7 +44,7 @@ public struct RoutineDetailView: View {
                 Button(action: copyCallTemplate) {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 10))
+                            .font(.system(size: 15))
                         Text("Copy Call Template")
                             .font(ThemeTokens.uiFont(size: 11))
                     }
@@ -54,7 +54,7 @@ public struct RoutineDetailView: View {
                 Button(action: openInQueryTab) {
                     HStack(spacing: 4) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 15))
                         Text("Open in SQL Editor")
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                     }
@@ -84,7 +84,7 @@ public struct RoutineDetailView: View {
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "questionmark.circle")
-                        .font(.system(size: 32))
+                        .font(.system(size: 36))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text("Routine '\(schema).\(routineName)' not found in metadata.")
                         .font(ThemeTokens.uiFont(size: 13))
@@ -101,7 +101,7 @@ public struct RoutineDetailView: View {
             let isProc = routine?.isProcedure ?? false
             Image(systemName: isProc ? "gearshape.2.fill" : "function")
                 .foregroundColor(isProc ? ThemeTokens.accentPurple : ThemeTokens.accentBlue)
-                .font(.system(size: 16))
+                .font(.system(size: 20))
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -186,7 +186,7 @@ public struct RoutineDetailView: View {
             if parsedParams.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "tray")
-                        .font(.system(size: 24))
+                        .font(.system(size: 28))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text("This \(r.isProcedure ? "procedure" : "function") takes no arguments.")
                         .font(ThemeTokens.uiFont(size: 12))
@@ -285,10 +285,10 @@ public struct RoutineDetailView: View {
                         if isExecuting {
                             ProgressView()
                                 .scaleEffect(0.5)
-                                .frame(width: 14, height: 14)
+                                .frame(width: 18, height: 18)
                         } else {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 10))
+                                .font(.system(size: 15))
                         }
                         Text(r.isProcedure ? "Execute Procedure" : "Run Function")
                             .font(ThemeTokens.uiFont(size: 12, weight: .semibold))
@@ -350,7 +350,7 @@ public struct RoutineDetailView: View {
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "terminal")
-                            .font(.system(size: 28))
+                            .font(.system(size: 32))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                         Text("Fill parameters and click Execute to test")
                             .font(ThemeTokens.uiFont(size: 12))

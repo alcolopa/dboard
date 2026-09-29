@@ -4,6 +4,8 @@ import AppKit
 public struct QueryResultsGridView: View {
     public let result: QueryResult
     @Environment(\.colorScheme) var scheme
+    @State private var columnWidths: [String: CGFloat] = [:]
+    @State private var resizeStartWidths: [String: CGFloat] = [:]
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -36,7 +38,7 @@ public struct QueryResultsGridView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "xmark.octagon.fill")
                             .foregroundColor(ThemeTokens.accentCrimson)
-                            .font(.system(size: 12))
+                            .font(.system(size: 16))
                         Text(err)
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                             .foregroundColor(ThemeTokens.accentCrimson)
@@ -85,7 +87,11 @@ public struct QueryResultsGridView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let totalWidth = max(CGFloat(result.columns.count * 140 + 40), 400)
+                GeometryReader { geo in
+                // Columns keep their own widths; spare panel width stays empty so the
+                // vertical scroller sits at the panel's right edge.
+                let naturalWidth = result.columns.reduce(CGFloat(40)) { $0 + (columnWidths[$1.name] ?? 140) }
+                let totalWidth = max(naturalWidth, geo.size.width)
                 ScrollView(.horizontal, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 0) {
                         // Pinned Header
@@ -98,16 +104,38 @@ public struct QueryResultsGridView: View {
                                 .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
 
                             ForEach(result.columns) { col in
-                                Text(col.name)
-                                    .font(ThemeTokens.uiFont(size: 11, weight: .bold))
-                                    .foregroundColor(ThemeTokens.textPrimary(for: scheme))
-                                    .padding(.horizontal, 6)
-                                    .frame(width: 140, height: 24, alignment: .leading)
-                                    .background(ThemeTokens.tableHeaderBg(for: scheme))
-                                    .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
+                                let width = columnWidths[col.name] ?? 140
+                                HStack(spacing: 0) {
+                                    Text(col.name)
+                                        .font(ThemeTokens.uiFont(size: 11, weight: .bold))
+                                        .foregroundColor(ThemeTokens.textPrimary(for: scheme))
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 6)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    Rectangle()
+                                        .fill(ThemeTokens.borderColor(for: scheme).opacity(0.6))
+                                        .frame(width: 8, height: 24)
+                                        .contentShape(Rectangle())
+                                        .onHover { inside in
+                                            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                                        }
+                                        .gesture(
+                                            DragGesture(minimumDistance: 0)
+                                                .onChanged { gesture in
+                                                    let start = resizeStartWidths[col.name] ?? width
+                                                    resizeStartWidths[col.name] = start
+                                                    columnWidths[col.name] = max(55, start + gesture.translation.width)
+                                                }
+                                                .onEnded { _ in resizeStartWidths[col.name] = nil }
+                                        )
+                                }
+                                .frame(width: width, height: 24)
+                                .background(ThemeTokens.tableHeaderBg(for: scheme))
+                                .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
                             }
                         }
-                        .frame(width: totalWidth, height: 24)
+                        .frame(width: totalWidth, height: 24, alignment: .leading)
                         .zIndex(2)
 
                         // Vertical virtualized scroll
@@ -118,15 +146,17 @@ public struct QueryResultsGridView: View {
                                         index: idx,
                                         row: row,
                                         columns: result.columns,
+                                        columnWidths: columnWidths,
                                         scheme: scheme
                                     )
                                     .equatable()
                                 }
                             }
-                            .frame(width: totalWidth)
+                            .frame(width: totalWidth, alignment: .leading)
                         }
                     }
-                    .frame(width: totalWidth)
+                    .frame(width: totalWidth, alignment: .leading)
+                }
                 }
             }
         }
@@ -183,12 +213,14 @@ public struct QueryResultRowView: View, Equatable {
     public let index: Int
     public let row: DataRow
     public let columns: [ColumnDefinition]
+    public let columnWidths: [String: CGFloat]
     public let scheme: ColorScheme
 
     public static func == (lhs: QueryResultRowView, rhs: QueryResultRowView) -> Bool {
         lhs.index == rhs.index &&
         lhs.row == rhs.row &&
         lhs.columns == rhs.columns &&
+        lhs.columnWidths == rhs.columnWidths &&
         lhs.scheme == rhs.scheme
     }
 
@@ -207,7 +239,7 @@ public struct QueryResultRowView: View, Equatable {
                     .font(val.isNumeric ? ThemeTokens.codeFont(size: 11) : ThemeTokens.uiFont(size: 11))
                     .foregroundColor(val.isNull ? ThemeTokens.textMuted(for: scheme) : ThemeTokens.textPrimary(for: scheme))
                     .padding(.horizontal, 6)
-                    .frame(width: 140, height: 24, alignment: .leading)
+                    .frame(width: columnWidths[col.name] ?? 140, height: 24, alignment: .leading)
                     .background(index % 2 == 0 ? ThemeTokens.tableRowEven(for: scheme) : ThemeTokens.tableRowOdd(for: scheme))
                     .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
             }

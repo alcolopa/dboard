@@ -20,7 +20,7 @@ public struct EnvironmentBadgeView: View {
 
             if environment == .production {
                 Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 9))
+                    .font(.system(size: 14))
                     .foregroundColor(Color(hex: environment.badgeColorHex))
             }
         }
@@ -43,7 +43,7 @@ public struct DemoDataBadgeView: View {
     public var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "flask.fill")
-                .font(.system(size: 9))
+                .font(.system(size: 14))
             Text("DEMO DATA")
                 .font(ThemeTokens.uiFont(size: 9.5, weight: .bold))
         }

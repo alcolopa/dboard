@@ -144,7 +144,7 @@ public struct SchemaStructureView: View {
                             .frame(width: 140, alignment: .leading)
 
                         Image(systemName: col.isNullable ? "checkmark" : "xmark")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(col.isNullable ? ThemeTokens.accentEmerald : ThemeTokens.textMuted(for: scheme))
                             .frame(width: 70)
 

@@ -40,7 +40,7 @@ public struct SidebarView: View {
 
                     Button(action: { isConnectionManagerOpen = true }) {
                         Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                     }
                     .buttonStyle(.plain)
@@ -52,7 +52,7 @@ public struct SidebarView: View {
                 // Search Filter inside Sidebar
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     TextField("Filter objects...", text: $objectFilterText)
                         .textFieldStyle(.plain)
@@ -61,7 +61,7 @@ public struct SidebarView: View {
                     if !objectFilterText.isEmpty {
                         Button(action: { objectFilterText = "" }) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 9))
+                                .font(.system(size: 14))
                                 .foregroundColor(ThemeTokens.textMuted(for: scheme))
                         }
                         .buttonStyle(.plain)
@@ -194,12 +194,12 @@ public struct SidebarView: View {
         Button(action: { withAnimation(.easeInOut(duration: 0.15)) { isExpanded.wrappedValue.toggle() } }) {
             HStack(spacing: 4) {
                 Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
-                    .frame(width: 10)
+                    .frame(width: 14)
 
                 Image(systemName: icon)
-                    .font(.system(size: 9))
+                    .font(.system(size: 14))
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
 
                 Text(title)
@@ -219,9 +219,9 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == table.name
         return HStack(spacing: 6) {
             Image(systemName: table.type.iconName)
-                .font(.system(size: 11))
+                .font(.system(size: 16))
                 .foregroundColor(isSelected ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
-                .frame(width: 14)
+                .frame(width: 20)
 
             Text(table.name)
                 .font(ThemeTokens.uiFont(size: 11.5, weight: isSelected ? .medium : .regular))
@@ -280,9 +280,9 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == coll.name
         return HStack(spacing: 6) {
             Image(systemName: "leaf.fill")
-                .font(.system(size: 11))
+                .font(.system(size: 16))
                 .foregroundColor(ThemeTokens.accentEmerald)
-                .frame(width: 14)
+                .frame(width: 20)
 
             Text(coll.name)
                 .font(ThemeTokens.uiFont(size: 11.5, weight: isSelected ? .medium : .regular))
@@ -327,9 +327,9 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == p.name
         return HStack(spacing: 6) {
             Image(systemName: "gearshape.2.fill")
-                .font(.system(size: 10))
+                .font(.system(size: 15))
                 .foregroundColor(isSelected ? ThemeTokens.accentPurple : ThemeTokens.accentPurple.opacity(0.85))
-                .frame(width: 14)
+                .frame(width: 20)
 
             Text(p.name)
                 .font(ThemeTokens.uiFont(size: 11, weight: isSelected ? .medium : .regular))
@@ -368,9 +368,9 @@ public struct SidebarView: View {
         let isSelected = tabManager.activeTab?.title == f.name
         return HStack(spacing: 6) {
             Image(systemName: "function")
-                .font(.system(size: 10))
+                .font(.system(size: 15))
                 .foregroundColor(isSelected ? ThemeTokens.accentBlue : ThemeTokens.accentBlue.opacity(0.85))
-                .frame(width: 14)
+                .frame(width: 20)
 
             Text(f.name)
                 .font(ThemeTokens.uiFont(size: 11, weight: isSelected ? .medium : .regular))
@@ -414,9 +414,9 @@ public struct SidebarView: View {
     private func triggerRow(_ trg: TriggerMetadata) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "bolt.badge.clock")
-                .font(.system(size: 10))
+                .font(.system(size: 15))
                 .foregroundColor(ThemeTokens.accentAmber)
-                .frame(width: 14)
+                .frame(width: 20)
 
             Text(trg.name)
                 .font(ThemeTokens.uiFont(size: 11))
@@ -453,9 +453,9 @@ public struct SidebarView: View {
     private func sequenceRow(_ s: SequenceMetadata) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "number")
-                .font(.system(size: 10))
+                .font(.system(size: 15))
                 .foregroundColor(ThemeTokens.textMuted(for: scheme))
-                .frame(width: 14)
+                .frame(width: 20)
 
             Text(s.name)
                 .font(ThemeTokens.uiFont(size: 11))

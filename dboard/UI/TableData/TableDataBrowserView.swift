@@ -19,6 +19,7 @@ public struct TableDataBrowserView: View {
     @State private var selectedRowId: UUID? = nil
     @State private var selectedColumnName: String? = nil
     @State private var columnWidths: [String: CGFloat] = [:]
+    @State private var resizeStartWidths: [String: CGFloat] = [:]
     @State private var isExportSheetOpen: Bool = false
     @State private var isInsertRowSheetOpen: Bool = false
     @State private var isDeleteRowModalOpen: Bool = false
@@ -42,7 +43,7 @@ public struct TableDataBrowserView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(ThemeTokens.accentAmber)
-                        .font(.system(size: 12))
+                        .font(.system(size: 16))
 
                     Text("No Primary Key Detected: Automatic inline editing is restricted for '\(tableName)' to prevent unintended multi-row modifications.")
                         .font(ThemeTokens.uiFont(size: 11.5, weight: .medium))
@@ -90,7 +91,7 @@ public struct TableDataBrowserView: View {
             } else if queryResult.rows.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "tray")
-                        .font(.system(size: 28))
+                        .font(.system(size: 32))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text("No records found in \(tableName)")
                         .font(ThemeTokens.uiFont(size: 13, weight: .medium))
@@ -102,7 +103,9 @@ public struct TableDataBrowserView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                tableScrollView
+                GeometryReader { geo in
+                    tableScrollView(viewportWidth: geo.size.width)
+                }
             }
 
             // Bottom Pagination & Latency Bar
@@ -188,12 +191,19 @@ public struct TableDataBrowserView: View {
         return max(colsWidth + 44, 400)
     }
 
-    private var tableScrollView: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
+    private func tableScrollView(viewportWidth: CGFloat) -> some View {
+        // Columns keep their own widths; any spare panel width stays empty so the
+        // vertical scroller still sits at the panel's right edge.
+        var widths: [String: CGFloat] = [:]
+        for col in queryResult.columns {
+            widths[col.name] = columnWidths[col.name] ?? defaultWidthForColumn(col)
+        }
+        let totalTableWidth = max(self.totalTableWidth, viewportWidth)
+        return ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
                 // Pinned Header Row (always visible when scrolling vertically)
-                headerRow
-                    .frame(width: totalTableWidth, height: 26)
+                headerRow(widths: widths)
+                    .frame(width: totalTableWidth, height: 26, alignment: .leading)
                     .zIndex(2)
 
                 // High-performance single-axis virtualized vertical scroll view
@@ -201,17 +211,17 @@ public struct TableDataBrowserView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(queryResult.rows.enumerated()), id: \.element.id) { index, row in
-                                dataRowView(index: index, row: row)
+                                dataRowView(index: index, row: row, widths: widths)
                             }
                         }
-                        .frame(width: totalTableWidth)
+                        .frame(width: totalTableWidth, alignment: .leading)
                     }
                     .onChange(of: selectedRowId) { _, newId in
                         if let newId { proxy.scrollTo(newId) }
                     }
                 }
             }
-            .frame(width: totalTableWidth)
+            .frame(width: totalTableWidth, alignment: .leading)
         }
         .focusable()
         .focusEffectDisabled()
@@ -263,7 +273,7 @@ public struct TableDataBrowserView: View {
         ToastManager.shared.show(wholeRow ? "Copied row" : "Copied cell", style: .success, duration: 1.0)
     }
 
-    private var headerRow: some View {
+    private func headerRow(widths: [String: CGFloat]) -> some View {
         HStack(spacing: 0) {
             // Row index column header (#)
             Text("#")
@@ -274,13 +284,13 @@ public struct TableDataBrowserView: View {
                 .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
 
             ForEach(queryResult.columns) { col in
-                let width = columnWidths[col.name] ?? defaultWidthForColumn(col)
+                let width = widths[col.name] ?? defaultWidthForColumn(col)
                 headerCell(col: col, width: width)
             }
         }
     }
 
-    private func dataRowView(index: Int, row: DataRow) -> some View {
+    private func dataRowView(index: Int, row: DataRow, widths: [String: CGFloat]) -> some View {
         let isSelected = row.id == selectedRowId
         let globalIndex = (currentPage * pageSize) + index + 1
         return TableDataRowView(
@@ -288,7 +298,7 @@ public struct TableDataBrowserView: View {
             globalIndex: globalIndex,
             row: row,
             columns: queryResult.columns,
-            columnWidths: columnWidths,
+            columnWidths: widths,
             isSelected: isSelected,
             selectedColumnName: isSelected ? selectedColumnName : nil,
             hasPrimaryKey: hasPrimaryKey,
@@ -320,11 +330,11 @@ public struct TableDataBrowserView: View {
             HStack(spacing: 4) {
                 if col.isPrimaryKey {
                     Image(systemName: "key.fill")
-                        .font(.system(size: 8))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.accentAmber)
                 } else if col.isForeignKey {
                     Image(systemName: "arrow.turn.down.right")
-                        .font(.system(size: 8))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.accentBlue)
                 }
 
@@ -342,12 +352,12 @@ public struct TableDataBrowserView: View {
 
                 if sortColumn == col.name {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(ThemeTokens.accentBlue)
                 }
             }
             .padding(.horizontal, 6)
-            .frame(width: max(30, width - 6), height: 26)
+            .frame(width: max(30, width - 8), height: 26)
             .contentShape(Rectangle())
             .onTapGesture {
                 if sortColumn == col.name {
@@ -362,13 +372,21 @@ public struct TableDataBrowserView: View {
             // Interactive Column Resize Handle
             Rectangle()
                 .fill(ThemeTokens.borderColor(for: scheme).opacity(0.6))
-                .frame(width: 6, height: 26)
+                .frame(width: 8, height: 26)
                 .contentShape(Rectangle())
+                .onHover { inside in
+                    if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                }
                 .gesture(
-                    DragGesture()
+                    DragGesture(minimumDistance: 0)
                         .onChanged { gesture in
-                            let current = columnWidths[col.name] ?? defaultWidthForColumn(col)
-                            columnWidths[col.name] = max(55, current + gesture.translation.width)
+                            // Drag translation is cumulative, so measure from the width at drag start.
+                            let start = resizeStartWidths[col.name] ?? width
+                            resizeStartWidths[col.name] = start
+                            columnWidths[col.name] = max(55, start + gesture.translation.width)
+                        }
+                        .onEnded { _ in
+                            resizeStartWidths[col.name] = nil
                         }
                 )
         }

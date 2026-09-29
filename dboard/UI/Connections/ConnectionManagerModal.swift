@@ -22,7 +22,7 @@ public struct ConnectionManagerModal: View {
                     Spacer()
                     Button(action: createNewConnection) {
                         Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
                     .buttonStyle(.plain)
                 }
@@ -88,7 +88,7 @@ public struct ConnectionManagerModal: View {
                     Spacer()
                     Button(action: { isPresented = false }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
+                            .font(.system(size: 18))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
                     .buttonStyle(.plain)
@@ -102,6 +102,8 @@ public struct ConnectionManagerModal: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
+                        dataSourceChooser
+
                         // Title & Type Selector
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -166,6 +168,7 @@ public struct ConnectionManagerModal: View {
 
                         Divider().background(ThemeTokens.borderColor(for: scheme))
 
+                        Group {
                         if draftConfig.type == .mongodb {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("MongoDB Connection URI")
@@ -222,7 +225,7 @@ public struct ConnectionManagerModal: View {
                                 Spacer()
                                 HStack(spacing: 3) {
                                     Image(systemName: "key.fill")
-                                        .font(.system(size: 9))
+                                        .font(.system(size: 14))
                                     Text("Secured via macOS Keychain")
                                         .font(ThemeTokens.uiFont(size: 10))
                                 }
@@ -232,6 +235,10 @@ public struct ConnectionManagerModal: View {
                             SecureField("••••••••••••", text: $passwordInput)
                                 .textFieldStyle(.roundedBorder)
                         }
+
+                        }
+                        .disabled(draftConfig.useDemoData)
+                        .opacity(draftConfig.useDemoData ? 0.45 : 1)
 
                         // Test Result Output
                         if let res = testResultText {
@@ -299,7 +306,7 @@ public struct ConnectionManagerModal: View {
                 .background(ThemeTokens.bgElevated(for: scheme))
             }
         }
-        .frame(width: 740, height: 500)
+        .frame(width: 760, height: 600)
         .background(ThemeTokens.bgPrimary(for: scheme))
         .onAppear {
             if let active = connectionManager.activeConnection {
@@ -315,6 +322,66 @@ public struct ConnectionManagerModal: View {
                 selectConnection(conn)
             }
         }
+    }
+
+    private var dataSourceChooser: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isCreatingNew ? "Which data do you want to use?" : "Data source")
+                .font(ThemeTokens.uiFont(size: 12, weight: .semibold))
+                .foregroundColor(ThemeTokens.textPrimary(for: scheme))
+
+            HStack(spacing: 10) {
+                dataSourceCard(
+                    title: "Real database",
+                    subtitle: "Connect to your own server with the details below.",
+                    icon: "externaldrive.connected.to.line.below",
+                    tint: ThemeTokens.accentBlue,
+                    isSelected: !draftConfig.useDemoData
+                ) { draftConfig.useDemoData = false }
+
+                dataSourceCard(
+                    title: "Demo data",
+                    subtitle: "Explore with generated sample data. Nothing is read from or written to a real database.",
+                    icon: "flask.fill",
+                    tint: ThemeTokens.accentAmber,
+                    isSelected: draftConfig.useDemoData
+                ) { draftConfig.useDemoData = true }
+            }
+        }
+    }
+
+    private func dataSourceCard(title: String, subtitle: String, icon: String, tint: Color, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(tint)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(ThemeTokens.uiFont(size: 12.5, weight: .semibold))
+                        .foregroundColor(ThemeTokens.textPrimary(for: scheme))
+                    Text(subtitle)
+                        .font(ThemeTokens.uiFont(size: 11))
+                        .foregroundColor(ThemeTokens.textSecondary(for: scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18))
+                    .foregroundColor(isSelected ? tint : ThemeTokens.textMuted(for: scheme))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? tint.opacity(0.10) : ThemeTokens.bgElevated(for: scheme))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? tint : ThemeTokens.borderColor(for: scheme), lineWidth: isSelected ? 1.5 : 1)
+            )
+            .cornerRadius(8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var isCreatingNew: Bool {

@@ -17,7 +17,7 @@ public struct TableFilterBarView: View {
     public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.system(size: 13))
+                .font(.system(size: 17))
                 .foregroundColor(filterText.isEmpty ? ThemeTokens.textMuted(for: scheme) : ThemeTokens.accentBlue)
 
             // SQL WHERE input field
@@ -39,7 +39,7 @@ public struct TableFilterBarView: View {
                         onClearFilter()
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 15))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
                     .buttonStyle(.plain)
@@ -58,7 +58,7 @@ public struct TableFilterBarView: View {
             Button(action: { isVisualBuilderOpen.toggle() }) {
                 HStack(spacing: 3) {
                     Image(systemName: "slider.horizontal.2.square")
-                        .font(.system(size: 11))
+                        .font(.system(size: 16))
                     Text("Builder")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }

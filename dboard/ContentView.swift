@@ -123,7 +123,7 @@ public struct ContentView: View {
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 32))
+                        .font(.system(size: 36))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text("No open tabs")
                         .font(ThemeTokens.uiFont(size: 13, weight: .medium))

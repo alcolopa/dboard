@@ -78,7 +78,7 @@ public struct ToastContainerView: View {
                 HStack(spacing: 10) {
                     Image(systemName: toast.style.iconName)
                         .foregroundColor(toast.style.tintColor)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(toast.title)
@@ -96,7 +96,7 @@ public struct ToastContainerView: View {
 
                     Button(action: { toastManager.dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
                     .buttonStyle(.plain)

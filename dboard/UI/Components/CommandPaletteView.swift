@@ -130,7 +130,7 @@ public struct CommandPaletteView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
-                    .font(.system(size: 14))
+                    .font(.system(size: 18))
 
                 TextField("Type a command, table name, or search action... (⌘K)", text: $searchText)
                     .textFieldStyle(.plain)
@@ -166,7 +166,7 @@ public struct CommandPaletteView: View {
                         HStack(spacing: 12) {
                             Image(systemName: cmd.iconName)
                                 .foregroundColor(isSelected ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
-                                .frame(width: 16)
+                                .frame(width: 22)
                                 .font(.system(size: 12))
 
                             VStack(alignment: .leading, spacing: 1) {

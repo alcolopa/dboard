@@ -19,6 +19,20 @@ public final class PostgreSQLDriver: DatabaseDriver {
         connectionStatus = .connecting
         let startTime = CFAbsoluteTimeGetCurrent()
 
+        if config.useDemoData {
+            let sample = MockDatabaseGenerator.makePostgresSample()
+            self.metadata = sample.0
+            self.mockDataStore = sample.1
+            connectionStatus = .connected
+            await ActivityLogger.shared.log(
+                statement: "-- Connected to demo PostgreSQL dataset (generated sample data, no live database)",
+                database: config.databaseName,
+                durationMs: (CFAbsoluteTimeGetCurrent() - startTime) * 1000,
+                isSuccess: true
+            )
+            return
+        }
+
         do {
             let version = try await testConnection()
             _ = try await refreshMetadata(database: config.databaseName)
@@ -32,21 +46,6 @@ public final class PostgreSQLDriver: DatabaseDriver {
                 isSuccess: true
             )
         } catch {
-            if config.host == "127.0.0.1" || config.host == "localhost" {
-                let sample = MockDatabaseGenerator.makePostgresSample()
-                self.metadata = sample.0
-                self.mockDataStore = sample.1
-                connectionStatus = .connected
-                let duration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-                await ActivityLogger.shared.log(
-                    statement: "-- Connected in High-Performance Mode (PostgreSQL 16.2 with 10,000,000 rows table & stored procedures)",
-                    database: config.databaseName,
-                    durationMs: duration,
-                    isSuccess: true
-                )
-                return
-            }
-
             connectionStatus = .error(error.localizedDescription)
             await ActivityLogger.shared.log(
                 statement: "-- Failed to connect to PostgreSQL: \(config.databaseName) on \(config.host):\(config.port)",
@@ -64,6 +63,7 @@ public final class PostgreSQLDriver: DatabaseDriver {
     }
 
     public func testConnection() async throws -> String {
+        if config.useDemoData { return "Demo dataset (PostgreSQL 16.2, generated sample data)" }
         let (output, error, exitCode) = try await client.execute(
             sql: "SELECT version();",
             tupleOnly: true

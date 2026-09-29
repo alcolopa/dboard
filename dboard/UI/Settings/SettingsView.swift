@@ -11,7 +11,7 @@ public struct SettingsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "gearshape.fill")
                         .foregroundColor(ThemeTokens.accentBlue)
-                        .font(.system(size: 16))
+                        .font(.system(size: 20))
                     Text("Preferences & Settings")
                         .font(ThemeTokens.uiFont(size: 16, weight: .bold))
                 }

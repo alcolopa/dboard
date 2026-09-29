@@ -31,6 +31,7 @@ public final class ConnectionManager: ObservableObject {
             sslMode: .disable,
             environment: .local,
             colorTag: "#10B981",
+            useDemoData: true,
             isFavorite: true,
             groupName: "Local"
         )
@@ -47,6 +48,7 @@ public final class ConnectionManager: ObservableObject {
             sslMode: .disable,
             environment: .staging,
             colorTag: "#F59E0B",
+            useDemoData: true,
             isFavorite: false,
             groupName: "Staging"
         )
@@ -63,6 +65,7 @@ public final class ConnectionManager: ObservableObject {
             sslMode: .disable,
             environment: .local,
             colorTag: "#10B981",
+            useDemoData: true,
             isFavorite: false,
             groupName: "Local"
         )

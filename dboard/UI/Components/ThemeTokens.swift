@@ -2,71 +2,71 @@ import SwiftUI
 
 public struct ThemeTokens {
     public static func bgPrimary(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.08, green: 0.09, blue: 0.11) : Color(red: 0.98, green: 0.98, blue: 0.99)
+        scheme == .dark ? Color(red: 0.105, green: 0.11, blue: 0.125) : Color(red: 1, green: 1, blue: 1)
     }
 
     public static func bgSecondary(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.11, green: 0.12, blue: 0.15) : Color(red: 0.95, green: 0.95, blue: 0.96)
+        scheme == .dark ? Color(red: 0.14, green: 0.148, blue: 0.166) : Color(red: 0.955, green: 0.96, blue: 0.972)
     }
 
     public static func bgElevated(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.14, green: 0.16, blue: 0.19) : Color.white
+        scheme == .dark ? Color(red: 0.175, green: 0.185, blue: 0.208) : Color(red: 1, green: 1, blue: 1)
     }
 
     public static func bgSidebar(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.07, green: 0.08, blue: 0.10) : Color(red: 0.94, green: 0.94, blue: 0.96)
+        scheme == .dark ? Color(red: 0.085, green: 0.09, blue: 0.104) : Color(red: 0.935, green: 0.942, blue: 0.958)
     }
 
     public static func borderColor(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.18, green: 0.20, blue: 0.24) : Color(red: 0.88, green: 0.88, blue: 0.90)
+        scheme == .dark ? Color(red: 0.24, green: 0.252, blue: 0.282) : Color(red: 0.855, green: 0.865, blue: 0.885)
     }
 
     public static func tableHeaderBg(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.10, green: 0.11, blue: 0.13) : Color(red: 0.92, green: 0.93, blue: 0.95)
+        scheme == .dark ? Color(red: 0.135, green: 0.143, blue: 0.162) : Color(red: 0.93, green: 0.938, blue: 0.955)
     }
 
     public static func tableRowEven(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.08, green: 0.09, blue: 0.11) : Color(red: 0.99, green: 0.99, blue: 1.0)
+        scheme == .dark ? Color(red: 0.105, green: 0.11, blue: 0.125) : Color(red: 1, green: 1, blue: 1)
     }
 
     public static func tableRowOdd(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.095, green: 0.105, blue: 0.125) : Color(red: 0.96, green: 0.97, blue: 0.98)
+        scheme == .dark ? Color(red: 0.125, green: 0.132, blue: 0.15) : Color(red: 0.972, green: 0.976, blue: 0.985)
     }
 
     public static func tableRowSelected(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.12, green: 0.22, blue: 0.38) : Color(red: 0.85, green: 0.92, blue: 0.99)
+        scheme == .dark ? Color(red: 0.2, green: 0.235, blue: 0.4) : Color(red: 0.86, green: 0.885, blue: 0.995)
     }
 
     public static var accentBlue: Color {
-        Color(red: 0.23, green: 0.51, blue: 0.96) // Linear/VS Code blue
+        Color(red: 0.40, green: 0.47, blue: 0.98) // Indigo
     }
 
     public static var accentEmerald: Color {
-        Color(red: 0.06, green: 0.73, blue: 0.51) // Modern emerald
+        Color(red: 0.20, green: 0.78, blue: 0.55) // Emerald
     }
 
     public static var accentAmber: Color {
-        Color(red: 0.96, green: 0.62, blue: 0.04) // Amber
+        Color(red: 0.98, green: 0.71, blue: 0.20) // Amber
     }
 
     public static var accentCrimson: Color {
-        Color(red: 0.94, green: 0.27, blue: 0.27) // Crimson
+        Color(red: 0.96, green: 0.36, blue: 0.40) // Coral red
     }
 
     public static var accentPurple: Color {
-        Color(red: 0.65, green: 0.35, blue: 0.95) // Purple for procedures
+        Color(red: 0.72, green: 0.45, blue: 0.96) // Purple for procedures
     }
 
     public static func textPrimary(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.92, green: 0.93, blue: 0.95) : Color(red: 0.10, green: 0.10, blue: 0.12)
+        scheme == .dark ? Color(red: 0.93, green: 0.937, blue: 0.955) : Color(red: 0.09, green: 0.1, blue: 0.13)
     }
 
     public static func textSecondary(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.60, green: 0.63, blue: 0.68) : Color(red: 0.40, green: 0.42, blue: 0.46)
+        scheme == .dark ? Color(red: 0.68, green: 0.705, blue: 0.75) : Color(red: 0.32, green: 0.345, blue: 0.4)
     }
 
     public static func textMuted(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.40, green: 0.43, blue: 0.48) : Color(red: 0.60, green: 0.62, blue: 0.66)
+        scheme == .dark ? Color(red: 0.5, green: 0.525, blue: 0.575) : Color(red: 0.47, green: 0.495, blue: 0.545)
     }
 
     public static func codeFont(size: CGFloat = 12.0) -> Font {

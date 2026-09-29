@@ -43,7 +43,7 @@ public struct PaginationBarView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text(String(format: "%.1f ms", executionDurationMs))
                         .font(ThemeTokens.codeFont(size: 11))
@@ -74,7 +74,7 @@ public struct PaginationBarView: View {
             Button(action: onInsertRowClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                     Text("Insert Row")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -90,7 +90,7 @@ public struct PaginationBarView: View {
             Button(action: onDeleteRowClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "trash")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("Delete Row")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -108,7 +108,7 @@ public struct PaginationBarView: View {
             Button(action: onExportClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("Export")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -152,8 +152,8 @@ public struct PaginationBarView: View {
                     onPageChange(0)
                 }) {
                     Image(systemName: "backward.end.fill")
-                        .font(.system(size: 9))
-                        .frame(width: 20, height: 20)
+                        .font(.system(size: 14))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage == 0)
@@ -166,8 +166,8 @@ public struct PaginationBarView: View {
                     }
                 }) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 20, height: 20)
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage == 0)
@@ -223,8 +223,8 @@ public struct PaginationBarView: View {
                     }
                 }) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 20, height: 20)
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage >= totalPages - 1)
@@ -235,8 +235,8 @@ public struct PaginationBarView: View {
                     onPageChange(totalPages - 1)
                 }) {
                     Image(systemName: "forward.end.fill")
-                        .font(.system(size: 9))
-                        .frame(width: 20, height: 20)
+                        .font(.system(size: 14))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage >= totalPages - 1)

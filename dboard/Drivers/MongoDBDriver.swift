@@ -6,7 +6,7 @@ public final class MongoDBDriver: DatabaseDriver {
     public private(set) var metadata: DatabaseMetadata
 
     public var supportsMongoDocuments: Bool { true }
-    public var isDemoData: Bool { true }
+    public var isDemoData: Bool { config.useDemoData }
     private var collectionStore: [String: [DataRow]] = [:]
 
     public init(config: ConnectionConfig) {
@@ -16,7 +16,14 @@ public final class MongoDBDriver: DatabaseDriver {
         self.collectionStore = sample.1
     }
 
+    private func requireDemoData() throws {
+        guard config.useDemoData else {
+            throw NSError(domain: "MongoDBDriver", code: 1, userInfo: [NSLocalizedDescriptionKey: "Live MongoDB connections aren't supported yet. Edit the connection and choose demo data to explore a sample dataset."])
+        }
+    }
+
     public func connect() async throws {
+        try requireDemoData()
         connectionStatus = .connecting
         try await Task.sleep(nanoseconds: 220_000_000)
         connectionStatus = .connected
@@ -33,6 +40,7 @@ public final class MongoDBDriver: DatabaseDriver {
     }
 
     public func testConnection() async throws -> String {
+        try requireDemoData()
         try await Task.sleep(nanoseconds: 150_000_000)
         return "MongoDB v7.0.5 (wire version 21, OpenSSL 3.0.2)"
     }
