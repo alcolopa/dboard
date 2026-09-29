@@ -85,7 +85,10 @@ public struct QueryResultsGridView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let totalWidth = max(CGFloat(result.columns.count * 140 + 40), 400)
+                GeometryReader { geo in
+                // Columns share any spare panel width so the vertical scroller sits at the panel's right edge.
+                let colWidth = max(140, (geo.size.width - 40) / CGFloat(max(result.columns.count, 1)))
+                let totalWidth = max(CGFloat(result.columns.count) * colWidth + 40, 400)
                 ScrollView(.horizontal, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 0) {
                         // Pinned Header
@@ -102,7 +105,7 @@ public struct QueryResultsGridView: View {
                                     .font(ThemeTokens.uiFont(size: 11, weight: .bold))
                                     .foregroundColor(ThemeTokens.textPrimary(for: scheme))
                                     .padding(.horizontal, 6)
-                                    .frame(width: 140, height: 24, alignment: .leading)
+                                    .frame(width: colWidth, height: 24, alignment: .leading)
                                     .background(ThemeTokens.tableHeaderBg(for: scheme))
                                     .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
                             }
@@ -118,6 +121,7 @@ public struct QueryResultsGridView: View {
                                         index: idx,
                                         row: row,
                                         columns: result.columns,
+                                        columnWidth: colWidth,
                                         scheme: scheme
                                     )
                                     .equatable()
@@ -127,6 +131,7 @@ public struct QueryResultsGridView: View {
                         }
                     }
                     .frame(width: totalWidth)
+                }
                 }
             }
         }
@@ -183,12 +188,14 @@ public struct QueryResultRowView: View, Equatable {
     public let index: Int
     public let row: DataRow
     public let columns: [ColumnDefinition]
+    public let columnWidth: CGFloat
     public let scheme: ColorScheme
 
     public static func == (lhs: QueryResultRowView, rhs: QueryResultRowView) -> Bool {
         lhs.index == rhs.index &&
         lhs.row == rhs.row &&
         lhs.columns == rhs.columns &&
+        lhs.columnWidth == rhs.columnWidth &&
         lhs.scheme == rhs.scheme
     }
 
@@ -207,7 +214,7 @@ public struct QueryResultRowView: View, Equatable {
                     .font(val.isNumeric ? ThemeTokens.codeFont(size: 11) : ThemeTokens.uiFont(size: 11))
                     .foregroundColor(val.isNull ? ThemeTokens.textMuted(for: scheme) : ThemeTokens.textPrimary(for: scheme))
                     .padding(.horizontal, 6)
-                    .frame(width: 140, height: 24, alignment: .leading)
+                    .frame(width: columnWidth, height: 24, alignment: .leading)
                     .background(index % 2 == 0 ? ThemeTokens.tableRowEven(for: scheme) : ThemeTokens.tableRowOdd(for: scheme))
                     .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
             }

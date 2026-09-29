@@ -102,7 +102,9 @@ public struct TableDataBrowserView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                tableScrollView
+                GeometryReader { geo in
+                    tableScrollView(viewportWidth: geo.size.width)
+                }
             }
 
             // Bottom Pagination & Latency Bar
@@ -188,11 +190,27 @@ public struct TableDataBrowserView: View {
         return max(colsWidth + 44, 400)
     }
 
-    private var tableScrollView: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
+    /// Column widths for display. When the columns don't fill the panel, the last column
+    /// absorbs the slack so the table (and its vertical scroller) spans the full panel width.
+    private func displayColumnWidths(viewportWidth: CGFloat) -> [String: CGFloat] {
+        var widths: [String: CGFloat] = [:]
+        for col in queryResult.columns {
+            widths[col.name] = columnWidths[col.name] ?? defaultWidthForColumn(col)
+        }
+        let natural = widths.values.reduce(0, +) + 44
+        if let last = queryResult.columns.last, viewportWidth > natural {
+            widths[last.name, default: 0] += viewportWidth - natural
+        }
+        return widths
+    }
+
+    private func tableScrollView(viewportWidth: CGFloat) -> some View {
+        let widths = displayColumnWidths(viewportWidth: viewportWidth)
+        let totalTableWidth = max(self.totalTableWidth, widths.values.reduce(0, +) + 44)
+        return ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
                 // Pinned Header Row (always visible when scrolling vertically)
-                headerRow
+                headerRow(widths: widths)
                     .frame(width: totalTableWidth, height: 26)
                     .zIndex(2)
 
@@ -201,7 +219,7 @@ public struct TableDataBrowserView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(queryResult.rows.enumerated()), id: \.element.id) { index, row in
-                                dataRowView(index: index, row: row)
+                                dataRowView(index: index, row: row, widths: widths)
                             }
                         }
                         .frame(width: totalTableWidth)
@@ -263,7 +281,7 @@ public struct TableDataBrowserView: View {
         ToastManager.shared.show(wholeRow ? "Copied row" : "Copied cell", style: .success, duration: 1.0)
     }
 
-    private var headerRow: some View {
+    private func headerRow(widths: [String: CGFloat]) -> some View {
         HStack(spacing: 0) {
             // Row index column header (#)
             Text("#")
@@ -274,13 +292,13 @@ public struct TableDataBrowserView: View {
                 .border(ThemeTokens.borderColor(for: scheme), width: 0.5)
 
             ForEach(queryResult.columns) { col in
-                let width = columnWidths[col.name] ?? defaultWidthForColumn(col)
+                let width = widths[col.name] ?? defaultWidthForColumn(col)
                 headerCell(col: col, width: width)
             }
         }
     }
 
-    private func dataRowView(index: Int, row: DataRow) -> some View {
+    private func dataRowView(index: Int, row: DataRow, widths: [String: CGFloat]) -> some View {
         let isSelected = row.id == selectedRowId
         let globalIndex = (currentPage * pageSize) + index + 1
         return TableDataRowView(
@@ -288,7 +306,7 @@ public struct TableDataBrowserView: View {
             globalIndex: globalIndex,
             row: row,
             columns: queryResult.columns,
-            columnWidths: columnWidths,
+            columnWidths: widths,
             isSelected: isSelected,
             selectedColumnName: isSelected ? selectedColumnName : nil,
             hasPrimaryKey: hasPrimaryKey,
