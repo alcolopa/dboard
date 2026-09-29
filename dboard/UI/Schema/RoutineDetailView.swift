@@ -44,17 +44,17 @@ public struct RoutineDetailView: View {
                 Button(action: copyCallTemplate) {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 15))
+                            .font(.system(size: 12))
                         Text("Copy Call Template")
                             .font(ThemeTokens.uiFont(size: 11))
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
 
                 Button(action: openInQueryTab) {
                     HStack(spacing: 4) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 15))
+                            .font(.system(size: 12))
                         Text("Open in SQL Editor")
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                     }
@@ -64,7 +64,7 @@ public struct RoutineDetailView: View {
                     .foregroundColor(.white)
                     .cornerRadius(4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -288,7 +288,7 @@ public struct RoutineDetailView: View {
                                 .frame(width: 18, height: 18)
                         } else {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 15))
+                                .font(.system(size: 12))
                         }
                         Text(r.isProcedure ? "Execute Procedure" : "Run Function")
                             .font(ThemeTokens.uiFont(size: 12, weight: .semibold))

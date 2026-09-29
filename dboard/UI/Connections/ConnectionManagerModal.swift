@@ -22,7 +22,7 @@ public struct ConnectionManagerModal: View {
                     Spacer()
                     Button(action: createNewConnection) {
                         Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                     }
                     .buttonStyle(HitAreaButtonStyle(minWidth: 28, minHeight: 28))
                 }
@@ -215,7 +215,7 @@ public struct ConnectionManagerModal: View {
                                 Spacer()
                                 HStack(spacing: 3) {
                                     Image(systemName: "key.fill")
-                                        .font(.system(size: 14))
+                                        .font(.system(size: 12))
                                     Text("Secured via macOS Keychain")
                                         .font(ThemeTokens.uiFont(size: 10))
                                 }
@@ -375,7 +375,7 @@ public struct ConnectionManagerModal: View {
             .cornerRadius(8)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.hit)
     }
 
     private var isCreatingNew: Bool {

@@ -35,7 +35,7 @@ public struct QueryHistoryFavoritesView: View {
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 15))
+                            .font(.system(size: 12))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                         TextField("Search history...", text: $searchHistoryText)
                             .textFieldStyle(.plain)
@@ -43,10 +43,10 @@ public struct QueryHistoryFavoritesView: View {
                         if !searchHistoryText.isEmpty {
                             Button(action: { searchHistoryText = "" }) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 12))
                                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.hit)
                         }
                     }
                     .padding(.horizontal, 6)
@@ -72,7 +72,7 @@ public struct QueryHistoryFavoritesView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 5) {
                                     Image(systemName: "folder.fill")
-                                        .font(.system(size: 15))
+                                        .font(.system(size: 12))
                                         .foregroundColor(ThemeTokens.accentAmber)
                                     Text(folder.name)
                                         .font(ThemeTokens.uiFont(size: 11.5, weight: .bold))
@@ -118,10 +118,10 @@ public struct QueryHistoryFavoritesView: View {
 
                 Button(action: { historyManager.toggleFavorite(id: item.id) }) {
                     Image(systemName: item.isFavorite ? "star.fill" : "star")
-                        .font(.system(size: 14))
+                        .font(.system(size: 12))
                         .foregroundColor(item.isFavorite ? ThemeTokens.accentAmber : ThemeTokens.textMuted(for: scheme))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             Text(item.query)

@@ -142,7 +142,7 @@ public struct GlobalSearchView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
             }
             .padding(14)

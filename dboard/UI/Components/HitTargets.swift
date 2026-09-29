@@ -88,3 +88,20 @@ public struct BoxButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
+
+/// Drop-in replacement for `.plain`: no chrome, but the whole label box (and at least
+/// 22×22) is clickable, so small icon buttons are easy to hit.
+public struct PlainHitButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minWidth: 22, minHeight: 22)
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+extension ButtonStyle where Self == PlainHitButtonStyle {
+    public static var hit: PlainHitButtonStyle { PlainHitButtonStyle() }
+}

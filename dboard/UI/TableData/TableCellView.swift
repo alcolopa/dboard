@@ -72,7 +72,7 @@ public struct TableCellView: View, Equatable {
                             .background(ThemeTokens.bgSecondary(for: scheme))
                             .cornerRadius(3)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                     .help("Set value to NULL")
                 }
                 .padding(.horizontal, 6)
@@ -189,17 +189,17 @@ public struct TableCellView: View, Equatable {
 
         case .saved:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 15))
+                .font(.system(size: 12))
                 .foregroundColor(ThemeTokens.accentEmerald)
                 .transition(.opacity)
 
         case .error(let msg):
             Button(action: { showErrorPopover.toggle() }) {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 16))
+                    .font(.system(size: 13))
                     .foregroundColor(ThemeTokens.accentCrimson)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
             .popover(isPresented: $showErrorPopover) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Database Update Failed")

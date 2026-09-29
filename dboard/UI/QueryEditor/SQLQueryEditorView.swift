@@ -82,7 +82,7 @@ public struct SQLQueryEditorView: View {
             }) {
                 HStack(spacing: 5) {
                     Image(systemName: isExecuting ? "rays" : "play.fill")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     Text("Execute")
                         .font(ThemeTokens.uiFont(size: 11.5, weight: .bold))
                     Text("⌘↵")
@@ -95,7 +95,7 @@ public struct SQLQueryEditorView: View {
                 .foregroundColor(.white)
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
             .disabled(isExecuting)
 
             // Explain Button
@@ -104,7 +104,7 @@ public struct SQLQueryEditorView: View {
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "chart.bar.doc.horizontal")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     Text("Explain")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -114,13 +114,13 @@ public struct SQLQueryEditorView: View {
                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
 
             // Format Button
             Button(action: formatSQL) {
                 HStack(spacing: 4) {
                     Image(systemName: "text.alignleft")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     Text("Format")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -130,18 +130,18 @@ public struct SQLQueryEditorView: View {
                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
 
             // Clear Button
             Button(action: { queryText = "" }) {
                 Image(systemName: "trash")
-                    .font(.system(size: 15))
+                    .font(.system(size: 12))
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     .frame(width: 32, height: 28)
                     .background(ThemeTokens.bgSecondary(for: scheme))
                     .cornerRadius(4)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
 
             Spacer()
 
@@ -151,7 +151,7 @@ public struct SQLQueryEditorView: View {
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                     Text("History")
                         .font(ThemeTokens.uiFont(size: 11))
                 }
@@ -161,7 +161,7 @@ public struct SQLQueryEditorView: View {
                 .foregroundColor(showHistoryDrawer ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
                 .cornerRadius(5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.hit)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -206,7 +206,7 @@ public struct SQLQueryEditorView: View {
                         .font(ThemeTokens.uiFont(size: 11, weight: activeResultTab == 0 ? .bold : .regular))
                         .foregroundColor(activeResultTab == 0 ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
 
                 if queryResult?.explainPlan != nil {
                     Button(action: { activeResultTab = 1 }) {
@@ -214,7 +214,7 @@ public struct SQLQueryEditorView: View {
                             .font(ThemeTokens.uiFont(size: 11, weight: activeResultTab == 1 ? .bold : .regular))
                             .foregroundColor(activeResultTab == 1 ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
 
                 Spacer()

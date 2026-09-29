@@ -142,7 +142,7 @@ public struct CommandPaletteView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
 
                 Text("ESC to dismiss")

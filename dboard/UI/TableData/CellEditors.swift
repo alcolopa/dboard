@@ -33,7 +33,7 @@ public struct JSONEditorSheet: View {
                     Image(systemName: "xmark")
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             if let err = validationError {

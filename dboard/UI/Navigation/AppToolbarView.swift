@@ -11,7 +11,22 @@ public struct AppToolbarView: View {
     @Environment(\.colorScheme) var scheme
 
     public var body: some View {
-        HStack(spacing: 12) {
+        ViewThatFits(in: .horizontal) {
+            toolbar(compact: false)
+            toolbar(compact: true)
+        }
+        .frame(maxWidth: .infinity)
+        .background(ThemeTokens.bgPrimary(for: scheme))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(ThemeTokens.borderColor(for: scheme)),
+            alignment: .bottom
+        )
+    }
+
+    private func toolbar(compact: Bool) -> some View {
+        HStack(spacing: compact ? 8 : 12) {
             // Connection Selector Dropdown
             Menu {
                 ForEach(connectionManager.savedConnections) { conn in
@@ -50,7 +65,7 @@ public struct AppToolbarView: View {
                             .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                     }
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 14))
+                        .font(.system(size: 12))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                 }
                 .padding(.horizontal, 8)
@@ -82,13 +97,13 @@ public struct AppToolbarView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "cylinder")
-                            .font(.system(size: 15))
+                            .font(.system(size: 12))
                             .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                         Text(connectionManager.activeDatabase)
                             .font(ThemeTokens.uiFont(size: 12, weight: .medium))
                             .foregroundColor(ThemeTokens.textPrimary(for: scheme))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 13))
+                            .font(.system(size: 11))
                             .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     }
                     .padding(.horizontal, 6)
@@ -111,13 +126,13 @@ public struct AppToolbarView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 15))
+                                .font(.system(size: 12))
                                 .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                             Text(connectionManager.activeSchema)
                                 .font(ThemeTokens.uiFont(size: 12, weight: .medium))
                                 .foregroundColor(ThemeTokens.textPrimary(for: scheme))
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 13))
+                                .font(.system(size: 11))
                                 .foregroundColor(ThemeTokens.textMuted(for: scheme))
                         }
                         .padding(.horizontal, 6)
@@ -139,9 +154,11 @@ public struct AppToolbarView: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 16))
-                        Text("New Query")
-                            .font(ThemeTokens.uiFont(size: 11.5, weight: .medium))
+                            .font(.system(size: 13))
+                        if !compact {
+                            Text("New Query")
+                                .font(ThemeTokens.uiFont(size: 11.5, weight: .medium))
+                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -149,7 +166,7 @@ public struct AppToolbarView: View {
                     .foregroundColor(ThemeTokens.accentBlue)
                     .cornerRadius(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Open New SQL Query Tab (⌘N)")
 
                 // Command Palette Shortcut
@@ -158,9 +175,11 @@ public struct AppToolbarView: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "command")
-                            .font(.system(size: 15))
-                        Text("⌘K")
-                            .font(ThemeTokens.codeFont(size: 11))
+                            .font(.system(size: 12))
+                        if !compact {
+                            Text("⌘K")
+                                .font(ThemeTokens.codeFont(size: 11))
+                        }
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)
@@ -168,7 +187,7 @@ public struct AppToolbarView: View {
                     .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                     .cornerRadius(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Command Palette (⌘K)")
 
                 // Global Search Button
@@ -176,13 +195,13 @@ public struct AppToolbarView: View {
                     isGlobalSearchOpen = true
                 }) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.textSecondary(for: scheme))
-                        .frame(width: 32, height: 30)
+                        .frame(width: 28, height: 26)
                         .background(ThemeTokens.bgSecondary(for: scheme))
                         .cornerRadius(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Search Database Objects (⌘P)")
 
                 // Refresh Button
@@ -193,13 +212,13 @@ public struct AppToolbarView: View {
                     }
                 }) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.textSecondary(for: scheme))
-                        .frame(width: 32, height: 30)
+                        .frame(width: 28, height: 26)
                         .background(ThemeTokens.bgSecondary(for: scheme))
                         .cornerRadius(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Refresh Database (⌘R)")
 
                 // Theme Toggle
@@ -207,13 +226,13 @@ public struct AppToolbarView: View {
                     appSettings.theme = (appSettings.theme == .dark) ? .light : .dark
                 }) {
                     Image(systemName: appSettings.theme == .dark ? "moon.fill" : "sun.max.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.textSecondary(for: scheme))
-                        .frame(width: 32, height: 30)
+                        .frame(width: 28, height: 26)
                         .background(ThemeTokens.bgSecondary(for: scheme))
                         .cornerRadius(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Toggle Theme (Dark / Light)")
 
                 // Inspector Toggle
@@ -221,24 +240,18 @@ public struct AppToolbarView: View {
                     withAnimation { isInspectorOpen.toggle() }
                 }) {
                     Image(systemName: "sidebar.right")
-                        .font(.system(size: 16))
+                        .font(.system(size: 13))
                         .foregroundColor(isInspectorOpen ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
-                        .frame(width: 32, height: 30)
+                        .frame(width: 28, height: 26)
                         .background(ThemeTokens.bgSecondary(for: scheme))
                         .cornerRadius(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
                 .help("Toggle Inspector Panel (⌥⌘I)")
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(ThemeTokens.bgPrimary(for: scheme))
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(ThemeTokens.borderColor(for: scheme)),
-            alignment: .bottom
-        )
+        .lineLimit(1)
     }
 }

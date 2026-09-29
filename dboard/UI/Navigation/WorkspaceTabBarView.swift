@@ -12,7 +12,7 @@ public struct WorkspaceTabBarView: View {
                         let isActive = tab.id == tabManager.activeTabId
                         HStack(spacing: 7) {
                             Image(systemName: tab.iconName)
-                                .font(.system(size: 16))
+                                .font(.system(size: 13))
                                 .foregroundColor(isActive ? ThemeTokens.accentBlue : ThemeTokens.textSecondary(for: scheme))
 
                             Text(tab.title)
@@ -24,12 +24,12 @@ public struct WorkspaceTabBarView: View {
                                 tabManager.closeTab(id: tab.id)
                             }) {
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
                                     .frame(width: 18, height: 18)
                                     .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.hit)
                             .opacity(isActive ? 0.9 : 0.4)
                         }
                         .padding(.horizontal, 10)
@@ -80,7 +80,7 @@ public struct WorkspaceTabBarView: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(ThemeTokens.textSecondary(for: scheme))
                     .frame(width: 34, height: 32)
                     .contentShape(Rectangle())

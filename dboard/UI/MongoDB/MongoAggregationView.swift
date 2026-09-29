@@ -43,7 +43,7 @@ public struct MongoAggregationView: View {
                     }) {
                         HStack(spacing: 4) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 14))
+                                .font(.system(size: 12))
                             Text("Run Pipeline")
                                 .font(ThemeTokens.uiFont(size: 11, weight: .bold))
                         }
@@ -53,7 +53,7 @@ public struct MongoAggregationView: View {
                         .foregroundColor(.white)
                         .cornerRadius(5)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hit)
                 }
                 .padding(10)
                 .background(ThemeTokens.bgElevated(for: scheme))
@@ -131,10 +131,10 @@ public struct MongoAggregationView: View {
                     stages.remove(at: index)
                 }) {
                     Image(systemName: "trash")
-                        .font(.system(size: 15))
+                        .font(.system(size: 12))
                         .foregroundColor(ThemeTokens.accentCrimson)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.hit)
             }
 
             TextEditor(text: Binding(
