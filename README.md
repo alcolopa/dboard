@@ -111,6 +111,10 @@ Built with **Swift & SwiftUI** targeting macOS 14.0+, utilizing native macOS App
 
 ---
 
+## 🌐 Website
+
+A landing page lives in [`docs/`](docs/index.html) and deploys automatically to GitHub Pages via `.github/workflows/pages.yml` whenever `docs/` changes on `main`. One-time setup: in **Settings → Pages**, set **Source** to **GitHub Actions**.
+
 ## 📦 Building & Running
 
 ### Option 0: Download a Release
