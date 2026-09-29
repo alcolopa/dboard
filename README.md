@@ -113,6 +113,14 @@ Built with **Swift & SwiftUI** targeting macOS 14.0+, utilizing native macOS App
 
 ## 📦 Building & Running
 
+### Option 0: Download a Release
+Every push of a `v*` tag (or a manual run of the **Release** workflow) builds `dboard.app` on GitHub Actions and attaches a zip to a [GitHub Release](../../releases). Download it, unzip, and drag `dboard.app` to `/Applications`.
+
+Since the app isn't notarized/signed, macOS Gatekeeper will block the first launch. Either right-click → **Open** and confirm, or run:
+```bash
+xattr -cr /Applications/dboard.app
+```
+
 ### Option 1: Standalone Build Script
 Run the automated build script to compile the native `dboard.app` bundle:
 ```bash
