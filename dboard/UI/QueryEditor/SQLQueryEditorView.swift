@@ -42,7 +42,7 @@ public struct SQLQueryEditorView: View {
                 editorToolbar
 
                 // Split: Top Editor, Bottom Results
-                VSplitView {
+                VResizableSplit(initialHeight: 220, minTop: 120, minBottom: 140) {
                     // SQL Text Editor with Line Numbers & Autocomplete
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(alignment: .top, spacing: 0) {
@@ -57,11 +57,9 @@ public struct SQLQueryEditorView: View {
                                 .background(ThemeTokens.bgPrimary(for: scheme))
                         }
                     }
-                    .frame(minHeight: 120, idealHeight: 220)
-
+                } bottom: {
                     // Results Panel
                     resultsPanel
-                        .frame(minHeight: 140)
                 }
             }
 
