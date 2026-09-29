@@ -24,6 +24,7 @@ public struct TableDataBrowserView: View {
     @State private var isDeleteRowModalOpen: Bool = false
     @State private var insertValues: [String: String] = [:]
     @State private var editingJSONContext: (row: DataRow, column: ColumnDefinition, value: String)? = nil
+    @FocusState private var gridFocused: Bool
     @Environment(\.colorScheme) var scheme
 
     private var tableMeta: TableMetadata? {
@@ -196,17 +197,70 @@ public struct TableDataBrowserView: View {
                     .zIndex(2)
 
                 // High-performance single-axis virtualized vertical scroll view
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(queryResult.rows.enumerated()), id: \.element.id) { index, row in
-                            dataRowView(index: index, row: row)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(queryResult.rows.enumerated()), id: \.element.id) { index, row in
+                                dataRowView(index: index, row: row)
+                            }
                         }
+                        .frame(width: totalTableWidth)
                     }
-                    .frame(width: totalTableWidth)
+                    .onChange(of: selectedRowId) { _, newId in
+                        if let newId { proxy.scrollTo(newId) }
+                    }
                 }
             }
             .frame(width: totalTableWidth)
         }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($gridFocused)
+        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+            moveSelection(for: press.key)
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "c"), phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            copySelection(wholeRow: press.modifiers.contains(.shift))
+            return .handled
+        }
+    }
+
+    private func moveSelection(for key: KeyEquivalent) {
+        let rows = queryResult.rows
+        let cols = queryResult.columns
+        guard !rows.isEmpty, !cols.isEmpty else { return }
+
+        let rowIdx = rows.firstIndex(where: { $0.id == selectedRowId }) ?? -1
+        let colIdx = cols.firstIndex(where: { $0.name == selectedColumnName }) ?? 0
+
+        var newRow = max(rowIdx, 0)
+        var newCol = colIdx
+        switch key {
+        case .upArrow: newRow = max(0, rowIdx - 1)
+        case .downArrow: newRow = min(rows.count - 1, rowIdx + 1)
+        case .leftArrow: newCol = max(0, colIdx - 1)
+        case .rightArrow: newCol = min(cols.count - 1, colIdx + 1)
+        default: return
+        }
+        selectedRowId = rows[newRow].id
+        selectedColumnName = cols[newCol].name
+    }
+
+    private func copySelection(wholeRow: Bool) {
+        guard let row = queryResult.rows.first(where: { $0.id == selectedRowId }) else { return }
+        let text: String
+        if wholeRow {
+            text = queryResult.columns.map { row[$0.name].displayText }.joined(separator: "\t")
+        } else if let colName = selectedColumnName {
+            text = row[colName].displayText
+        } else {
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        ToastManager.shared.show(wholeRow ? "Copied row" : "Copied cell", style: .success, duration: 1.0)
     }
 
     private var headerRow: some View {
@@ -241,8 +295,10 @@ public struct TableDataBrowserView: View {
             scheme: scheme,
             onSelectRow: {
                 selectedRowId = row.id
+                gridFocused = true
             },
             onSelectCell: { colName in
+                gridFocused = true
                 selectedRowId = row.id
                 selectedColumnName = colName
             },
