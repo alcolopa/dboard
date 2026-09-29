@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>dboard — Native macOS Database Client</title>
+<meta name="description" content="A fast, native macOS database client for PostgreSQL, MySQL, and MongoDB with instant cell editing and production-safety guardrails." />
+<link rel="icon" href="AppIcon-1024.png" />
+<style>
+  :root{
+    --bg:#0b0d11;
+    --bg-elev:#12151b;
+    --border:#22262f;
+    --text:#e9edf3;
+    --text-dim:#9aa4b2;
+    --accent:#5b8cff;
+    --accent-2:#7dd6c1;
+    --danger:#ef6a6a;
+    --radius:12px;
+    --maxw:1080px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#fafafa;
+      --bg-elev:#ffffff;
+      --border:#e6e8ec;
+      --text:#14171c;
+      --text-dim:#5b6472;
+      --accent:#3860e0;
+      --accent-2:#128a72;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px;}
+
+  header.nav{
+    border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:saturate(180%) blur(10px);
+    z-index:10;
+  }
+  .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;color:var(--text);}
+  .brand img{width:24px;height:24px;border-radius:6px;}
+  .nav-links{display:flex;gap:24px;align-items:center;}
+  .nav-links a{color:var(--text-dim);font-size:14px;font-weight:500;}
+  .nav-links a:hover{color:var(--text);text-decoration:none;}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:10px 18px;border-radius:8px;
+    font-size:14px;font-weight:600;
+    border:1px solid transparent;
+  }
+  .btn:hover{text-decoration:none;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{opacity:0.92;}
+  .btn-ghost{border-color:var(--border);color:var(--text);}
+  .btn-ghost:hover{background:var(--bg-elev);}
+
+  .hero{padding:88px 0 64px;text-align:center;}
+  .eyebrow{
+    display:inline-block;font-size:13px;font-weight:600;color:var(--accent-2);
+    background:color-mix(in srgb, var(--accent-2) 14%, transparent);
+    border:1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
+    padding:4px 12px;border-radius:999px;margin-bottom:20px;
+  }
+  h1{font-size:clamp(34px,5vw,56px);line-height:1.08;letter-spacing:-0.02em;margin:0 0 18px;}
+  h1 span{color:var(--accent);}
+  .lede{font-size:19px;color:var(--text-dim);max-width:640px;margin:0 auto 36px;}
+  .cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:14px;}
+  .subnote{font-size:13px;color:var(--text-dim);}
+  .subnote code{background:var(--bg-elev);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;}
+
+  .shot{
+    margin:56px auto 0;max-width:var(--maxw);
+    border-radius:var(--radius);
+    border:1px solid var(--border);
+    background:linear-gradient(180deg, var(--bg-elev), var(--bg));
+    padding:48px 24px;text-align:center;color:var(--text-dim);font-size:14px;
+  }
+
+  section{padding:72px 0;border-top:1px solid var(--border);}
+  .section-head{text-align:center;max-width:600px;margin:0 auto 44px;}
+  .section-head h2{font-size:30px;letter-spacing:-0.01em;margin:0 0 10px;}
+  .section-head p{color:var(--text-dim);margin:0;}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+  @media (max-width:820px){.grid{grid-template-columns:1fr;}}
+  .card{
+    background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+    padding:24px;
+  }
+  .card .icon{
+    width:36px;height:36px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    background:color-mix(in srgb, var(--accent) 16%, transparent);
+    color:var(--accent);font-size:18px;margin-bottom:14px;
+  }
+  .card h3{font-size:16px;margin:0 0 8px;}
+  .card p{font-size:14px;color:var(--text-dim);margin:0;}
+
+  .engines{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
+  .pill{
+    border:1px solid var(--border);background:var(--bg-elev);
+    border-radius:999px;padding:10px 20px;font-size:14px;font-weight:600;
+  }
+
+  table.kb{width:100%;border-collapse:collapse;font-size:14px;}
+  table.kb th, table.kb td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);}
+  table.kb th{color:var(--text-dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;}
+  table.kb kbd{
+    background:var(--bg-elev);border:1px solid var(--border);border-bottom-width:2px;
+    border-radius:6px;padding:2px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+  }
+
+  .safety{
+    display:flex;align-items:flex-start;gap:14px;
+    background:color-mix(in srgb, var(--danger) 10%, var(--bg-elev));
+    border:1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+    border-radius:var(--radius);padding:20px 22px;
+  }
+  .safety .dot{width:10px;height:10px;border-radius:50%;background:var(--danger);margin-top:6px;flex-shrink:0;}
+  .safety strong{display:block;margin-bottom:4px;}
+  .safety p{margin:0;color:var(--text-dim);font-size:14px;}
+
+  footer{border-top:1px solid var(--border);padding:32px 0;}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
+  footer p{color:var(--text-dim);font-size:13px;margin:0;}
+  footer .links{display:flex;gap:18px;}
+  footer .links a{color:var(--text-dim);font-size:13px;}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <div class="brand"><img src="AppIcon-1024.png" alt="" /> dboard</div>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#engines">Engines</a>
+      <a href="#shortcuts">Shortcuts</a>
+      <a href="https://github.com/alcolopa/dboard" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap" style="border-top:none;padding-top:88px;">
+    <span class="eyebrow">macOS 14+ · Swift &amp; SwiftUI · Free &amp; Open Source</span>
+    <h1>A native database client<br/>built for <span>speed and trust</span></h1>
+    <p class="lede">
+      dboard is a fast, native macOS client for PostgreSQL, MySQL, and MongoDB —
+      inspired by Sequel Pro, polished like TablePlus and Linear. Edit data instantly,
+      with production safeguards that keep you from breaking things.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">⌘ Download for macOS</a>
+      <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">View Source</a>
+    </div>
+    <p class="subnote">Unsigned build — after unzipping, run <code>xattr -cr dboard.app</code> to bypass Gatekeeper.</p>
+  </section>
+
+  <div class="wrap">
+    <div class="shot">
+      Three-pane workspace · Connection sidebar · Query editor · Live inspector
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Zero-friction editing</h2>
+        <p>No Save button. Every change writes to the database the moment you confirm it.</p>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="icon">⚡</div>
+          <h3>Instant Cell Editing</h3>
+          <p>Double-click or press Enter to edit any cell. Tab, Enter, or click away and the write executes immediately, with inline spinner, checkmark, and error states.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🔑</div>
+          <h3>Safe Automatic Writes</h3>
+          <p>Detects primary keys — including composite keys — and uses strict parameterized statements. Tables without a unique identifier are locked from inline mutation.</p>
+        </div>
+        <div class="card">
+          <div class="icon">↩︎</div>
+          <h3>Reversible Undo</h3>
+          <p>Every cell update, row insert, and DDL execution is recorded. ⌘Z reverts the actual database operation, not just the UI state.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🛡️</div>
+          <h3>Production Guardrails</h3>
+          <p>Tag connections as Production, Staging, Development, or Local. Destructive statements against Production require a typed confirmation.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🔐</div>
+          <h3>Keychain-Backed Secrets</h3>
+          <p>Passwords and connection credentials live in the macOS Keychain — never logged, never stored in plaintext.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🔍</div>
+          <h3>Command Palette &amp; Search</h3>
+          <p>⌘K for fuzzy command and connection switching, ⌘P for instant global search across tables, columns, routines, and views.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="engines">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Speaks your database</h2>
+        <p>One client, three engines — each with a UI shaped for how that data actually works.</p>
+      </div>
+      <div class="engines">
+        <span class="pill">PostgreSQL</span>
+        <span class="pill">MySQL / MariaDB</span>
+        <span class="pill">MongoDB</span>
+      </div>
+      <div style="height:36px;"></div>
+      <div class="safety">
+        <span class="dot"></span>
+        <div>
+          <strong>MongoDB gets its own experience.</strong>
+          <p>Document cards, a raw JSON editor with schema validation, and a visual aggregation pipeline builder — never forced into a relational grid.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="shortcuts">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Built for the keyboard</h2>
+        <p>Every core action has a shortcut, so your hands never leave the keys.</p>
+      </div>
+      <table class="kb">
+        <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>⌘K</kbd></td><td>Open Command Palette</td></tr>
+          <tr><td><kbd>⌘P</kbd></td><td>Global Object Search</td></tr>
+          <tr><td><kbd>⌘N</kbd></td><td>New SQL Query Tab</td></tr>
+          <tr><td><kbd>⌘↵</kbd></td><td>Execute Query / Current Statement</td></tr>
+          <tr><td><kbd>⌘W</kbd></td><td>Close Active Tab</td></tr>
+          <tr><td><kbd>⇧⌘T</kbd></td><td>Reopen Recently Closed Tab</td></tr>
+          <tr><td><kbd>⌘R</kbd></td><td>Refresh Database Metadata</td></tr>
+          <tr><td><kbd>⌘Z</kbd></td><td>Undo Most Recent Database Edit</td></tr>
+          <tr><td><kbd>⌥⌘I</kbd></td><td>Toggle Context Inspector Panel</td></tr>
+          <tr><td><kbd>↵</kbd></td><td>Edit Cell in Table Grid</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap" style="text-align:center;">
+      <div class="section-head" style="margin-bottom:28px;">
+        <h2>Get dboard</h2>
+        <p>Prebuilt releases are published automatically from GitHub Actions on every tagged version.</p>
+      </div>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Download latest release</a>
+        <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard#-building--running">Build from source</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>dboard — a native macOS database client.</p>
+    <div class="links">
+      <a href="https://github.com/alcolopa/dboard">GitHub</a>
+      <a href="https://github.com/alcolopa/dboard/releases">Releases</a>
+      <a href="https://github.com/alcolopa/dboard/issues">Issues</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
