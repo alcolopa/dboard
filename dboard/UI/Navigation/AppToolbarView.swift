@@ -11,7 +11,22 @@ public struct AppToolbarView: View {
     @Environment(\.colorScheme) var scheme
 
     public var body: some View {
-        HStack(spacing: 12) {
+        ViewThatFits(in: .horizontal) {
+            toolbar(compact: false)
+            toolbar(compact: true)
+        }
+        .frame(maxWidth: .infinity)
+        .background(ThemeTokens.bgPrimary(for: scheme))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(ThemeTokens.borderColor(for: scheme)),
+            alignment: .bottom
+        )
+    }
+
+    private func toolbar(compact: Bool) -> some View {
+        HStack(spacing: compact ? 8 : 12) {
             // Connection Selector Dropdown
             Menu {
                 ForEach(connectionManager.savedConnections) { conn in
@@ -140,8 +155,10 @@ public struct AppToolbarView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 13))
-                        Text("New Query")
-                            .font(ThemeTokens.uiFont(size: 11.5, weight: .medium))
+                        if !compact {
+                            Text("New Query")
+                                .font(ThemeTokens.uiFont(size: 11.5, weight: .medium))
+                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -159,8 +176,10 @@ public struct AppToolbarView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "command")
                             .font(.system(size: 12))
-                        Text("⌘K")
-                            .font(ThemeTokens.codeFont(size: 11))
+                        if !compact {
+                            Text("⌘K")
+                                .font(ThemeTokens.codeFont(size: 11))
+                        }
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)
@@ -233,12 +252,6 @@ public struct AppToolbarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(ThemeTokens.bgPrimary(for: scheme))
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(ThemeTokens.borderColor(for: scheme)),
-            alignment: .bottom
-        )
+        .lineLimit(1)
     }
 }
