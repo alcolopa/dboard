@@ -82,7 +82,7 @@ public struct SQLQueryEditorView: View {
             }) {
                 HStack(spacing: 5) {
                     Image(systemName: isExecuting ? "rays" : "play.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("Execute")
                         .font(ThemeTokens.uiFont(size: 11.5, weight: .bold))
                     Text("⌘↵")
@@ -104,7 +104,7 @@ public struct SQLQueryEditorView: View {
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "chart.bar.doc.horizontal")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("Explain")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -120,7 +120,7 @@ public struct SQLQueryEditorView: View {
             Button(action: formatSQL) {
                 HStack(spacing: 4) {
                     Image(systemName: "text.alignleft")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("Format")
                         .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                 }
@@ -135,9 +135,9 @@ public struct SQLQueryEditorView: View {
             // Clear Button
             Button(action: { queryText = "" }) {
                 Image(systemName: "trash")
-                    .font(.system(size: 10))
+                    .font(.system(size: 15))
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
-                    .frame(width: 24, height: 22)
+                    .frame(width: 32, height: 28)
                     .background(ThemeTokens.bgSecondary(for: scheme))
                     .cornerRadius(4)
             }
@@ -151,7 +151,7 @@ public struct SQLQueryEditorView: View {
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 10))
+                        .font(.system(size: 15))
                     Text("History")
                         .font(ThemeTokens.uiFont(size: 11))
                 }
@@ -238,7 +238,7 @@ public struct SQLQueryEditorView: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "bolt.badge.clock")
-                        .font(.system(size: 24))
+                        .font(.system(size: 28))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text("Press ⌘↵ or Click Execute to run your query")
                         .font(ThemeTokens.uiFont(size: 12))

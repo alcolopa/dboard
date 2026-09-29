@@ -42,7 +42,7 @@ public struct TableDataBrowserView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(ThemeTokens.accentAmber)
-                        .font(.system(size: 12))
+                        .font(.system(size: 16))
 
                     Text("No Primary Key Detected: Automatic inline editing is restricted for '\(tableName)' to prevent unintended multi-row modifications.")
                         .font(ThemeTokens.uiFont(size: 11.5, weight: .medium))
@@ -90,7 +90,7 @@ public struct TableDataBrowserView: View {
             } else if queryResult.rows.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "tray")
-                        .font(.system(size: 28))
+                        .font(.system(size: 32))
                         .foregroundColor(ThemeTokens.textMuted(for: scheme))
                     Text("No records found in \(tableName)")
                         .font(ThemeTokens.uiFont(size: 13, weight: .medium))
@@ -320,11 +320,11 @@ public struct TableDataBrowserView: View {
             HStack(spacing: 4) {
                 if col.isPrimaryKey {
                     Image(systemName: "key.fill")
-                        .font(.system(size: 8))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.accentAmber)
                 } else if col.isForeignKey {
                     Image(systemName: "arrow.turn.down.right")
-                        .font(.system(size: 8))
+                        .font(.system(size: 13))
                         .foregroundColor(ThemeTokens.accentBlue)
                 }
 
@@ -342,7 +342,7 @@ public struct TableDataBrowserView: View {
 
                 if sortColumn == col.name {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(ThemeTokens.accentBlue)
                 }
             }

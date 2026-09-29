@@ -6,7 +6,7 @@ public final class MySQLDriver: DatabaseDriver {
     public private(set) var metadata: DatabaseMetadata
 
     private var tableDataStore: [String: [DataRow]] = [:]
-    public var isDemoData: Bool { true }
+    public var isDemoData: Bool { config.useDemoData }
 
     public init(config: ConnectionConfig) {
         self.config = config
@@ -15,7 +15,14 @@ public final class MySQLDriver: DatabaseDriver {
         self.tableDataStore = sample.1
     }
 
+    private func requireDemoData() throws {
+        guard config.useDemoData else {
+            throw NSError(domain: "MySQLDriver", code: 1, userInfo: [NSLocalizedDescriptionKey: "Live MySQL connections aren't supported yet. Edit the connection and choose demo data to explore a sample dataset."])
+        }
+    }
+
     public func connect() async throws {
+        try requireDemoData()
         connectionStatus = .connecting
         try await Task.sleep(nanoseconds: 200_000_000)
         connectionStatus = .connected
@@ -32,6 +39,7 @@ public final class MySQLDriver: DatabaseDriver {
     }
 
     public func testConnection() async throws -> String {
+        try requireDemoData()
         try await Task.sleep(nanoseconds: 180_000_000)
         return "8.0.36-MySQL Community Server - GPL"
     }

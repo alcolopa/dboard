@@ -189,14 +189,14 @@ public struct TableCellView: View, Equatable {
 
         case .saved:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 10))
+                .font(.system(size: 15))
                 .foregroundColor(ThemeTokens.accentEmerald)
                 .transition(.opacity)
 
         case .error(let msg):
             Button(action: { showErrorPopover.toggle() }) {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 11))
+                    .font(.system(size: 16))
                     .foregroundColor(ThemeTokens.accentCrimson)
             }
             .buttonStyle(.plain)

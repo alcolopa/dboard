@@ -26,7 +26,7 @@ public struct ExportModalView: View {
             HStack {
                 Image(systemName: "square.and.arrow.up")
                     .foregroundColor(ThemeTokens.accentBlue)
-                    .font(.system(size: 16))
+                    .font(.system(size: 20))
 
                 Text("Export Data: \(tableName)")
                     .font(ThemeTokens.uiFont(size: 14, weight: .semibold))

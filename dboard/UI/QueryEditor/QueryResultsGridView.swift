@@ -36,7 +36,7 @@ public struct QueryResultsGridView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "xmark.octagon.fill")
                             .foregroundColor(ThemeTokens.accentCrimson)
-                            .font(.system(size: 12))
+                            .font(.system(size: 16))
                         Text(err)
                             .font(ThemeTokens.uiFont(size: 11, weight: .medium))
                             .foregroundColor(ThemeTokens.accentCrimson)

@@ -23,7 +23,7 @@ public struct DestructiveConfirmationModal: View {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.octagon.fill")
                     .foregroundColor(ThemeTokens.accentCrimson)
-                    .font(.system(size: 20))
+                    .font(.system(size: 24))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)

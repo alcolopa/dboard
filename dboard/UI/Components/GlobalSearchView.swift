@@ -130,7 +130,7 @@ public struct GlobalSearchView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(ThemeTokens.accentBlue)
-                    .font(.system(size: 15))
+                    .font(.system(size: 19))
 
                 TextField("Search tables, columns, views, functions, collections... (⌘P)", text: $query)
                     .textFieldStyle(.plain)
@@ -165,7 +165,7 @@ public struct GlobalSearchView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: item.type.iconName)
                                     .foregroundColor(ThemeTokens.accentBlue)
-                                    .frame(width: 16)
+                                    .frame(width: 22)
                                     .font(.system(size: 12))
 
                                 VStack(alignment: .leading, spacing: 2) {
