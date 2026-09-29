@@ -38,7 +38,23 @@ public struct PaginationBarView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
+        ViewThatFits(in: .horizontal) {
+            bar(compact: false)
+            bar(compact: true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(ThemeTokens.bgElevated(for: scheme))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(ThemeTokens.borderColor(for: scheme)),
+            alignment: .top
+        )
+    }
+
+    private func bar(compact: Bool) -> some View {
+        HStack(spacing: compact ? 6 : 12) {
             // Execution info
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
@@ -53,7 +69,9 @@ public struct PaginationBarView: View {
                 Text("•")
                     .foregroundColor(ThemeTokens.textMuted(for: scheme))
 
-                Text("Showing \(formatNumber(startRowIndex))–\(formatNumber(endRowIndex)) of \(formatNumber(totalRows)) rows")
+                Text(compact
+                     ? "\(formatNumber(totalRows)) rows"
+                     : "Showing \(formatNumber(startRowIndex))–\(formatNumber(endRowIndex)) of \(formatNumber(totalRows)) rows")
                     .font(ThemeTokens.uiFont(size: 11))
                     .foregroundColor(ThemeTokens.textSecondary(for: scheme))
 
@@ -75,8 +93,10 @@ public struct PaginationBarView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .bold))
-                    Text("Insert Row")
-                        .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                    if !compact {
+                        Text("Insert Row")
+                            .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -85,14 +105,17 @@ public struct PaginationBarView: View {
                 .cornerRadius(4)
             }
             .buttonStyle(.plain)
+            .help("Insert a new row")
 
             // Delete Row Button
             Button(action: onDeleteRowClick) {
                 HStack(spacing: 3) {
                     Image(systemName: "trash")
                         .font(.system(size: 15))
-                    Text("Delete Row")
-                        .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                    if !compact {
+                        Text("Delete Row")
+                            .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -109,8 +132,10 @@ public struct PaginationBarView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 15))
-                    Text("Export")
-                        .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                    if !compact {
+                        Text("Export")
+                            .font(ThemeTokens.uiFont(size: 11, weight: .medium))
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -119,6 +144,7 @@ public struct PaginationBarView: View {
                 .cornerRadius(4)
             }
             .buttonStyle(.plain)
+            .help("Export")
 
             Divider()
                 .frame(height: 14)
@@ -126,9 +152,11 @@ public struct PaginationBarView: View {
 
             // Page size picker
             HStack(spacing: 4) {
-                Text("Page size:")
-                    .font(ThemeTokens.uiFont(size: 11))
-                    .foregroundColor(ThemeTokens.textMuted(for: scheme))
+                if !compact {
+                    Text("Page size:")
+                        .font(ThemeTokens.uiFont(size: 11))
+                        .foregroundColor(ThemeTokens.textMuted(for: scheme))
+                }
 
                 Picker("", selection: $pageSize) {
                     Text("25").tag(25)
@@ -244,14 +272,6 @@ public struct PaginationBarView: View {
             }
             .foregroundColor(ThemeTokens.textSecondary(for: scheme))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(ThemeTokens.bgElevated(for: scheme))
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(ThemeTokens.borderColor(for: scheme)),
-            alignment: .top
-        )
+        .lineLimit(1)
     }
 }
