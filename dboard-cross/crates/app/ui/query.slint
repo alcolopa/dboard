@@ -1,0 +1,100 @@
+import { TextEdit, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
+import { Btn, Chip } from "widgets.slint";
+
+export component QueryEditor inherits VerticalLayout {
+    spacing: 6px;
+    padding: 8px;
+    Rectangle {
+        height: 150px;
+        border-radius: 6px; border-width: 1px; border-color: Theme.line; background: Theme.panel;
+        TextEdit {
+            width: parent.width; height: parent.height;
+            text <=> AppState.query-text;
+            font-size: AppState.set-font-size * 1px;
+            edited(t) => { AppState.query-edited(t); }
+        }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Btn { text: "▶ Run"; primary: true; clicked => { AppState.run-query(AppState.query-text); } }
+        Btn { text: "Explain"; clicked => { AppState.explain-query(AppState.query-text, false); } }
+        if AppState.db-type != 2: Btn { text: "Explain analyze"; clicked => { AppState.explain-query(AppState.query-text, true); } }
+        Btn { text: "Save…"; clicked => { AppState.open-save-query(); } }
+        Btn { text: "History & saved"; clicked => { AppState.drawer-open = !AppState.drawer-open; } }
+        Rectangle { horizontal-stretch: 1; }
+        Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
+    }
+    if AppState.db-type == 2: HorizontalLayout {
+        spacing: 6px; alignment: start;
+        Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+        for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Chip { text: t; clicked => { AppState.insert-template(t); } }
+    }
+    if AppState.suggestions.length > 0: HorizontalLayout {
+        spacing: 6px; alignment: start;
+        Text { text: "Suggest:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+        for s in AppState.suggestions: Chip { text: s; clicked => { AppState.apply-suggestion(s); } }
+    }
+    if AppState.query-hint != "": Text { text: AppState.query-hint; color: Theme.dim; font-size: 11px; wrap: word-wrap; }
+}
+
+export component HistoryDrawer inherits Rectangle {
+    width: 380px;
+    background: Theme.panel;
+    border-width: 1px; border-color: Theme.line;
+    TouchArea { }
+    VerticalLayout {
+        padding: 12px; spacing: 8px;
+        HorizontalLayout {
+            Text { text: "Saved queries"; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Btn { text: "Close"; clicked => { AppState.drawer-open = false; } }
+        }
+        if AppState.saved.length == 0: Text { text: "Nothing saved yet. Use “Save…” in the editor."; color: Theme.dim; font-size: 11px; }
+        ScrollView {
+            max-height: 200px;
+            VerticalLayout {
+                spacing: 2px;
+                for s[i] in AppState.saved: Rectangle {
+                    height: 36px; border-radius: 4px;
+                    background: sa.has-hover ? Theme.hover : transparent;
+                    VerticalLayout {
+                        x: 8px; width: parent.width - 40px; alignment: center;
+                        Text { text: s.name; color: Theme.text; overflow: elide; }
+                        Text { text: s.folder + " · " + s.sql; color: Theme.dim; font-size: 10px; overflow: elide; }
+                    }
+                    sa := TouchArea { clicked => { AppState.load-saved(i); } }
+                    Rectangle {
+                        x: parent.width - 26px; width: 20px; height: 20px; y: 8px; border-radius: 10px;
+                        background: da.has-hover ? Theme.panel2 : transparent;
+                        Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+                        da := TouchArea { clicked => { AppState.delete-saved(i); } }
+                    }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.line; }
+        HorizontalLayout {
+            Text { text: "History"; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Btn { text: "Clear"; clicked => { AppState.clear-history(); } }
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 2px;
+                for h[i] in AppState.history: Rectangle {
+                    height: 38px; border-radius: 4px;
+                    background: ha.has-hover ? Theme.hover : transparent;
+                    VerticalLayout {
+                        x: 8px; width: parent.width - 16px; alignment: center;
+                        Text { text: h.sql; color: h.ok ? Theme.text : Theme.err; overflow: elide; font-size: 12px; }
+                        Text { text: h.meta; color: Theme.dim; font-size: 10px; }
+                    }
+                    ha := TouchArea { clicked => { AppState.load-history(i); } }
+                }
+            }
+        }
+    }
+}

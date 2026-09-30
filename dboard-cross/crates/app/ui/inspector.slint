@@ -1,0 +1,49 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
+import { Btn } from "widgets.slint";
+
+export component Inspector inherits Rectangle {
+    width: 320px;
+    background: Theme.panel;
+    VerticalLayout {
+        HorizontalLayout {
+            height: 34px; padding-left: 8px; spacing: 2px;
+            for name[i] in ["Activity", "Edits", "Info"]: Rectangle {
+                width: 78px;
+                Text { text: name; color: AppState.inspector-tab == i ? Theme.text : Theme.dim; font-weight: AppState.inspector-tab == i ? 700 : 400; horizontal-alignment: center; vertical-alignment: center; }
+                Rectangle { y: parent.height - 2px; height: 2px; background: AppState.inspector-tab == i ? Theme.accent : transparent; }
+                TouchArea { clicked => { AppState.inspector-tab = i; } }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.line; }
+        if AppState.inspector-tab == 0: VerticalLayout {
+            padding: 8px; spacing: 6px;
+            HorizontalLayout {
+                Text { text: "Live activity log"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { text: "Clear"; clicked => { AppState.clear-activity(); } }
+            }
+            ListView {
+                for line in AppState.activity: Text {
+                    text: line; color: Theme.text; font-size: 11px; wrap: word-wrap; height: 30px; overflow: elide;
+                }
+            }
+        }
+        if AppState.inspector-tab == 1: VerticalLayout {
+            padding: 8px; spacing: 6px;
+            HorizontalLayout {
+                Text { text: AppState.undo-count + " reversible edit(s)"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { text: "Undo last"; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } }
+            }
+            ListView {
+                for line in AppState.edit-log: Text { text: line; color: Theme.text; font-size: 11px; height: 26px; overflow: elide; }
+            }
+        }
+        if AppState.inspector-tab == 2: VerticalLayout {
+            padding: 12px; spacing: 6px; alignment: start;
+            for line in AppState.meta-lines: Text { text: line; color: Theme.text; font-size: 12px; wrap: word-wrap; }
+        }
+    }
+}

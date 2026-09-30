@@ -111,6 +111,12 @@ Built with **Swift & SwiftUI** targeting macOS 14.0+, utilizing native macOS App
 
 ---
 
+## 🐧🪟 Linux & Windows
+
+The Swift/SwiftUI app above is macOS-only. A separate, small native client for **Linux and Windows** (Rust + Slint,
+no web view) lives in [`dboard-cross/`](dboard-cross/README.md). It supports PostgreSQL, MySQL/MariaDB and MongoDB,
+stores connections and settings persistently (passwords in the OS keyring) and mirrors the workspace described here.
+
 ## 🌐 Website
 
 A landing page lives in [`docs/`](docs/index.html) and deploys automatically to GitHub Pages via `.github/workflows/pages.yml` whenever `docs/` changes on `main`. One-time setup: in **Settings → Pages**, set **Source** to **GitHub Actions**.
@@ -118,7 +124,7 @@ A landing page lives in [`docs/`](docs/index.html) and deploys automatically to 
 ## 📦 Building & Running
 
 ### Option 0: Download a Release
-Every push of a `v*` tag (or a manual run of the **Release** workflow) builds `dboard.app` on GitHub Actions and attaches a zip to a [GitHub Release](../../releases). Download it, unzip, and drag `dboard.app` to `/Applications`.
+Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases): `dboard-<tag>-macos.zip` (drag `dboard.app` to `/Applications`), `dboard-<tag>-windows-x86_64.zip` (unzip, run `dboard.exe`) and `dboard-<tag>-linux-x86_64.tar.gz` (extract, run `./dboard`). The Windows exe is unsigned, so SmartScreen may warn on first launch (More info → Run anyway).
 
 Since the app isn't notarized/signed, macOS Gatekeeper will block the first launch. Either right-click → **Open** and confirm, or run:
 ```bash

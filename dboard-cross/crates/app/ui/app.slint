@@ -1,0 +1,150 @@
+import { Palette, ComboBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
+import { Btn, Badge } from "widgets.slint";
+import { ConnectionManager } from "connections.slint";
+import { Sidebar } from "sidebar.slint";
+import { TabBar } from "tabs.slint";
+import { DataGrid } from "grid.slint";
+import { QueryEditor, HistoryDrawer } from "query.slint";
+import { Inspector } from "inspector.slint";
+import { Dialogs } from "dialogs.slint";
+import { TextEdit, LineEdit } from "std-widgets.slint";
+
+export { AppState, Theme, Palette }
+
+component Workspace inherits VerticalLayout {
+    TabBar { }
+    if AppState.tab-kind == 0: VerticalLayout {
+        HorizontalLayout {
+            height: 44px; padding: 8px; spacing: 8px;
+            Text { text: AppState.table-title; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+            LineEdit {
+                placeholder-text: AppState.db-type == 2 ? "Filter as JSON, e.g. {\"age\": {\"$gt\": 30}}" : "WHERE clause, e.g. id > 10";
+                text <=> AppState.filter-text;
+                accepted => { AppState.apply-filter(self.text); }
+                horizontal-stretch: 1;
+            }
+            Btn { text: "Apply"; clicked => { AppState.apply-filter(AppState.filter-text); } }
+        }
+    }
+    if AppState.tab-kind == 1: QueryEditor { vertical-stretch: 0; }
+    if AppState.banner != "": Rectangle {
+        height: 26px; background: AppState.banner-error ? Theme.err-bg : Theme.warn-bg;
+        Text { x: 12px; width: parent.width - 24px; text: AppState.banner; color: AppState.banner-error ? Theme.err : Theme.warn; vertical-alignment: center; overflow: elide; }
+    }
+    if AppState.tab-kind == -1: Rectangle {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: center; spacing: 8px;
+            Text { text: "Open a table from the sidebar, or press Ctrl+N for a new query."; color: Theme.dim; horizontal-alignment: center; }
+            Text { text: "Ctrl+K command palette   ·   Ctrl+P search objects"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
+        }
+    }
+    if AppState.tab-kind >= 0 && AppState.tab-kind != 3: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
+    if AppState.tab-kind == 2 || AppState.tab-kind == 3: Rectangle {
+        vertical-stretch: AppState.tab-kind == 3 ? 1 : 0;
+        height: AppState.tab-kind == 3 ? 100px : 220px;
+        background: Theme.panel; border-width: 1px; border-color: Theme.line;
+        TextEdit { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-size: AppState.set-font-size * 1px; }
+    }
+    // footer
+    if AppState.tab-kind >= 0: Rectangle {
+        height: 36px; background: Theme.panel;
+        HorizontalLayout {
+            padding-left: 10px; padding-right: 10px; spacing: 8px;
+            if AppState.tab-kind == 0: Btn { text: "‹"; pad: 10px; clicked => { AppState.prev-page(); } }
+            if AppState.tab-kind == 0: Btn { text: "›"; pad: 10px; clicked => { AppState.next-page(); } }
+            if AppState.tab-kind == 0: ComboBox {
+                width: 84px; model: AppState.page-sizes; current-index: AppState.page-size-index;
+                selected => { AppState.set-page-size(self.current-index); }
+            }
+            Text { text: AppState.page-info; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
+            Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; visible: AppState.tab-kind == 0; }
+            Rectangle { horizontal-stretch: 1; }
+            if AppState.tab-kind == 0 && AppState.db-type == 2: Btn { text: "Edit document"; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } }
+            if AppState.tab-kind == 0: Btn { text: "+ Row"; clicked => { AppState.open-insert(); } }
+            if AppState.tab-kind == 0: Btn { text: "Delete row"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Btn { text: "Export"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } }
+        }
+    }
+}
+
+export component App inherits Window {
+    title: "dboard";
+    preferred-width: 1280px;
+    preferred-height: 780px;
+    min-width: 900px;
+    min-height: 560px;
+    background: Theme.bg;
+    default-font-size: 13px;
+    init => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    // Closing a dialog destroys its focused input; hand focus back so shortcuts keep working.
+    property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
+        || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open;
+    changed any-modal => { if !self.any-modal { fs.focus(); } }
+    // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
+    property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
+    changed focus-key => { fs.focus(); }
+
+    forward-focus: fs;
+    fs := FocusScope {
+        capture-key-pressed(e) => {
+            if AppState.connected && (e.modifiers.control || e.modifiers.meta) {
+                // With Ctrl held Slint reports the plain letter; modifier keys arrive as private-use characters.
+                if e.text == "k" { AppState.open-palette(false); return accept; }
+                if e.text == "p" { AppState.open-palette(true); return accept; }
+                if e.text == "n" { AppState.new-query-tab(); return accept; }
+                if e.text == "w" { AppState.close-tab(-1); return accept; }
+                if e.text == "r" { AppState.refresh(); return accept; }
+                if (e.text == "t" || e.text == "T") && e.modifiers.shift { AppState.reopen-tab(); return accept; }
+                if (e.text == "i") && e.modifiers.alt { AppState.inspector-open = !AppState.inspector-open; return accept; }
+                if (e.text == Key.Return || e.text == "\n") && AppState.tab-kind == 1 { AppState.run-query(AppState.query-text); return accept; }
+            }
+            reject
+        }
+
+        if !AppState.connected: ConnectionManager { }
+
+        if AppState.connected: VerticalLayout {
+            // ---- top bar ----
+            Rectangle {
+                height: 42px; background: Theme.panel;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    Rectangle {
+                        width: envl.preferred-width + 18px; height: 22px; y: 10px; border-radius: 11px; background: AppState.env-color;
+                        envl := Text { text: AppState.env-label; color: white; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    Text { text: AppState.conn-name; color: Theme.text; font-weight: 700; vertical-alignment: center; }
+                    Text { text: AppState.status; color: Theme.dim; vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; }
+                    Btn { text: "Undo (" + AppState.undo-count + ")"; enabled: AppState.undo-count > 0; y: 7px; clicked => { AppState.undo(); } }
+                    Btn { text: "Refresh"; y: 7px; clicked => { AppState.refresh(); } }
+                    Btn { text: "Inspector"; y: 7px; clicked => { AppState.inspector-open = !AppState.inspector-open; } }
+                    Btn { text: "Settings"; y: 7px; clicked => { AppState.open-settings(); } }
+                    Btn { text: "Disconnect"; y: 7px; clicked => { AppState.disconnect(); } }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                property <length> inspector-w: AppState.inspector-open ? 321px : 0px;
+                Sidebar { x: 0px; width: 270px; height: parent.height; }
+                Rectangle { x: 270px; width: 1px; height: parent.height; background: Theme.line; }
+                Rectangle {
+                    x: 271px;
+                    width: parent.width - 271px - parent.inspector-w;
+                    height: parent.height;
+                    Workspace { width: parent.width; height: parent.height; }
+                    if AppState.drawer-open && AppState.tab-kind == 1: HistoryDrawer {
+                        x: parent.width - self.width; height: parent.height;
+                    }
+                }
+                if AppState.inspector-open: Rectangle { x: parent.width - 321px; width: 1px; height: parent.height; background: Theme.line; }
+                if AppState.inspector-open: Inspector { x: parent.width - 320px; height: parent.height; }
+            }
+        }
+
+        Dialogs { }
+    }
+}

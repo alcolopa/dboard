@@ -1,0 +1,213 @@
+export struct GridCell { text: string, is-null: bool, state: int }
+export struct ColInfo { name: string, type-name: string, pk: bool, fk: string, is-bool: bool, is-json: bool }
+export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string }
+export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
+export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool }
+export struct HistoryItem { sql: string, meta: string, ok: bool }
+export struct SavedItem { id: string, name: string, folder: string, sql: string }
+export struct PaletteItem { title: string, subtitle: string, kind: string }
+export struct FieldItem { name: string, type-name: string, hint: string }
+export struct CtxItem { label: string, action: string, sep: bool, danger: bool }
+export struct ConnForm {
+    id: string, name: string, type-index: int, host: string, port: string, database: string,
+    user: string, password: string, env-index: int, ssl-index: int, uri: string, remember: bool,
+}
+
+// Everything the Rust worker pushes to the UI, and every action the UI can request.
+export global AppState {
+    // ---- screens ----
+    in-out property <bool> connected;
+    in property <bool> busy;
+    in property <string> toast;
+
+    // ---- connection manager ----
+    in property <[ConnItem]> connections;
+    in-out property <ConnForm> form;
+    in property <string> form-error;
+    in property <string> form-info;
+    in property <bool> form-is-new: true;
+    in property <bool> form-busy;
+    in property <[string]> type-names: ["PostgreSQL", "MySQL / MariaDB", "MongoDB"];
+    in property <[string]> env-names: ["Production", "Staging", "Development", "Local"];
+    in property <[string]> ssl-names: ["Disable", "Prefer", "Require", "Verify full"];
+    callback new-conn();
+    callback select-conn(string);
+    callback save-conn(ConnForm);
+    callback test-conn(ConnForm);
+    callback connect-conn(ConnForm);
+    callback delete-conn(string);
+    callback duplicate-conn(string);
+    callback type-changed(int);
+
+    // ---- workspace header ----
+    in property <string> conn-name;
+    in property <string> env-label;
+    in property <color> env-color;
+    in property <string> status;
+    in property <int> db-type;
+    in property <bool> is-protected;
+    callback disconnect();
+    callback refresh();
+    callback undo();
+
+    // ---- sidebar ----
+    in property <[TreeItem]> tree;
+    in-out property <string> tree-filter;
+    callback filter-tree(string);
+    callback tree-click(int);
+    callback tree-action(int, string);
+
+    // ---- tabs ----
+    in property <[TabInfo]> tabs;
+    in property <int> tab-kind: -1; // 0 table, 1 query, 2 structure, 3 routine
+    callback new-query-tab();
+    callback activate-tab(int);
+    callback close-tab(int);
+    callback tab-action(int, string);
+    callback reopen-tab();
+
+    // ---- data grid ----
+    in property <[ColInfo]> cols;
+    in-out property <[length]> col-widths;
+    in property <length> grid-width: 600px;
+    in property <[[GridCell]]> rows;
+    in property <int> row-offset;
+    in-out property <int> selected-row: -1;
+    in property <string> table-title;
+    in property <string> page-info;
+    in property <string> timing;
+    in property <string> sort-column;
+    in property <bool> sort-asc: true;
+    in property <bool> editable;
+    in property <string> banner;
+    in property <bool> banner-error;
+    in-out property <string> filter-text;
+    in property <[string]> page-sizes: ["25", "50", "100", "250", "500", "1000"];
+    in property <int> page-size-index: 2;
+    callback edit-cell(int, int, string, bool);
+    callback toggle-bool(int, int);
+    callback open-json-cell(int, int);
+    callback sort-by(int);
+    callback col-resized(int, length);
+    callback apply-filter(string);
+    callback next-page();
+    callback prev-page();
+    callback set-page-size(int);
+    callback copy-text(string);
+    callback cell-copy(int, int);
+    callback delete-row(int);
+    callback open-insert();
+    callback open-doc(int);
+    callback open-export();
+
+    // ---- query editor ----
+    in-out property <string> query-text;
+    in property <[string]> suggestions;
+    in property <string> query-hint;
+    callback query-edited(string);
+    callback apply-suggestion(string);
+    callback run-query(string);
+    callback explain-query(string, bool);
+    callback insert-template(string);
+    callback open-save-query();
+
+    // ---- structure / routine text ----
+    in property <string> ddl-text;
+
+    // ---- inspector ----
+    in-out property <bool> inspector-open;
+    in-out property <int> inspector-tab;
+    in property <[string]> activity;
+    in property <[string]> edit-log;
+    in property <int> undo-count;
+    in property <[string]> meta-lines;
+    callback clear-activity();
+
+    // ---- history & saved queries ----
+    in-out property <bool> drawer-open;
+    in property <[HistoryItem]> history;
+    in property <[SavedItem]> saved;
+    callback load-history(int);
+    callback load-saved(int);
+    callback delete-saved(int);
+    callback clear-history();
+
+    // ---- context menu (drawn in-window so it behaves the same on every platform) ----
+    in property <bool> ctx-open;
+    in property <length> ctx-x;
+    in property <length> ctx-y;
+    in property <[CtxItem]> ctx-items;
+    callback ctx(string, int, int, length, length);
+    callback ctx-pick(string);
+    callback ctx-close();
+
+    // ---- confirmation ----
+    in property <bool> confirm-open;
+    in property <string> confirm-title;
+    in property <string> confirm-text;
+    in property <bool> confirm-typing;
+    in-out property <string> confirm-typed;
+    callback confirm-run();
+    callback confirm-cancel();
+
+    // ---- insert row ----
+    in property <bool> insert-open;
+    in property <string> insert-title;
+    in property <[FieldItem]> insert-fields;
+    in property <string> insert-error;
+    callback insert-field-edited(int, string);
+    callback insert-submit();
+    callback insert-cancel();
+
+    // ---- JSON / document editor ----
+    in property <bool> json-open;
+    in property <string> json-title;
+    in-out property <string> json-text;
+    in property <string> json-error;
+    callback json-save(string);
+    callback json-format(string);
+    callback json-cancel();
+
+    // ---- save query ----
+    in property <bool> saveq-open;
+    in-out property <string> saveq-name;
+    in-out property <int> saveq-folder;
+    in property <[string]> folders: ["General", "Users", "Analytics", "Production", "Debugging"];
+    callback saveq-submit(string, int);
+    callback saveq-cancel();
+
+    // ---- palette / global search ----
+    in property <bool> palette-open;
+    in property <bool> palette-search-mode;
+    in-out property <string> palette-query;
+    in property <[PaletteItem]> palette-items;
+    in-out property <int> palette-selected;
+    callback open-palette(bool);
+    callback palette-changed(string);
+    callback palette-run(int);
+    callback palette-close();
+
+    // ---- export ----
+    in property <bool> export-open;
+    in property <string> export-info;
+    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT"];
+    in-out property <int> export-format;
+    in-out property <bool> export-headers: true;
+    callback export-copy(int, bool);
+    callback export-save(int, bool);
+    callback export-cancel();
+
+    // ---- settings ----
+    in property <bool> settings-open;
+    in-out property <bool> set-dark: true;
+    in-out property <bool> set-compact: true;
+    in-out property <int> set-page-size-index: 2;
+    in-out property <bool> set-confirm: true;
+    in-out property <bool> set-autocomplete: true;
+    in-out property <int> set-font-size: 13;
+    in property <string> set-info;
+    callback open-settings();
+    callback settings-changed(bool, bool, int, bool, bool, int);
+    callback settings-close();
+    callback clear-credentials();
+}
