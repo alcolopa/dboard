@@ -1,0 +1,173 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { AppState, GridCell, ColInfo } from "state.slint";
+import { Chip } from "widgets.slint";
+
+component GridCellView inherits Rectangle {
+    in property <GridCell> cell;
+    in property <ColInfo> col-info;
+    in property <bool> editable;
+    in property <bool> selected;
+    in property <int> row-idx;
+    in property <int> ci;
+    property <bool> editing: false;
+    callback commit(string, bool);
+
+    height: Theme.row-h;
+    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (selected ? Theme.panel2 : transparent));
+    border-width: 0.5px;
+    border-color: Theme.line;
+    clip: true;
+
+    if !editing && !(col-info.is-bool && !cell.is-null && editable): Text {
+        x: 8px; width: parent.width - (col-info.fk != "" ? 40px : 26px);
+        text: cell.is-null ? "NULL" : cell.text;
+        color: cell.is-null ? Theme.dim : Theme.text;
+        font-italic: cell.is-null;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    // Boolean: a real toggle
+    if !editing && col-info.is-bool && !cell.is-null && editable: Rectangle {
+        x: 8px; width: 36px; height: 16px; y: (parent.height - 16px) / 2; border-radius: 8px;
+        background: (cell.text == "true" || cell.text == "1" || cell.text == "t") ? Theme.ok : Theme.dim;
+        Rectangle {
+            width: 12px; height: 12px; border-radius: 6px; background: white; y: 2px;
+            x: (cell.text == "true" || cell.text == "1" || cell.text == "t") ? parent.width - 14px : 2px;
+        }
+        TouchArea { clicked => { AppState.toggle-bool(root.row-idx, root.ci); } }
+    }
+    if !editing && col-info.is-bool && !cell.is-null && editable: Text {
+        x: 52px; text: cell.text; color: Theme.dim; font-size: 11px; vertical-alignment: center;
+    }
+    if !editing && col-info.fk != "" && !cell.is-null: Text {
+        x: parent.width - (cell.state == 0 ? 18px : 34px); text: "→"; color: Theme.accent; vertical-alignment: center;
+    }
+    if !editing && cell.state == 1: Text { x: parent.width - 18px; text: "…"; color: Theme.dim; vertical-alignment: center; }
+    if !editing && cell.state == 2: Text { x: parent.width - 18px; text: "✓"; color: Theme.ok; vertical-alignment: center; }
+    if !editing && cell.state == 3: Text { x: parent.width - 18px; text: "!"; color: Theme.err; font-weight: 800; vertical-alignment: center; }
+
+    ContextMenuArea {
+        Menu {
+            MenuItem { title: "Copy value"; activated => { AppState.cell-copy(root.row-idx, root.ci); } }
+            MenuItem { title: "Set to NULL"; enabled: root.editable; activated => { root.commit("", true); } }
+            MenuItem { title: "Edit as JSON…"; enabled: root.editable; activated => { AppState.open-json-cell(root.row-idx, root.ci); } }
+            MenuSeparator { }
+            MenuItem { title: "Delete row"; enabled: root.editable; activated => { AppState.delete-row(root.row-idx); } }
+        }
+        ta := TouchArea {
+            clicked => { AppState.selected-row = root.row-idx; }
+            double-clicked => {
+                if root.editable {
+                    if root.col-info.is-json {
+                        AppState.open-json-cell(root.row-idx, root.ci);
+                    } else {
+                        ti.text = root.cell.is-null ? "" : root.cell.text;
+                        root.editing = true;
+                        ti.focus();
+                        ti.select-all();
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        visible: root.editing;
+        background: Theme.panel2;
+        border-width: 1px;
+        border-color: Theme.accent;
+        ti := TextInput {
+            x: 8px; width: parent.width - 48px;
+            color: Theme.text;
+            single-line: true;
+            vertical-alignment: center;
+            accepted => { root.editing = false; root.commit(self.text, false); }
+            key-pressed(e) => {
+                if e.text == Key.Escape { root.editing = false; return accept; }
+                reject
+            }
+            changed has-focus => {
+                if !self.has-focus && root.editing { root.editing = false; root.commit(self.text, false); }
+            }
+        }
+        Rectangle {
+            x: parent.width - 40px; width: 36px; height: 20px; y: (parent.height - 20px) / 2;
+            background: Theme.line; border-radius: 3px;
+            Text { text: "NULL"; font-size: 10px; color: Theme.text; }
+            TouchArea { clicked => { root.editing = false; root.commit("", true); } }
+        }
+    }
+}
+
+export component DataGrid inherits Rectangle {
+    background: Theme.bg;
+    clip: true;
+    Flickable {
+        content-width: max(self.width, 48px + AppState.grid-width);
+        content-height: self.height;
+        VerticalLayout {
+            // ---- header ----
+            HorizontalLayout {
+                height: 34px;
+                Rectangle { width: 48px; background: Theme.panel; border-width: 0.5px; border-color: Theme.line; }
+                for col[c] in AppState.cols: Rectangle {
+                    width: AppState.col-widths[c];
+                    background: Theme.panel;
+                    border-width: 0.5px; border-color: Theme.line;
+                    Text {
+                        x: 8px; y: 4px; width: parent.width - 30px;
+                        text: col.name + (AppState.sort-column == col.name ? (AppState.sort-asc ? "  ▲" : "  ▼") : "");
+                        font-weight: 700; color: Theme.text; overflow: elide; font-size: 12px;
+                    }
+                    Text {
+                        x: 8px; y: 19px; width: parent.width - 30px;
+                        text: (col.pk ? "PK · " : "") + (col.fk != "" ? "FK → " + col.fk + " · " : "") + col.type-name;
+                        font-size: 9px; color: Theme.dim; overflow: elide;
+                    }
+                    TouchArea { width: parent.width - 8px; clicked => { AppState.sort-by(c); } }
+                    // drag handle to resize
+                    Rectangle {
+                        x: parent.width - 6px; width: 6px;
+                        background: rh.has-hover || rh.pressed ? Theme.accent : transparent;
+                        rh := TouchArea {
+                            mouse-cursor: MouseCursor.col-resize;
+                            moved => {
+                                AppState.col-widths[c] = max(60px, AppState.col-widths[c] + (self.mouse-x - self.pressed-x));
+                            }
+                            pointer-event(e) => {
+                                if e.kind == PointerEventKind.up { AppState.col-resized(c, AppState.col-widths[c]); }
+                            }
+                        }
+                    }
+                }
+            }
+            // ---- rows (virtualised) ----
+            ListView {
+                for row[r] in AppState.rows: HorizontalLayout {
+                    height: Theme.row-h;
+                    Rectangle {
+                        width: 48px;
+                        background: AppState.selected-row == r ? Theme.panel2 : Theme.panel;
+                        border-width: 0.5px; border-color: Theme.line;
+                        Text { text: "" + (AppState.row-offset + r + 1); color: Theme.dim; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { clicked => { AppState.selected-row = r; } }
+                    }
+                    for cell[c] in row: GridCellView {
+                        width: AppState.col-widths[c];
+                        cell: cell;
+                        col-info: AppState.cols[c];
+                        row-idx: r;
+                        ci: c;
+                        editable: AppState.editable;
+                        selected: AppState.selected-row == r;
+                        commit(t, n) => { AppState.edit-cell(r, c, t, n); }
+                    }
+                }
+            }
+        }
+    }
+    if AppState.rows.length == 0 && AppState.cols.length > 0: Text {
+        text: "No rows"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center;
+    }
+}

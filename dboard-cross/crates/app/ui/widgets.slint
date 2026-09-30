@@ -1,0 +1,71 @@
+import { Theme } from "theme.slint";
+
+export component Btn inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    in property <length> pad: 12px;
+    callback clicked();
+    height: 28px;
+    width: t.preferred-width + 2 * pad;
+    border-radius: 5px;
+    background: !enabled ? Theme.panel2
+        : primary ? (ta.has-hover ? #4a6af0 : Theme.accent)
+        : danger ? (ta.has-hover ? #d63b3b : Theme.err)
+        : (ta.has-hover ? Theme.hover : Theme.panel2);
+    border-width: primary || danger ? 0px : 1px;
+    border-color: Theme.line;
+    opacity: enabled ? 1.0 : 0.5;
+    t := Text {
+        text: root.text;
+        color: (primary || danger) && enabled ? white : Theme.text;
+        vertical-alignment: center; horizontal-alignment: center;
+        font-size: 12px;
+    }
+    ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <color> fill: Theme.panel2;
+    callback clicked();
+    height: 22px;
+    width: t.preferred-width + 16px;
+    border-radius: 11px;
+    background: ta.has-hover ? Theme.hover : fill;
+    t := Text { text: root.text; color: Theme.text; font-size: 11px; vertical-alignment: center; horizontal-alignment: center; }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component Badge inherits Rectangle {
+    in property <string> text;
+    in property <color> fill: Theme.accent;
+    height: 20px;
+    width: t.preferred-width + 14px;
+    border-radius: 10px;
+    background: fill;
+    t := Text { text: root.text; color: white; font-size: 10px; font-weight: 700; vertical-alignment: center; horizontal-alignment: center; }
+}
+
+export component Modal inherits Rectangle {
+    in property <length> box-width: 480px;
+    in property <color> border: Theme.line;
+    callback dismissed();
+    background: #000000b0;
+    TouchArea { clicked => { root.dismissed(); } }
+    box := Rectangle {
+        width: min(root.box-width, parent.width - 32px);
+        height: min(inner.preferred-height + 2px, parent.height - 32px);
+        background: Theme.panel;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: root.border;
+        clip: true;
+        TouchArea { } // swallow clicks inside the box
+        inner := VerticalLayout {
+            padding: 20px; spacing: 10px;
+            @children
+        }
+    }
+}

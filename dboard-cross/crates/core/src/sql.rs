@@ -1,73 +1,133 @@
-//! Pure SQL builders (no I/O) so they're unit-testable.
+//! Pure SQL builders (no I/O) so they're unit-testable. Two dialects: Postgres and MySQL.
 
 use crate::model::{Page, Table};
 
-/// Quote an identifier for Postgres.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialect {
+    Pg,
+    My,
+}
+
+impl Dialect {
+    pub fn quote(self, s: &str) -> String {
+        match self {
+            Dialect::Pg => format!("\"{}\"", s.replace('"', "\"\"")),
+            Dialect::My => format!("`{}`", s.replace('`', "``")),
+        }
+    }
+
+    /// Positional placeholder, 1-based.
+    fn ph(self, n: usize, ty: &str) -> String {
+        match self {
+            Dialect::Pg => format!("${n}::text::{ty}"),
+            Dialect::My => "?".into(),
+        }
+    }
+
+    pub fn qualified(self, t: &Table) -> String {
+        if t.schema.is_empty() {
+            self.quote(&t.name)
+        } else {
+            format!("{}.{}", self.quote(&t.schema), self.quote(&t.name))
+        }
+    }
+}
+
 pub fn quote_ident(s: &str) -> String {
-    format!("\"{}\"", s.replace('"', "\"\""))
+    Dialect::Pg.quote(s)
 }
 
-pub fn qualified(schema: &str, table: &str) -> String {
-    format!("{}.{}", quote_ident(schema), quote_ident(table))
-}
-
-/// `SELECT "a"::text, "b"::text FROM ... ORDER BY ... LIMIT n OFFSET m`
-pub fn select_page(t: &Table, p: &Page) -> String {
+/// `SELECT "a"::text, ... FROM ... WHERE ... ORDER BY ... LIMIT n OFFSET m`
+pub fn select_page(d: Dialect, t: &Table, p: &Page) -> String {
     let cols = t
         .columns
         .iter()
-        .map(|c| format!("{}::text", quote_ident(&c.name)))
+        .map(|c| match d {
+            Dialect::Pg => format!("{}::text", d.quote(&c.name)),
+            Dialect::My => d.quote(&c.name),
+        })
         .collect::<Vec<_>>()
         .join(", ");
-    let mut sql = format!("SELECT {cols} FROM {}", qualified(&t.schema, &t.name));
+    let mut sql = format!("SELECT {cols} FROM {}", d.qualified(t));
     if let Some(f) = p.filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
         sql.push_str(&format!(" WHERE {f}"));
     }
     if let Some(c) = &p.sort_column {
-        sql.push_str(&format!(
-            " ORDER BY {} {}",
-            quote_ident(c),
-            if p.sort_ascending { "ASC" } else { "DESC" }
-        ));
+        sql.push_str(&format!(" ORDER BY {} {}", d.quote(c), if p.sort_ascending { "ASC" } else { "DESC" }));
     }
     sql.push_str(&format!(" LIMIT {} OFFSET {}", p.limit.max(1), p.offset.max(0)));
     sql
 }
 
-/// Parameterised single-cell update. Values are bound as text and cast
-/// server-side, so keys keep using their indexes.
-///
-/// Params: `$1` = new value (unless NULL), then one per primary-key column.
-/// Returns `None` if the table has no primary key or the column is unknown.
-pub fn update_cell(t: &Table, column: &str, set_null: bool) -> Option<String> {
-    let col = t.column(column)?;
+fn key_where(d: Dialect, t: &Table, mut idx: usize) -> Option<String> {
     let pks = t.primary_keys();
     if pks.is_empty() {
         return None;
     }
-    let mut idx = 1;
-    let set = if set_null {
-        format!("{} = NULL", quote_ident(&col.name))
+    Some(
+        pks.iter()
+            .map(|pk| {
+                let s = format!("{} = {}", d.quote(&pk.name), d.ph(idx, &pk.type_name));
+                idx += 1;
+                s
+            })
+            .collect::<Vec<_>>()
+            .join(" AND "),
+    )
+}
+
+/// Parameterised single-cell update. Params: new value (unless NULL), then one per PK column.
+/// Returns `None` if the table has no primary key or the column is unknown.
+pub fn update_cell(d: Dialect, t: &Table, column: &str, set_null: bool) -> Option<String> {
+    let col = t.column(column)?;
+    let (set, next) = if set_null {
+        (format!("{} = NULL", d.quote(&col.name)), 1)
     } else {
-        idx += 1;
-        format!("{} = $1::text::{}", quote_ident(&col.name), col.type_name)
+        (format!("{} = {}", d.quote(&col.name), d.ph(1, &col.type_name)), 2)
     };
-    let wh = pks
-        .iter()
-        .map(|pk| {
-            let s = format!("{} = ${idx}::text::{}", quote_ident(&pk.name), pk.type_name);
-            idx += 1;
-            s
-        })
-        .collect::<Vec<_>>()
-        .join(" AND ");
+    Some(format!("UPDATE {} SET {set} WHERE {}", d.qualified(t), key_where(d, t, next)?))
+}
+
+/// `INSERT` for the given columns (omitted columns take their defaults).
+/// One param per column, in order.
+pub fn insert_row(d: Dialect, t: &Table, columns: &[&str]) -> Option<String> {
+    if columns.is_empty() {
+        return Some(match d {
+            Dialect::Pg => format!("INSERT INTO {} DEFAULT VALUES", d.qualified(t)),
+            Dialect::My => format!("INSERT INTO {} () VALUES ()", d.qualified(t)),
+        });
+    }
+    let mut ph = Vec::new();
+    for (i, c) in columns.iter().enumerate() {
+        ph.push(d.ph(i + 1, &t.column(c)?.type_name));
+    }
     Some(format!(
-        "UPDATE {} SET {set} WHERE {wh}",
-        qualified(&t.schema, &t.name)
+        "INSERT INTO {} ({}) VALUES ({})",
+        d.qualified(t),
+        columns.iter().map(|c| d.quote(c)).collect::<Vec<_>>().join(", "),
+        ph.join(", ")
     ))
 }
 
-pub fn count_estimate(schema: &str, table: &str) -> String {
+/// Delete by primary key. One param per PK column.
+pub fn delete_row(d: Dialect, t: &Table) -> Option<String> {
+    Some(format!("DELETE FROM {} WHERE {}", d.qualified(t), key_where(d, t, 1)?))
+}
+
+pub fn truncate(d: Dialect, t: &Table) -> String {
+    format!("TRUNCATE TABLE {}", d.qualified(t))
+}
+
+pub fn drop_table(d: Dialect, t: &Table) -> String {
+    let what = match t.kind {
+        crate::model::TableKind::View => "VIEW",
+        crate::model::TableKind::MaterializedView => "MATERIALIZED VIEW",
+        _ => "TABLE",
+    };
+    format!("DROP {what} {}", d.qualified(t))
+}
+
+pub fn count_estimate_pg(schema: &str, table: &str) -> String {
     format!(
         "SELECT coalesce(c.reltuples::bigint, 0) FROM pg_class c \
          JOIN pg_namespace n ON n.oid = c.relnamespace \
@@ -75,6 +135,35 @@ pub fn count_estimate(schema: &str, table: &str) -> String {
         schema.replace('\'', "''"),
         table.replace('\'', "''")
     )
+}
+
+/// Best-effort CREATE TABLE for Postgres (columns, defaults, NOT NULL, primary key).
+pub fn pg_ddl(t: &Table) -> String {
+    let d = Dialect::Pg;
+    let mut lines: Vec<String> = t
+        .columns
+        .iter()
+        .map(|c| {
+            let mut l = format!("  {} {}", d.quote(&c.name), c.type_name);
+            if let Some(def) = &c.default {
+                l.push_str(&format!(" DEFAULT {def}"));
+            }
+            if !c.nullable {
+                l.push_str(" NOT NULL");
+            }
+            l
+        })
+        .collect();
+    let pks: Vec<String> = t.primary_keys().iter().map(|c| d.quote(&c.name)).collect();
+    if !pks.is_empty() {
+        lines.push(format!("  PRIMARY KEY ({})", pks.join(", ")));
+    }
+    for c in &t.columns {
+        if let Some(fk) = &c.fk {
+            lines.push(format!("  -- {} references {fk}", d.quote(&c.name)));
+        }
+    }
+    format!("CREATE TABLE {} (\n{}\n);", d.qualified(t), lines.join(",\n"))
 }
 
 #[cfg(test)]
@@ -88,44 +177,49 @@ mod tests {
             type_name: t.into(),
             nullable: !pk,
             is_primary_key: pk,
+            default: None,
+            fk: None,
         };
         Table {
             schema: "public".into(),
             name: "us\"ers".into(),
             kind: TableKind::Table,
             columns: vec![col("id", "int4", true), col("name", "text", false)],
+            estimated_rows: None,
+            size_bytes: None,
+            indexes: vec![],
         }
     }
 
     #[test]
     fn quotes_identifiers() {
         assert_eq!(quote_ident("a\"b"), "\"a\"\"b\"");
+        assert_eq!(Dialect::My.quote("a`b"), "`a``b`");
     }
 
     #[test]
     fn select_builds_sort_filter_page() {
-        let p = Page {
-            limit: 50,
-            offset: 100,
-            sort_column: Some("name".into()),
-            sort_ascending: false,
-            filter: Some(" id > 3 ".into()),
-        };
+        let p = Page { limit: 50, offset: 100, sort_column: Some("name".into()), sort_ascending: false, filter: Some(" id > 3 ".into()) };
         assert_eq!(
-            select_page(&table(), &p),
+            select_page(Dialect::Pg, &table(), &p),
             "SELECT \"id\"::text, \"name\"::text FROM \"public\".\"us\"\"ers\" WHERE id > 3 ORDER BY \"name\" DESC LIMIT 50 OFFSET 100"
         );
+        assert!(select_page(Dialect::My, &table(), &p).starts_with("SELECT `id`, `name` FROM `public`.`us\"ers`"));
     }
 
     #[test]
     fn update_is_parameterised() {
         assert_eq!(
-            update_cell(&table(), "name", false).unwrap(),
+            update_cell(Dialect::Pg, &table(), "name", false).unwrap(),
             "UPDATE \"public\".\"us\"\"ers\" SET \"name\" = $1::text::text WHERE \"id\" = $2::text::int4"
         );
         assert_eq!(
-            update_cell(&table(), "name", true).unwrap(),
+            update_cell(Dialect::Pg, &table(), "name", true).unwrap(),
             "UPDATE \"public\".\"us\"\"ers\" SET \"name\" = NULL WHERE \"id\" = $1::text::int4"
+        );
+        assert_eq!(
+            update_cell(Dialect::My, &table(), "name", false).unwrap(),
+            "UPDATE `public`.`us\"ers` SET `name` = ? WHERE `id` = ?"
         );
     }
 
@@ -133,6 +227,25 @@ mod tests {
     fn update_refused_without_pk() {
         let mut t = table();
         t.columns[0].is_primary_key = false;
-        assert!(update_cell(&t, "name", false).is_none());
+        assert!(update_cell(Dialect::Pg, &t, "name", false).is_none());
+        assert!(delete_row(Dialect::Pg, &t).is_none());
+    }
+
+    #[test]
+    fn insert_and_delete() {
+        let t = table();
+        assert_eq!(
+            insert_row(Dialect::Pg, &t, &["name"]).unwrap(),
+            "INSERT INTO \"public\".\"us\"\"ers\" (\"name\") VALUES ($1::text::text)"
+        );
+        assert_eq!(insert_row(Dialect::Pg, &t, &[]).unwrap(), "INSERT INTO \"public\".\"us\"\"ers\" DEFAULT VALUES");
+        assert_eq!(delete_row(Dialect::My, &t).unwrap(), "DELETE FROM `public`.`us\"ers` WHERE `id` = ?");
+        assert!(insert_row(Dialect::Pg, &t, &["nope"]).is_none());
+    }
+
+    #[test]
+    fn ddl_contains_pk() {
+        let ddl = pg_ddl(&table());
+        assert!(ddl.contains("PRIMARY KEY (\"id\")") && ddl.contains("NOT NULL"));
     }
 }

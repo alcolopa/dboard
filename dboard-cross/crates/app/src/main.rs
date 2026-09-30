@@ -3,498 +3,123 @@
 
 slint::include_modules!();
 
-use dboard_core::config;
-use dboard_core::model::{Cell, ConnectionConfig, Environment, Page, TableKind};
-use dboard_core::postgres::PgDriver;
-use dboard_core::safety;
-use slint::{ModelRc, SharedString, VecModel, Weak};
-use std::time::Duration;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+mod clipboard;
+mod export;
+mod suggest;
+mod worker;
 
-const PAGE_SIZE: i64 = 100;
-
-enum Cmd {
-    Connect(ConnectionConfig, String),
-    Disconnect,
-    OpenTable(usize),
-    FilterTree(String),
-    Edit { row: usize, col: usize, text: String, null: bool },
-    ClearFlash,
-    Undo,
-    NextPage,
-    PrevPage,
-    SortBy(usize),
-    ApplyFilter(String),
-    Refresh,
-    Query(String),
-    ConfirmRun,
-    ConfirmCancel,
-}
-
-/// (value, state) where state: 0 idle, 1 saving, 2 saved, 3 error.
-type GridRows = Vec<Vec<(Cell, i32)>>;
-
-fn ui(w: &Weak<App>, f: impl FnOnce(&App) + Send + 'static) {
-    let w = w.clone();
-    let _ = slint::invoke_from_event_loop(move || {
-        if let Some(app) = w.upgrade() {
-            f(&app);
-        }
-    });
-}
-
-fn to_model(rows: GridRows) -> ModelRc<ModelRc<GridCell>> {
-    let rows: Vec<ModelRc<GridCell>> = rows
-        .into_iter()
-        .map(|r| {
-            let cells: Vec<GridCell> = r
-                .into_iter()
-                .map(|(c, state)| GridCell {
-                    is_null: c.is_none(),
-                    text: c.unwrap_or_default().into(),
-                    state,
-                })
-                .collect();
-            ModelRc::new(VecModel::from(cells))
-        })
-        .collect();
-    ModelRc::new(VecModel::from(rows))
-}
-
-fn to_strs(v: Vec<String>) -> ModelRc<SharedString> {
-    ModelRc::new(VecModel::from(v.into_iter().map(SharedString::from).collect::<Vec<_>>()))
-}
-
-struct Worker {
-    w: Weak<App>,
-    tx: UnboundedSender<Cmd>,
-    driver: Option<PgDriver>,
-    env: Environment,
-    /// Sidebar rows: (schema, name, is_header)
-    tree: Vec<(String, String, bool)>,
-    current: Option<(String, String)>,
-    grid_is_table: bool,
-    page: Page,
-    rows: Vec<Vec<Cell>>,
-    pending_sql: Option<String>,
-    log: Vec<String>,
-    tree_filter: String,
-}
-
-impl Worker {
-    fn log(&mut self, msg: String) {
-        self.log.insert(0, msg);
-        self.log.truncate(200);
-        let l = self.log.clone();
-        ui(&self.w, move |a| a.set_log(to_strs(l)));
-    }
-
-    fn push_grid(&self, columns: Vec<String>, flash: Option<(usize, usize, i32)>) {
-        let grid: GridRows = self
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(r, row)| {
-                row.iter()
-                    .enumerate()
-                    .map(|(c, v)| (v.clone(), flash.filter(|f| f.0 == r && f.1 == c).map_or(0, |f| f.2)))
-                    .collect()
-            })
-            .collect();
-        ui(&self.w, move |a| {
-            a.set_columns(to_strs(columns));
-            a.set_rows(to_model(grid));
-        });
-    }
-
-    fn columns(&self) -> Vec<String> {
-        match (&self.driver, &self.current) {
-            (Some(d), Some((s, n))) if self.grid_is_table => d
-                .table(s, n)
-                .map(|t| t.columns.iter().map(|c| c.name.clone()).collect())
-                .unwrap_or_default(),
-            _ => Vec::new(),
-        }
-    }
-
-    fn set_error(&self, msg: String) {
-        ui(&self.w, move |a| a.set_error(msg.into()));
-    }
-
-    fn rebuild_tree(&mut self) {
-        let Some(d) = &self.driver else { return };
-        let mut tree = Vec::new();
-        let mut last = String::new();
-        let f = self.tree_filter.to_lowercase();
-        for t in d.metadata.tables.iter().filter(|t| f.is_empty() || t.name.to_lowercase().contains(&f)) {
-            if t.schema != last {
-                tree.push((t.schema.clone(), String::new(), true));
-                last = t.schema.clone();
-            }
-            tree.push((t.schema.clone(), t.name.clone(), false));
-        }
-        let items: Vec<TreeItem> = tree
-            .iter()
-            .map(|(s, n, h)| {
-                let kind = d.table(s, n).map(|t| t.kind);
-                let suffix = match kind {
-                    Some(TableKind::View) => "  (view)",
-                    Some(TableKind::MaterializedView) => "  (mat. view)",
-                    _ => "",
-                };
-                TreeItem {
-                    header: *h,
-                    label: if *h { s.to_uppercase().into() } else { format!("{n}{suffix}").into() },
-                    schema: s.as_str().into(),
-                    name: n.as_str().into(),
-                }
-            })
-            .collect();
-        self.tree = tree;
-        ui(&self.w, move |a| a.set_tree(ModelRc::new(VecModel::from(items))));
-    }
-
-    async fn load_page(&mut self) {
-        let Some((s, n)) = self.current.clone() else { return };
-        let Some(d) = &self.driver else { return };
-        match d.fetch_page(&s, &n, &self.page).await {
-            Ok(r) => {
-                let editable = d.table(&s, &n).is_some_and(|t| t.kind == TableKind::Table && t.has_primary_key());
-                let is_table = d.table(&s, &n).is_some_and(|t| t.kind == TableKind::Table);
-                let banner = if is_table && !editable {
-                    "No primary key: inline editing is disabled to protect your data."
-                } else {
-                    ""
-                };
-                let from = self.page.offset + 1;
-                let to = self.page.offset + r.rows.len() as i64;
-                let info = match r.total_estimate {
-                    Some(e) if e > 0 => format!("Rows {from}–{to} of ~{e}"),
-                    _ => format!("Rows {from}–{to}"),
-                };
-                let timing = format!("{:.1} ms", r.duration_ms);
-                let sort = self.page.sort_column.clone().unwrap_or_default();
-                self.grid_is_table = true;
-                self.rows = r.rows;
-                let cols = r.columns;
-                self.push_grid(cols, None);
-                ui(&self.w, move |a| {
-                    a.set_editable(editable);
-                    a.set_banner(banner.into());
-                    a.set_page_info(info.into());
-                    a.set_timing(timing.into());
-                    a.set_sort_label(sort.into());
-                    a.set_table_title(format!("{s}.{n}").into());
-                    a.set_error("".into());
-                });
-                self.log(format!("{:.1} ms · SELECT from {}.{}", r.duration_ms, self.current.as_ref().unwrap().0, self.current.as_ref().unwrap().1));
-            }
-            Err(e) => self.set_error(e.to_string()),
-        }
-    }
-
-    async fn run_query(&mut self, sql: String) {
-        let Some(d) = &self.driver else { return };
-        match d.execute_query(&sql).await {
-            Ok(r) => {
-                self.grid_is_table = false;
-                self.rows = r.rows;
-                let n = self.rows.len();
-                let timing = format!("{n} rows · {:.1} ms", r.duration_ms);
-                self.push_grid(r.columns, None);
-                ui(&self.w, move |a| {
-                    a.set_editable(false);
-                    a.set_banner("".into());
-                    a.set_timing(timing.clone().into());
-                    a.set_page_info(timing.into());
-                    a.set_error("".into());
-                });
-                let first = sql.lines().next().unwrap_or("").to_string();
-                self.log(format!("{:.1} ms · {first}", r.duration_ms));
-            }
-            Err(e) => {
-                self.log(format!("ERROR · {e}"));
-                self.set_error(e.to_string());
-                let msg = e.to_string();
-                ui(&self.w, move |a| a.set_banner(msg.into()));
-            }
-        }
-    }
-
-    fn sync_undo(&self) {
-        let n = self.driver.as_ref().map_or(0, |d| d.history.len()) as i32;
-        ui(&self.w, move |a| a.set_undo_count(n));
-    }
-
-    async fn handle(&mut self, cmd: Cmd) {
-        match cmd {
-            Cmd::Connect(cfg, pw) => {
-                match PgDriver::connect(cfg.clone(), &pw).await {
-                    Ok(d) => {
-                        let ver = d.server_version().await.unwrap_or_default();
-                        let status = format!("{}@{}:{} / {} · PostgreSQL {ver}", cfg.username, cfg.host, cfg.port, cfg.database);
-                        self.env = cfg.environment;
-                        self.driver = Some(d);
-                        config::save_password(&cfg, &pw);
-                        let _ = config::save_connections(&[cfg]);
-                        self.rebuild_tree();
-                        ui(&self.w, move |a| {
-                            a.set_status(status.into());
-                            a.set_error("".into());
-                            a.set_busy(false);
-                            a.set_connected(true);
-                        });
-                    }
-                    Err(e) => {
-                        let m = e.to_string();
-                        ui(&self.w, move |a| {
-                            a.set_error(m.into());
-                            a.set_busy(false);
-                        });
-                    }
-                }
-            }
-            Cmd::Disconnect => {
-                self.driver = None;
-                self.current = None;
-                self.rows.clear();
-                ui(&self.w, |a| {
-                    a.set_connected(false);
-                    a.set_rows(to_model(Vec::new()));
-                    a.set_columns(to_strs(Vec::new()));
-                    a.set_tree(ModelRc::new(VecModel::from(Vec::<TreeItem>::new())));
-                });
-            }
-            Cmd::FilterTree(f) => {
-                self.tree_filter = f;
-                self.rebuild_tree();
-            }
-            Cmd::OpenTable(i) => {
-                let Some((s, n, false)) = self.tree.get(i).cloned() else { return };
-                self.current = Some((s, n));
-                self.page = Page { limit: PAGE_SIZE, offset: 0, sort_column: None, sort_ascending: true, filter: None };
-                ui(&self.w, |a| a.set_filter_text("".into()));
-                self.load_page().await;
-            }
-            Cmd::NextPage => {
-                if self.grid_is_table && self.rows.len() as i64 == self.page.limit {
-                    self.page.offset += self.page.limit;
-                    self.load_page().await;
-                }
-            }
-            Cmd::PrevPage => {
-                if self.grid_is_table && self.page.offset > 0 {
-                    self.page.offset = (self.page.offset - self.page.limit).max(0);
-                    self.load_page().await;
-                }
-            }
-            Cmd::SortBy(c) => {
-                if !self.grid_is_table {
-                    return;
-                }
-                let Some(name) = self.columns().get(c).cloned() else { return };
-                if self.page.sort_column.as_deref() == Some(&name) {
-                    self.page.sort_ascending = !self.page.sort_ascending;
-                } else {
-                    self.page.sort_column = Some(name);
-                    self.page.sort_ascending = true;
-                }
-                self.page.offset = 0;
-                self.load_page().await;
-            }
-            Cmd::ApplyFilter(f) => {
-                self.page.filter = Some(f).filter(|f| !f.trim().is_empty());
-                self.page.offset = 0;
-                self.load_page().await;
-            }
-            Cmd::Refresh => {
-                if let Some(d) = &mut self.driver {
-                    if let Err(e) = d.refresh_metadata().await {
-                        self.set_error(e.to_string());
-                        return;
-                    }
-                }
-                self.rebuild_tree();
-                if self.grid_is_table {
-                    self.load_page().await;
-                }
-            }
-            Cmd::Edit { row, col, text, null } => {
-                if !self.grid_is_table {
-                    return;
-                }
-                let Some((s, n)) = self.current.clone() else { return };
-                let cols = self.columns();
-                let (Some(colname), Some(current)) = (cols.get(col).cloned(), self.rows.get(row).cloned()) else { return };
-                let new: Cell = if null { None } else { Some(text) };
-                if current.get(col).cloned().flatten() == new && (null == current[col].is_none()) {
-                    return; // unchanged
-                }
-                self.flash(cols.clone(), row, col, 1, &new);
-                let Some(d) = &mut self.driver else { return };
-                match d.edit_cell(&s, &n, &current, &colname, new.clone()).await {
-                    Ok(()) => {
-                        self.rows[row][col] = new;
-                        self.push_grid(cols, Some((row, col, 2)));
-                        self.log(format!("UPDATE {s}.{n} SET {colname}"));
-                        self.sync_undo();
-                        self.schedule_clear();
-                    }
-                    Err(e) => {
-                        // Revert the displayed value and surface the error.
-                        self.push_grid(cols, Some((row, col, 3)));
-                        self.log(format!("ERROR · {e}"));
-                        let m = e.to_string();
-                        ui(&self.w, move |a| a.set_banner(m.into()));
-                        self.schedule_clear();
-                    }
-                }
-            }
-            Cmd::ClearFlash => {
-                let cols = self.columns();
-                if self.grid_is_table {
-                    self.push_grid(cols, None);
-                }
-            }
-            Cmd::Undo => {
-                let Some(d) = &mut self.driver else { return };
-                match d.undo().await {
-                    Ok(Some(r)) => {
-                        self.log(format!("UNDO {}.{} SET {}", r.schema, r.table, r.column));
-                        if self.grid_is_table {
-                            self.load_page().await;
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(e) => self.set_error(e.to_string()),
-                }
-                self.sync_undo();
-            }
-            Cmd::Query(sql) => {
-                if sql.trim().is_empty() {
-                    return;
-                }
-                if safety::requires_confirmation(self.env, safety::is_destructive(&sql)) {
-                    self.pending_sql = Some(sql.clone());
-                    ui(&self.w, move |a| {
-                        a.set_confirm_sql(sql.into());
-                        a.set_confirm_typed("".into());
-                        a.set_confirm_open(true);
-                    });
-                } else {
-                    self.run_query(sql).await;
-                }
-            }
-            Cmd::ConfirmRun => {
-                ui(&self.w, |a| a.set_confirm_open(false));
-                if let Some(sql) = self.pending_sql.take() {
-                    self.run_query(sql).await;
-                }
-            }
-            Cmd::ConfirmCancel => {
-                self.pending_sql = None;
-                ui(&self.w, |a| a.set_confirm_open(false));
-            }
-        }
-    }
-
-    fn flash(&self, cols: Vec<String>, r: usize, c: usize, state: i32, new: &Cell) {
-        // Show the new value immediately with a "saving" spinner (optimistic).
-        let mut rows = self.rows.clone();
-        rows[r][c] = new.clone();
-        let grid: GridRows = rows
-            .into_iter()
-            .enumerate()
-            .map(|(ri, row)| {
-                row.into_iter().enumerate().map(|(ci, v)| (v, if ri == r && ci == c { state } else { 0 })).collect()
-            })
-            .collect();
-        ui(&self.w, move |a| {
-            a.set_columns(to_strs(cols));
-            a.set_rows(to_model(grid));
-        });
-    }
-
-    fn schedule_clear(&self) {
-        let tx = self.tx.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(1200)).await;
-            let _ = tx.send(Cmd::ClearFlash);
-        });
-    }
-}
+use dboard_core::config::Store;
+use dboard_core::model::DbType;
+use slint::ComponentHandle;
+use tokio::sync::mpsc::unbounded_channel;
+use worker::{Cmd, Worker};
 
 fn main() {
-    let app = App::new().unwrap();
+    let app = App::new().expect("create window");
     let (tx, mut rx) = unbounded_channel::<Cmd>();
+    let st = app.global::<AppState>();
 
-    // Prefill the last-used connection.
-    if let Some(c) = config::load_connections().into_iter().next() {
-        app.set_conn_host(c.host.clone().into());
-        app.set_conn_port(c.port.to_string().into());
-        app.set_conn_db(c.database.clone().into());
-        app.set_conn_user(c.username.clone().into());
-        app.set_conn_env(Environment::ALL.iter().position(|e| *e == c.environment).unwrap_or(3) as i32);
-        if let Some(pw) = config::load_password(&c) {
-            app.set_conn_password(pw.into());
-        }
+    // Every UI callback is a one-liner that forwards to the worker thread.
+    macro_rules! wire {
+        ($on:ident, |$($a:ident),*| $cmd:expr) => {{
+            let tx = tx.clone();
+            st.$on(move |$($a),*| { let _ = tx.send($cmd); });
+        }};
     }
 
-    let a = app.as_weak();
-    app.on_connect({ let tx = tx.clone(); move || {
-        let Some(app) = a.upgrade() else { return };
-        let cfg = ConnectionConfig {
-            name: "Postgres".into(),
-            host: app.get_conn_host().to_string(),
-            port: app.get_conn_port().parse().unwrap_or(5432),
-            database: app.get_conn_db().to_string(),
-            username: app.get_conn_user().to_string(),
-            environment: Environment::ALL[(app.get_conn_env() as usize).min(3)],
-        };
-        app.set_busy(true);
-        app.set_error("".into());
-        let _ = tx.send(Cmd::Connect(cfg, app.get_conn_password().to_string()));
-    }});
-    app.on_disconnect({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::Disconnect); }});
-    app.on_filter_tree({ let tx = tx.clone(); move |f| { let _ = tx.send(Cmd::FilterTree(f.to_string())); }});
-    app.on_open_table({ let tx = tx.clone(); move |i| { let _ = tx.send(Cmd::OpenTable(i as usize)); }});
-    app.on_edit_cell({ let tx = tx.clone(); move |r, c, t, n| {
-        let _ = tx.send(Cmd::Edit { row: r as usize, col: c as usize, text: t.to_string(), null: n });
-    }});
-    app.on_undo({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::Undo); }});
-    app.on_next_page({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::NextPage); }});
-    app.on_prev_page({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::PrevPage); }});
-    app.on_sort_by({ let tx = tx.clone(); move |c| { let _ = tx.send(Cmd::SortBy(c as usize)); }});
-    app.on_apply_filter({ let tx = tx.clone(); move |f| { let _ = tx.send(Cmd::ApplyFilter(f.to_string())); }});
-    app.on_refresh({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::Refresh); }});
-    app.on_run_query({ let tx = tx.clone(); move |s| { let _ = tx.send(Cmd::Query(s.to_string())); }});
-    app.on_confirm_run({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::ConfirmRun); }});
-    app.on_confirm_cancel({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::ConfirmCancel); }});
+    wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_select_conn, |id| Cmd::SelectConn(id.to_string()));
+    wire!(on_save_conn, |f| Cmd::SaveConn(f));
+    wire!(on_test_conn, |f| Cmd::TestConn(f));
+    wire!(on_connect_conn, |f| Cmd::ConnectConn(f));
+    wire!(on_delete_conn, |id| Cmd::DeleteConn(id.to_string()));
+    wire!(on_duplicate_conn, |id| Cmd::DuplicateConn(id.to_string()));
+    wire!(on_disconnect, | | Cmd::Disconnect);
+    wire!(on_refresh, | | Cmd::Refresh);
+    wire!(on_undo, | | Cmd::Undo);
+    wire!(on_filter_tree, |f| Cmd::FilterTree(f.to_string()));
+    wire!(on_tree_click, |i| Cmd::TreeClick(i as usize));
+    wire!(on_tree_action, |i, a| Cmd::TreeAction(i as usize, a.to_string()));
+    wire!(on_new_query_tab, | | Cmd::NewQueryTab);
+    wire!(on_activate_tab, |i| Cmd::ActivateTab(i as usize));
+    wire!(on_close_tab, |i| Cmd::CloseTab(i));
+    wire!(on_tab_action, |i, a| Cmd::TabAction(i as usize, a.to_string()));
+    wire!(on_reopen_tab, | | Cmd::ReopenTab);
+    wire!(on_edit_cell, |r, c, t, n| Cmd::EditCell(r as usize, c as usize, t.to_string(), n));
+    wire!(on_toggle_bool, |r, c| Cmd::ToggleBool(r as usize, c as usize));
+    wire!(on_open_json_cell, |r, c| Cmd::OpenJsonCell(r as usize, c as usize));
+    wire!(on_sort_by, |c| Cmd::SortBy(c as usize));
+    wire!(on_col_resized, |i, w| Cmd::ColResized(i as usize, w));
+    wire!(on_apply_filter, |f| Cmd::ApplyFilter(f.to_string()));
+    wire!(on_next_page, | | Cmd::NextPage);
+    wire!(on_prev_page, | | Cmd::PrevPage);
+    wire!(on_set_page_size, |i| Cmd::SetPageSize(i as usize));
+    wire!(on_copy_text, |t| Cmd::CopyText(t.to_string()));
+    wire!(on_cell_copy, |r, c| Cmd::CellCopy(r as usize, c as usize));
+    wire!(on_delete_row, |r| Cmd::DeleteRow(r as usize));
+    wire!(on_open_insert, | | Cmd::OpenInsert);
+    wire!(on_open_doc, |r| Cmd::OpenDoc(r as usize));
+    wire!(on_open_export, | | Cmd::OpenExport);
+    wire!(on_query_edited, |t| Cmd::QueryEdited(t.to_string()));
+    wire!(on_apply_suggestion, |s| Cmd::ApplySuggestion(s.to_string()));
+    wire!(on_run_query, |t| Cmd::RunQuery(t.to_string()));
+    wire!(on_explain_query, |t, a| Cmd::ExplainQuery(t.to_string(), a));
+    wire!(on_insert_template, |t| Cmd::InsertTemplate(t.to_string()));
+    wire!(on_open_save_query, | | Cmd::OpenSaveQuery);
+    wire!(on_clear_activity, | | Cmd::ClearActivity);
+    wire!(on_load_history, |i| Cmd::LoadHistory(i as usize));
+    wire!(on_load_saved, |i| Cmd::LoadSaved(i as usize));
+    wire!(on_delete_saved, |i| Cmd::DeleteSaved(i as usize));
+    wire!(on_clear_history, | | Cmd::ClearHistory);
+    wire!(on_confirm_run, | | Cmd::ConfirmRun);
+    wire!(on_confirm_cancel, | | Cmd::ConfirmCancel);
+    wire!(on_insert_field_edited, |i, v| Cmd::InsertFieldEdited(i as usize, v.to_string()));
+    wire!(on_insert_submit, | | Cmd::InsertSubmit);
+    wire!(on_insert_cancel, | | Cmd::InsertCancel);
+    wire!(on_json_save, |t| Cmd::JsonSave(t.to_string()));
+    wire!(on_json_format, |t| Cmd::JsonFormat(t.to_string()));
+    wire!(on_json_cancel, | | Cmd::JsonCancel);
+    wire!(on_saveq_submit, |n, f| Cmd::SaveQuerySubmit(n.to_string(), f as usize));
+    wire!(on_saveq_cancel, | | Cmd::SaveQueryCancel);
+    wire!(on_open_palette, |s| Cmd::OpenPalette(s));
+    wire!(on_palette_changed, |q| Cmd::PaletteChanged(q.to_string()));
+    wire!(on_palette_run, |i| Cmd::PaletteRun(i as usize));
+    wire!(on_palette_close, | | Cmd::PaletteClose);
+    wire!(on_export_copy, |f, h| Cmd::ExportCopy(f as usize, h));
+    wire!(on_export_save, |f, h| Cmd::ExportSave(f as usize, h));
+    wire!(on_export_cancel, | | Cmd::ExportCancel);
+    wire!(on_open_settings, | | Cmd::OpenSettings);
+    wire!(on_settings_changed, |d, c, p, cf, ac, f| Cmd::SettingsChanged { dark: d, compact: c, page_idx: p as usize, confirm: cf, autocomplete: ac, font: f });
+    wire!(on_settings_close, | | Cmd::SettingsClose);
+    wire!(on_clear_credentials, | | Cmd::ClearCredentials);
+
+    // Switching the engine in the form keeps the port in sync unless the user typed their own.
+    {
+        let weak = app.as_weak();
+        st.on_type_changed(move |idx| {
+            let Some(app) = weak.upgrade() else { return };
+            let st = app.global::<AppState>();
+            let mut form = st.get_form();
+            let is_default = form.port.is_empty() || DbType::ALL.iter().any(|t| form.port.as_str() == t.default_port().to_string());
+            if is_default {
+                form.port = DbType::ALL[(idx.max(0) as usize).min(2)].default_port().to_string().into();
+            }
+            st.set_form(form);
+        });
+    }
 
     let weak = app.as_weak();
     let worker_tx = tx.clone();
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
         rt.block_on(async move {
-            let mut w = Worker {
-                w: weak,
-                tx: worker_tx,
-                driver: None,
-                env: Environment::Local,
-                tree: Vec::new(),
-                current: None,
-                grid_is_table: false,
-                page: Page::default(),
-                rows: Vec::new(),
-                pending_sql: None,
-                log: Vec::new(),
-                tree_filter: String::new(),
-            };
+            let mut w = Worker::new(weak, worker_tx, Store::open_default());
+            w.init();
             while let Some(cmd) = rx.recv().await {
                 w.handle(cmd).await;
             }
         });
     });
 
-    app.run().unwrap();
+    app.run().expect("run event loop");
 }

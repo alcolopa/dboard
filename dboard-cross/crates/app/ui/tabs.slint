@@ -1,0 +1,44 @@
+import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
+
+export component TabBar inherits Rectangle {
+    height: 34px;
+    background: Theme.bg;
+    HorizontalLayout {
+        padding-left: 6px; spacing: 2px;
+        for tab[i] in AppState.tabs: Rectangle {
+            width: 170px;
+            background: tab.active ? Theme.panel : (ta.has-hover ? Theme.hover : transparent);
+            border-radius: 6px;
+            Rectangle { y: parent.height - 2px; height: 2px; background: tab.active ? Theme.accent : transparent; }
+            Text {
+                x: 10px; width: parent.width - 36px;
+                text: (tab.pinned ? "● " : "") + tab.title;
+                overflow: elide; vertical-alignment: center; font-size: 12px;
+                color: tab.active ? Theme.text : Theme.dim;
+            }
+            ContextMenuArea {
+                Menu {
+                    MenuItem { title: tab.pinned ? "Unpin tab" : "Pin tab"; activated => { AppState.tab-action(i, "pin"); } }
+                    MenuItem { title: "Duplicate tab"; activated => { AppState.tab-action(i, "duplicate"); } }
+                    MenuSeparator { }
+                    MenuItem { title: "Close tab"; enabled: !tab.pinned; activated => { AppState.close-tab(i); } }
+                    MenuItem { title: "Close other tabs"; activated => { AppState.tab-action(i, "close-others"); } }
+                }
+                ta := TouchArea { clicked => { AppState.activate-tab(i); } }
+            }
+            if !tab.pinned: Rectangle {
+                x: parent.width - 22px; y: 8px; width: 16px; height: 16px; border-radius: 8px;
+                background: xa.has-hover ? Theme.panel2 : transparent;
+                Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+                xa := TouchArea { clicked => { AppState.close-tab(i); } }
+            }
+        }
+        Rectangle {
+            width: 30px;
+            background: pa.has-hover ? Theme.hover : transparent; border-radius: 6px;
+            Text { text: "+"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+            pa := TouchArea { clicked => { AppState.new-query-tab(); } }
+        }
+    }
+}

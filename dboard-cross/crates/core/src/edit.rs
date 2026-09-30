@@ -31,6 +31,10 @@ impl EditHistory {
         self.stack.pop()
     }
 
+    pub fn entries(&self) -> &[EditRecord] {
+        &self.stack
+    }
+
     pub fn len(&self) -> usize {
         self.stack.len()
     }

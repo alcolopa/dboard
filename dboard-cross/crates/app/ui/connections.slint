@@ -1,0 +1,135 @@
+import { LineEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
+import { Btn, Badge } from "widgets.slint";
+
+component Field inherits VerticalLayout {
+    in property <string> label;
+    spacing: 4px;
+    Text { text: root.label; color: Theme.dim; font-size: 11px; }
+    @children
+}
+
+export component ConnectionManager inherits Rectangle {
+    background: Theme.bg;
+    HorizontalLayout {
+        // ---- saved connections ----
+        Rectangle {
+            width: 300px;
+            background: Theme.panel;
+            VerticalLayout {
+                padding: 16px; spacing: 10px;
+                HorizontalLayout {
+                    Text { text: "Connections"; font-size: 16px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "+ New"; primary: true; clicked => { AppState.new-conn(); } }
+                }
+                if AppState.connections.length == 0: Text {
+                    text: "No saved connections yet.\nFill in the form to add one.";
+                    color: Theme.dim; wrap: word-wrap;
+                }
+                ScrollView {
+                    VerticalLayout {
+                        spacing: 4px;
+                        for c in AppState.connections: Rectangle {
+                            height: 52px;
+                            border-radius: 6px;
+                            background: c.active ? Theme.panel2 : (ta.has-hover ? Theme.hover : transparent);
+                            border-width: c.active ? 1px : 0px;
+                            border-color: Theme.accent;
+                            Rectangle { x: 10px; y: 19px; width: 10px; height: 10px; border-radius: 5px; background: c.color; }
+                            VerticalLayout {
+                                x: 30px; width: parent.width - 40px; alignment: center; spacing: 2px;
+                                Text { text: c.name; color: Theme.text; font-weight: 600; overflow: elide; }
+                                Text { text: c.subtitle; color: Theme.dim; font-size: 11px; overflow: elide; }
+                            }
+                            ta := TouchArea {
+                                clicked => { AppState.select-conn(c.id); }
+                                double-clicked => { AppState.select-conn(c.id); AppState.connect-conn(AppState.form); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: Theme.line; }
+        // ---- form ----
+        ScrollView {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: 28px; spacing: 12px; alignment: start;
+                Text {
+                    text: AppState.form-is-new ? "New connection" : "Edit connection";
+                    font-size: 20px; font-weight: 700; color: Theme.text;
+                }
+                Text {
+                    text: "Credentials are stored in your OS keyring, never in plain text on disk.";
+                    color: Theme.dim; font-size: 11px; wrap: word-wrap;
+                }
+                Field {
+                    label: "Connection name";
+                    LineEdit { placeholder-text: "e.g. Production replica"; text <=> AppState.form.name; }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Field {
+                        label: "Database engine";
+                        ComboBox {
+                            model: AppState.type-names;
+                            current-index <=> AppState.form.type-index;
+                            selected => { AppState.type-changed(self.current-index); }
+                        }
+                    }
+                    Field {
+                        label: "Environment";
+                        ComboBox { model: AppState.env-names; current-index <=> AppState.form.env-index; }
+                    }
+                    Field {
+                        label: "SSL / TLS";
+                        ComboBox { model: AppState.ssl-names; current-index <=> AppState.form.ssl-index; }
+                    }
+                }
+                if AppState.form.type-index == 2: Field {
+                    label: "MongoDB connection string (optional, overrides the fields below)";
+                    LineEdit { placeholder-text: "mongodb://user@host:27017/dbname  or  mongodb+srv://…"; text <=> AppState.form.uri; }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Field { label: "Host"; horizontal-stretch: 1; LineEdit { placeholder-text: "host or IP"; text <=> AppState.form.host; } }
+                    Field { label: "Port"; width: 100px; LineEdit { text <=> AppState.form.port; } }
+                }
+                Field { label: "Database"; LineEdit { placeholder-text: "database name (optional for MongoDB / MySQL)"; text <=> AppState.form.database; } }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Field { label: "Username"; horizontal-stretch: 1; LineEdit { text <=> AppState.form.user; } }
+                    Field { label: "Password"; horizontal-stretch: 1; LineEdit { input-type: password; text <=> AppState.form.password; } }
+                }
+                CheckBox { text: "Remember password in the OS keyring"; checked <=> AppState.form.remember; }
+                if AppState.form.env-index <= 1: Rectangle {
+                    height: 30px; background: Theme.warn-bg; border-radius: 5px;
+                    Text {
+                        x: 10px; width: parent.width - 20px;
+                        text: "Destructive statements on this connection will require typed confirmation.";
+                        color: Theme.warn; font-size: 11px; vertical-alignment: center; overflow: elide;
+                    }
+                }
+                if AppState.form-error != "": Text { text: AppState.form-error; color: Theme.err; wrap: word-wrap; }
+                if AppState.form-info != "": Text { text: AppState.form-info; color: Theme.ok; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px; alignment: start;
+                    Btn { text: AppState.form-busy ? "Working…" : "Test connection"; enabled: !AppState.form-busy; clicked => { AppState.test-conn(AppState.form); } }
+                    Btn { text: "Save"; enabled: !AppState.form-busy; clicked => { AppState.save-conn(AppState.form); } }
+                    if !AppState.form-is-new: Btn { text: "Duplicate"; clicked => { AppState.duplicate-conn(AppState.form.id); } }
+                    if !AppState.form-is-new: Btn { text: "Delete"; danger: true; clicked => { AppState.delete-conn(AppState.form.id); } }
+                    Rectangle { width: 16px; }
+                    Btn { text: AppState.busy ? "Connecting…" : "Connect"; primary: true; enabled: !AppState.busy && !AppState.form-busy; clicked => { AppState.connect-conn(AppState.form); } }
+                }
+            }
+        }
+    }
+    Btn {
+        x: parent.width - self.width - 16px; y: 12px;
+        text: "Settings";
+        clicked => { AppState.open-settings(); }
+    }
+}
