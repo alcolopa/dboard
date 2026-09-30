@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>dboard — Native macOS Database Client</title>
-<meta name="description" content="A fast, native macOS database client for PostgreSQL, MySQL, and MongoDB with instant cell editing and production-safety guardrails." />
+<title>dboard — Database Client for macOS, Windows and Linux</title>
+<meta name="description" content="A fast, native database client for PostgreSQL, MySQL, and MongoDB on macOS, Windows, and Linux, with instant cell editing and production-safety guardrails." />
 <link rel="icon" href="AppIcon-1024.png" />
 <style>
   :root{
@@ -89,6 +89,11 @@
     padding:48px 24px;text-align:center;color:var(--text-dim);font-size:14px;
   }
 
+  .card p+p{margin-top:10px;}
+  .card .note{font-size:13px;}
+  .card code{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:12px;}
+  #download .card{display:flex;flex-direction:column;}
+  #download .card p:last-child{margin-top:auto;padding-top:14px;}
   section{padding:72px 0;border-top:1px solid var(--border);}
   .section-head{text-align:center;max-width:600px;margin:0 auto 44px;}
   .section-head h2{font-size:30px;letter-spacing:-0.01em;margin:0 0 10px;}
@@ -149,6 +154,7 @@
       <a href="#features">Features</a>
       <a href="#engines">Engines</a>
       <a href="#shortcuts">Shortcuts</a>
+      <a href="#download">Download</a>
       <a href="https://github.com/alcolopa/dboard" target="_blank" rel="noopener">GitHub</a>
       <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
     </nav>
@@ -157,18 +163,18 @@
 
 <main>
   <section class="hero wrap" style="border-top:none;padding-top:88px;">
-    <span class="eyebrow">macOS 14+ · Swift &amp; SwiftUI · Free &amp; Open Source</span>
-    <h1>A native database client<br/>built for <span>speed and trust</span></h1>
+    <span class="eyebrow">macOS · Windows · Linux · Free &amp; Open Source</span>
+    <h1>A native database client<br/>for <span>macOS, Windows and Linux</span></h1>
     <p class="lede">
-      dboard is a fast, native macOS client for PostgreSQL, MySQL, and MongoDB —
-      inspired by Sequel Pro, polished like TablePlus and Linear. Edit data instantly,
-      with production safeguards that keep you from breaking things.
+      dboard is a fast, native client for PostgreSQL, MySQL, and MongoDB, inspired by
+      Sequel Pro. Edit data in place, with safeguards that stop you from running a
+      destructive statement against production by accident. Now available on Windows and Linux as well as macOS.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">⌘ Download for macOS</a>
+      <a class="btn btn-primary" href="#download">Download</a>
       <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">View Source</a>
     </div>
-    <p class="subnote">Unsigned build — after unzipping, run <code>xattr -cr dboard.app</code> to bypass Gatekeeper.</p>
+    <p class="subnote">macOS 14+ · Windows x86_64 · Linux x86_64</p>
   </section>
 
   <div class="wrap">
@@ -207,12 +213,12 @@
         <div class="card">
           <div class="icon">🔐</div>
           <h3>Keychain-Backed Secrets</h3>
-          <p>Passwords and connection credentials live in the macOS Keychain — never logged, never stored in plaintext.</p>
+          <p>Passwords go into the OS keychain (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) and are never logged or written to disk in plaintext.</p>
         </div>
         <div class="card">
           <div class="icon">🔍</div>
           <h3>Command Palette &amp; Search</h3>
-          <p>⌘K for fuzzy command and connection switching, ⌘P for instant global search across tables, columns, routines, and views.</p>
+          <p>Ctrl/⌘+K for fuzzy command and connection switching, Ctrl/⌘+P for instant global search across tables, columns, routines, and views.</p>
         </div>
       </div>
     </div>
@@ -244,7 +250,7 @@
     <div class="wrap">
       <div class="section-head">
         <h2>Built for the keyboard</h2>
-        <p>Every core action has a shortcut, so your hands never leave the keys.</p>
+        <p>Every core action has a shortcut. Shown for macOS; on Windows and Linux use Ctrl in place of ⌘.</p>
       </div>
       <table class="kb">
         <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
@@ -264,23 +270,44 @@
     </div>
   </section>
 
-  <section>
-    <div class="wrap" style="text-align:center;">
-      <div class="section-head" style="margin-bottom:28px;">
-        <h2>Get dboard</h2>
-        <p>Prebuilt releases are published automatically from GitHub Actions on every tagged version.</p>
+  <section id="download">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Download</h2>
+        <p>Each tagged version is built by GitHub Actions and attached to the release page.</p>
       </div>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Download latest release</a>
-        <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard#-building--running">Build from source</a>
+      <div class="grid">
+        <div class="card">
+          <h3>macOS</h3>
+          <p>Swift and SwiftUI app, macOS 14 or later. Unzip it and drag it to Applications.</p>
+          <p class="note">The build is unsigned. Run <code>xattr -cr dboard.app</code> once to get past Gatekeeper.</p>
+          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
+        </div>
+        <div class="card">
+          <h3>Windows</h3>
+          <p>Single <code>dboard.exe</code>, x86_64, in a zip. No installer and no runtime to install.</p>
+          <p class="note">CI builds this, but it hasn't been tested by hand on Windows yet. Bug reports welcome.</p>
+          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
+        </div>
+        <div class="card">
+          <h3>Linux</h3>
+          <p>Single binary, x86_64, in a tar.gz. Built with Rust and Slint, so it runs on X11 and Wayland.</p>
+          <p class="note">Extract it and run <code>./dboard</code>. Saved passwords need a Secret Service keyring.</p>
+          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .tar.gz</a></p>
+        </div>
       </div>
+      <p class="subnote" style="text-align:center;margin-top:24px;">
+        The Windows and Linux client is a separate Rust codebase in <a href="https://github.com/alcolopa/dboard/tree/main/dboard-cross">dboard-cross</a>.
+        It covers the same core features; SSH tunnels, SQL syntax highlighting and data import are not there yet.
+        Or <a href="https://github.com/alcolopa/dboard#-building--running">build from source</a>.
+      </p>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <p>dboard — a native macOS database client.</p>
+    <p>dboard — a native database client for macOS, Windows and Linux.</p>
     <div class="links">
       <a href="https://github.com/alcolopa/dboard">GitHub</a>
       <a href="https://github.com/alcolopa/dboard/releases">Releases</a>
