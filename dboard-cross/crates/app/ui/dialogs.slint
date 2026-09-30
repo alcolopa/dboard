@@ -7,6 +7,35 @@ component Title inherits Text { font-size: 15px; font-weight: 700; color: Theme.
 component Note inherits Text { color: Theme.dim; font-size: 12px; wrap: word-wrap; }
 
 export component Dialogs inherits Rectangle {
+    // ---- context menu ----
+    if AppState.ctx-open: Rectangle {
+        TouchArea {
+            clicked => { AppState.ctx-close(); }
+            pointer-event(e) => { if e.button == PointerEventButton.right && e.kind == PointerEventKind.down { AppState.ctx-close(); } }
+        }
+        Rectangle {
+            x: max(4px, min(AppState.ctx-x, parent.width - self.width - 4px));
+            y: max(4px, min(AppState.ctx-y, parent.height - self.height - 4px));
+            width: 210px;
+            height: menu.preferred-height + 8px;
+            background: Theme.panel; border-radius: 6px; border-width: 1px; border-color: Theme.line;
+            drop-shadow-blur: 12px; drop-shadow-color: #00000066; drop-shadow-offset-y: 4px;
+            menu := VerticalLayout {
+                padding: 4px; spacing: 0px;
+                for it in AppState.ctx-items: Rectangle {
+                    height: it.sep ? 9px : 26px;
+                    if it.sep: Rectangle { y: 4px; height: 1px; background: Theme.line; }
+                    if !it.sep: Rectangle {
+                        border-radius: 4px;
+                        background: ia.has-hover ? Theme.hover : transparent;
+                        Text { x: 10px; text: it.label; color: it.danger ? Theme.err : Theme.text; vertical-alignment: center; font-size: 12px; }
+                        ia := TouchArea { clicked => { AppState.ctx-pick(it.action); } }
+                    }
+                }
+            }
+        }
+    }
+
     // ---- destructive confirmation ----
     if AppState.confirm-open: Modal {
         border: Theme.err;
@@ -51,7 +80,7 @@ export component Dialogs inherits Rectangle {
         Title { text: AppState.json-title; }
         Rectangle {
             height: 320px; border-width: 1px; border-color: Theme.line; border-radius: 6px;
-            TextEdit { text <=> AppState.json-text; font-size: 12px; }
+            TextEdit { width: parent.width; height: parent.height; text <=> AppState.json-text; font-size: 12px; }
         }
         if AppState.json-error != "": Text { text: AppState.json-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
         HorizontalLayout {

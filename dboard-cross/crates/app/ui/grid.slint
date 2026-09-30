@@ -19,6 +19,30 @@ component GridCellView inherits Rectangle {
     border-color: Theme.line;
     clip: true;
 
+    // Declared first so the toggle / badges drawn after it receive clicks before it does.
+    ta := TouchArea {
+        clicked => { AppState.selected-row = root.row-idx; }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                AppState.selected-row = root.row-idx;
+                AppState.ctx("cell", root.row-idx, root.ci, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+        double-clicked => {
+            if root.editable {
+                if root.col-info.is-json {
+                    AppState.open-json-cell(root.row-idx, root.ci);
+                } else {
+                    ti.text = root.cell.is-null ? "" : root.cell.text;
+                    root.editing = true;
+                    ti.focus();
+                    ti.select-all();
+                }
+            }
+        }
+    }
+
+
     if !editing && !(col-info.is-bool && !cell.is-null && editable): Text {
         x: 8px; width: parent.width - (col-info.fk != "" ? 40px : 26px);
         text: cell.is-null ? "NULL" : cell.text;
@@ -46,31 +70,6 @@ component GridCellView inherits Rectangle {
     if !editing && cell.state == 1: Text { x: parent.width - 18px; text: "…"; color: Theme.dim; vertical-alignment: center; }
     if !editing && cell.state == 2: Text { x: parent.width - 18px; text: "✓"; color: Theme.ok; vertical-alignment: center; }
     if !editing && cell.state == 3: Text { x: parent.width - 18px; text: "!"; color: Theme.err; font-weight: 800; vertical-alignment: center; }
-
-    ContextMenuArea {
-        Menu {
-            MenuItem { title: "Copy value"; activated => { AppState.cell-copy(root.row-idx, root.ci); } }
-            MenuItem { title: "Set to NULL"; enabled: root.editable; activated => { root.commit("", true); } }
-            MenuItem { title: "Edit as JSON…"; enabled: root.editable; activated => { AppState.open-json-cell(root.row-idx, root.ci); } }
-            MenuSeparator { }
-            MenuItem { title: "Delete row"; enabled: root.editable; activated => { AppState.delete-row(root.row-idx); } }
-        }
-        ta := TouchArea {
-            clicked => { AppState.selected-row = root.row-idx; }
-            double-clicked => {
-                if root.editable {
-                    if root.col-info.is-json {
-                        AppState.open-json-cell(root.row-idx, root.ci);
-                    } else {
-                        ti.text = root.cell.is-null ? "" : root.cell.text;
-                        root.editing = true;
-                        ti.focus();
-                        ti.select-all();
-                    }
-                }
-            }
-        }
-    }
 
     Rectangle {
         visible: root.editing;
@@ -107,6 +106,9 @@ export component DataGrid inherits Rectangle {
         content-width: max(self.width, 48px + AppState.grid-width);
         content-height: self.height;
         VerticalLayout {
+            width: max(parent.width, 48px + AppState.grid-width);
+            height: parent.height;
+            alignment: stretch;
             // ---- header ----
             HorizontalLayout {
                 height: 34px;

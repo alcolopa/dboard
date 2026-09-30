@@ -54,6 +54,10 @@ pub fn select_page(d: Dialect, t: &Table, p: &Page) -> String {
     }
     if let Some(c) = &p.sort_column {
         sql.push_str(&format!(" ORDER BY {} {}", d.quote(c), if p.sort_ascending { "ASC" } else { "DESC" }));
+    } else if t.has_primary_key() && matches!(t.kind, crate::model::TableKind::Table) {
+        // Stable default order: without it Postgres returns an edited row at the end of the table.
+        let pks = t.primary_keys().iter().map(|c| d.quote(&c.name)).collect::<Vec<_>>().join(", ");
+        sql.push_str(&format!(" ORDER BY {pks}"));
     }
     sql.push_str(&format!(" LIMIT {} OFFSET {}", p.limit.max(1), p.offset.max(0)));
     sql
@@ -205,6 +209,15 @@ mod tests {
             "SELECT \"id\"::text, \"name\"::text FROM \"public\".\"us\"\"ers\" WHERE id > 3 ORDER BY \"name\" DESC LIMIT 50 OFFSET 100"
         );
         assert!(select_page(Dialect::My, &table(), &p).starts_with("SELECT `id`, `name` FROM `public`.`us\"ers`"));
+    }
+
+    #[test]
+    fn default_order_is_primary_key() {
+        let p = Page { limit: 10, offset: 0, sort_column: None, sort_ascending: true, filter: None };
+        assert!(select_page(Dialect::Pg, &table(), &p).ends_with("ORDER BY \"id\" LIMIT 10 OFFSET 0"));
+        let mut t = table();
+        t.columns[0].is_primary_key = false;
+        assert!(!select_page(Dialect::Pg, &t, &p).contains("ORDER BY"));
     }
 
     #[test]

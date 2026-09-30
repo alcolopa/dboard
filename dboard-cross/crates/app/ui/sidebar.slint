@@ -46,20 +46,13 @@ export component Sidebar inherits Rectangle {
                     text: item.label; color: Theme.text; overflow: elide; vertical-alignment: center;
                 }
 
-                ContextMenuArea {
-                    Menu {
-                        MenuItem { title: "Open data"; enabled: item.kind >= 2 && item.kind <= 5; activated => { AppState.tree-action(i, "open"); } }
-                        MenuItem { title: item.kind >= 6 ? "View definition" : "Inspect structure"; enabled: item.kind >= 2; activated => { AppState.tree-action(i, "structure"); } }
-                        MenuItem { title: "Query…"; enabled: item.kind >= 2 && item.kind <= 5; activated => { AppState.tree-action(i, "query"); } }
-                        MenuItem { title: "Insert row…"; enabled: item.kind == 2 || item.kind == 5; activated => { AppState.tree-action(i, "insert"); } }
-                        MenuItem { title: "Export data…"; enabled: item.kind >= 2 && item.kind <= 5; activated => { AppState.tree-action(i, "export"); } }
-                        MenuSeparator { }
-                        MenuItem { title: "Truncate…"; enabled: item.kind == 2 || item.kind == 5; activated => { AppState.tree-action(i, "truncate"); } }
-                        MenuItem { title: "Drop…"; enabled: item.kind >= 2 && item.kind <= 5; activated => { AppState.tree-action(i, "drop"); } }
-                        MenuSeparator { }
-                        MenuItem { title: "Copy name"; enabled: item.kind >= 2; activated => { AppState.tree-action(i, "copy"); } }
+                ta := TouchArea {
+                    clicked => { AppState.tree-click(i); }
+                    pointer-event(e) => {
+                        if e.button == PointerEventButton.right && e.kind == PointerEventKind.down && item.kind >= 2 {
+                            AppState.ctx("tree", i, 0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                        }
                     }
-                    ta := TouchArea { clicked => { AppState.tree-click(i); } }
                 }
             }
         }

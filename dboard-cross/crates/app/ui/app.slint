@@ -28,7 +28,7 @@ component Workspace inherits VerticalLayout {
             Btn { text: "Apply"; clicked => { AppState.apply-filter(AppState.filter-text); } }
         }
     }
-    if AppState.tab-kind == 1: QueryEditor { }
+    if AppState.tab-kind == 1: QueryEditor { vertical-stretch: 0; }
     if AppState.banner != "": Rectangle {
         height: 26px; background: AppState.banner-error ? Theme.err-bg : Theme.warn-bg;
         Text { x: 12px; width: parent.width - 24px; text: AppState.banner; color: AppState.banner-error ? Theme.err : Theme.warn; vertical-alignment: center; overflow: elide; }
@@ -41,12 +41,12 @@ component Workspace inherits VerticalLayout {
             Text { text: "Ctrl+K command palette   ·   Ctrl+P search objects"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
         }
     }
-    if AppState.tab-kind >= 0 && AppState.tab-kind != 3: DataGrid { vertical-stretch: 1; }
+    if AppState.tab-kind >= 0 && AppState.tab-kind != 3: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
     if AppState.tab-kind == 2 || AppState.tab-kind == 3: Rectangle {
         vertical-stretch: AppState.tab-kind == 3 ? 1 : 0;
         height: AppState.tab-kind == 3 ? 100px : 220px;
         background: Theme.panel; border-width: 1px; border-color: Theme.line;
-        TextEdit { read-only: true; text: AppState.ddl-text; font-size: AppState.set-font-size * 1px; }
+        TextEdit { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-size: AppState.set-font-size * 1px; }
     }
     // footer
     if AppState.tab-kind >= 0: Rectangle {
@@ -72,26 +72,35 @@ component Workspace inherits VerticalLayout {
 
 export component App inherits Window {
     title: "dboard";
-    preferred-width: 1360px;
-    preferred-height: 840px;
+    preferred-width: 1280px;
+    preferred-height: 780px;
     min-width: 900px;
     min-height: 560px;
     background: Theme.bg;
     default-font-size: 13px;
     init => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
 
-    FocusScope {
+    // Closing a dialog destroys its focused input; hand focus back so shortcuts keep working.
+    property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
+        || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open;
+    changed any-modal => { if !self.any-modal { fs.focus(); } }
+    // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
+    property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
+    changed focus-key => { fs.focus(); }
+
+    forward-focus: fs;
+    fs := FocusScope {
         capture-key-pressed(e) => {
             if AppState.connected && (e.modifiers.control || e.modifiers.meta) {
+                // With Ctrl held Slint reports the plain letter; modifier keys arrive as private-use characters.
                 if e.text == "k" { AppState.open-palette(false); return accept; }
                 if e.text == "p" { AppState.open-palette(true); return accept; }
                 if e.text == "n" { AppState.new-query-tab(); return accept; }
                 if e.text == "w" { AppState.close-tab(-1); return accept; }
                 if e.text == "r" { AppState.refresh(); return accept; }
-                if e.text == "t" && e.modifiers.shift { AppState.reopen-tab(); return accept; }
-                if e.text == "T" { AppState.reopen-tab(); return accept; }
-                if e.text == "i" && e.modifiers.alt { AppState.inspector-open = !AppState.inspector-open; return accept; }
-                if e.text == Key.Return && AppState.tab-kind == 1 { AppState.run-query(AppState.query-text); return accept; }
+                if (e.text == "t" || e.text == "T") && e.modifiers.shift { AppState.reopen-tab(); return accept; }
+                if (e.text == "i") && e.modifiers.alt { AppState.inspector-open = !AppState.inspector-open; return accept; }
+                if (e.text == Key.Return || e.text == "\n") && AppState.tab-kind == 1 { AppState.run-query(AppState.query-text); return accept; }
             }
             reject
         }
@@ -117,19 +126,22 @@ export component App inherits Window {
                     Btn { text: "Disconnect"; y: 7px; clicked => { AppState.disconnect(); } }
                 }
             }
-            HorizontalLayout {
+            Rectangle {
                 vertical-stretch: 1;
-                Sidebar { width: 270px; }
-                Rectangle { width: 1px; background: Theme.line; }
+                property <length> inspector-w: AppState.inspector-open ? 321px : 0px;
+                Sidebar { x: 0px; width: 270px; height: parent.height; }
+                Rectangle { x: 270px; width: 1px; height: parent.height; background: Theme.line; }
                 Rectangle {
-                    horizontal-stretch: 1;
-                    Workspace { }
+                    x: 271px;
+                    width: parent.width - 271px - parent.inspector-w;
+                    height: parent.height;
+                    Workspace { width: parent.width; height: parent.height; }
                     if AppState.drawer-open && AppState.tab-kind == 1: HistoryDrawer {
                         x: parent.width - self.width; height: parent.height;
                     }
                 }
-                if AppState.inspector-open: Rectangle { width: 1px; background: Theme.line; }
-                if AppState.inspector-open: Inspector { }
+                if AppState.inspector-open: Rectangle { x: parent.width - 321px; width: 1px; height: parent.height; background: Theme.line; }
+                if AppState.inspector-open: Inspector { x: parent.width - 320px; height: parent.height; }
             }
         }
 

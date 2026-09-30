@@ -3,7 +3,7 @@
 
 use crate::export::{self, ExportCol};
 use crate::suggest;
-use crate::{App, AppState, ColInfo, ConnForm, ConnItem, FieldItem, GridCell, HistoryItem, PaletteItem, SavedItem, TabInfo, TreeItem};
+use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, FieldItem, GridCell, HistoryItem, PaletteItem, SavedItem, TabInfo, TreeItem};
 use dboard_core::config::{self, secrets, HistoryEntry, SavedQuery, Settings, Store, Theme as ThemePref, FOLDERS};
 use dboard_core::model::*;
 use dboard_core::sql::Dialect;
@@ -89,6 +89,9 @@ pub enum Cmd {
     SettingsChanged { dark: bool, compact: bool, page_idx: usize, confirm: bool, autocomplete: bool, font: i32 },
     SettingsClose,
     ClearCredentials,
+    Ctx(String, usize, usize, f32, f32),
+    CtxPick(String),
+    CtxClose,
     // internal
     ClearFlash,
     ClearToast(u64),
@@ -262,6 +265,12 @@ enum JsonTarget {
     NewDoc,
 }
 
+enum CtxTarget {
+    Tree(usize),
+    Tab(usize),
+    Cell(usize, usize),
+}
+
 enum PaletteAction {
     Command(&'static str),
     OpenTable(String, String),
@@ -305,6 +314,7 @@ pub struct Worker {
     toast_id: u64,
     export_dialect: Dialect,
     form_id: String,
+    ctx_target: Option<CtxTarget>,
 }
 
 impl Worker {
@@ -339,6 +349,7 @@ impl Worker {
             toast_id: 0,
             export_dialect: Dialect::Pg,
             form_id: String::new(),
+            ctx_target: None,
         }
     }
 
@@ -609,7 +620,13 @@ impl Worker {
         let who = if cfg.db_type == DbType::Mongo && !cfg.mongo_uri.is_empty() {
             cfg.mongo_uri.clone()
         } else {
-            format!("{}@{}:{}{}", cfg.username, cfg.host, cfg.port, if cfg.database.is_empty() { String::new() } else { format!(" / {}", cfg.database) })
+            format!(
+                "{}{}:{}{}",
+                if cfg.username.is_empty() { String::new() } else { format!("{}@", cfg.username) },
+                cfg.host,
+                cfg.port,
+                if cfg.database.is_empty() { String::new() } else { format!(" / {}", cfg.database) }
+            )
         };
         let status = format!("{} {} · {who}", cfg.db_type.label(), conn.server_version);
         let (name, env, protected, db) = (cfg.display_name(), cfg.environment, self.protected(), cfg.db_type.index() as i32);
@@ -1697,7 +1714,7 @@ impl Worker {
 const COMMANDS: [(&str, &str, &str); 9] = [
     ("new-query", "New query tab", "Ctrl+N"),
     ("refresh", "Refresh database metadata", "Ctrl+R"),
-    ("undo", "Undo last edit", "Ctrl+Z"),
+    ("undo", "Undo last database edit", ""),
     ("reopen", "Reopen closed tab", "Ctrl+Shift+T"),
     ("close-tab", "Close active tab", "Ctrl+W"),
     ("inspector", "Toggle inspector panel", "Ctrl+Alt+I"),
@@ -1710,6 +1727,7 @@ impl Worker {
     fn build_palette(&mut self, q: &str) {
         let Some(conn) = &self.conn else { return };
         let mut scored: Vec<(i32, PaletteItem, PaletteAction)> = Vec::new();
+        // Stable order for equal scores (e.g. an empty query): keep insertion order.
         let mut add = |score: Option<i32>, title: String, subtitle: String, kind: &str, a: PaletteAction| {
             if let Some(s) = score {
                 scored.push((s, PaletteItem { title: title.into(), subtitle: subtitle.into(), kind: kind.into() }, a));
@@ -1753,7 +1771,7 @@ impl Worker {
                 add(suggest::fuzzy(q, &c.display_name()), format!("Switch to {}", c.display_name()), c.host.clone(), "connection", PaletteAction::Connection(c.id.clone()));
             }
         }
-        scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.title.to_string().cmp(&b.1.title.to_string())));
+        scored.sort_by(|a, b| b.0.cmp(&a.0)); // stable: ties keep insertion order
         scored.truncate(50);
         let (items, actions): (Vec<_>, Vec<_>) = scored.into_iter().map(|(_, i, a)| (i, a)).unzip();
         self.palette = actions;
@@ -2173,12 +2191,94 @@ impl Worker {
             Cmd::SettingsClose => ui(&self.w, |st| st.set_settings_open(false)),
             Cmd::ClearCredentials => self.clear_credentials(),
 
+            Cmd::Ctx(kind, i, j, x, y) => self.open_ctx(&kind, i, j, x, y),
+            Cmd::CtxPick(a) => self.ctx_pick(&a).await,
+            Cmd::CtxClose => {
+                self.ctx_target = None;
+                ui(&self.w, |st| st.set_ctx_open(false));
+            }
             Cmd::ClearFlash => self.push_rows(None),
             Cmd::ClearToast(id) => {
                 if id == self.toast_id {
                     ui(&self.w, |st| st.set_toast("".into()));
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Context menus
+// ---------------------------------------------------------------------------------------------
+
+fn item(label: &str, action: &str) -> (String, String, bool, bool) {
+    (label.to_string(), action.to_string(), false, false)
+}
+fn danger(label: &str, action: &str) -> (String, String, bool, bool) {
+    (label.to_string(), action.to_string(), false, true)
+}
+fn sep() -> (String, String, bool, bool) {
+    (String::new(), String::new(), true, false)
+}
+
+impl Worker {
+    fn open_ctx(&mut self, kind: &str, i: usize, j: usize, x: f32, y: f32) {
+        let (target, items) = match kind {
+            "tree" => {
+                let Some(e) = self.tree.get(i) else { return };
+                let items = match e.kind {
+                    2 | 5 => vec![item("Open data", "open"), item("Inspect structure", "structure"), item("Query…", "query"), item("Insert row…", "insert"), item("Export data…", "export"), sep(), danger("Truncate…", "truncate"), danger("Drop…", "drop"), sep(), item("Copy name", "copy")],
+                    3 | 4 => vec![item("Open data", "open"), item("Inspect structure", "structure"), item("Query…", "query"), item("Export data…", "export"), sep(), danger("Drop…", "drop"), sep(), item("Copy name", "copy")],
+                    _ => vec![item("View definition", "definition"), item("Copy name", "copy")],
+                };
+                (CtxTarget::Tree(i), items)
+            }
+            "tab" => {
+                let Some(t) = self.tabs.get(i) else { return };
+                (CtxTarget::Tab(i), vec![item(if t.pinned { "Unpin tab" } else { "Pin tab" }, "pin"), item("Duplicate tab", "duplicate"), sep(), item("Close tab", "close"), item("Close other tabs", "close-others")])
+            }
+            "cell" => {
+                let editable = self.active_tab().is_some_and(|t| t.kind == Kind::Table && t.editable);
+                let mut v = vec![item("Copy value", "copy")];
+                if editable {
+                    v.push(item("Set to NULL", "null"));
+                    v.push(item("Edit as JSON / text…", "json"));
+                    v.push(sep());
+                    v.push(danger("Delete row…", "delete"));
+                }
+                (CtxTarget::Cell(i, j), v)
+            }
+            _ => return,
+        };
+        self.ctx_target = Some(target);
+        ui(&self.w, move |st| {
+            let v: Vec<CtxItem> = items.into_iter().map(|(l, a, s, d)| CtxItem { label: l.into(), action: a.into(), sep: s, danger: d }).collect();
+            st.set_ctx_items(ModelRc::new(VecModel::from(v)));
+            st.set_ctx_x(x);
+            st.set_ctx_y(y);
+            st.set_ctx_open(true);
+        });
+    }
+
+    async fn ctx_pick(&mut self, action: &str) {
+        ui(&self.w, |st| st.set_ctx_open(false));
+        let Some(target) = self.ctx_target.take() else { return };
+        match target {
+            CtxTarget::Tree(i) => self.tree_action(i, action).await,
+            CtxTarget::Tab(i) => match action {
+                "close" => self.close_tab(i as i32),
+                other => self.tab_action(i, other).await,
+            },
+            CtxTarget::Cell(r, c) => match action {
+                "copy" => {
+                    let text = self.cell_text(r, c).flatten().unwrap_or_default();
+                    self.copy_to_clipboard(&text);
+                }
+                "null" => self.edit_cell(r, c, String::new(), true).await,
+                "json" => self.open_json_cell(r, c),
+                "delete" => self.ask_delete_row(r),
+                _ => {}
+            },
         }
     }
 }

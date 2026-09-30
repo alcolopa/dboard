@@ -10,6 +10,7 @@ export component QueryEditor inherits VerticalLayout {
         height: 150px;
         border-radius: 6px; border-width: 1px; border-color: Theme.line; background: Theme.panel;
         TextEdit {
+            width: parent.width; height: parent.height;
             text <=> AppState.query-text;
             font-size: AppState.set-font-size * 1px;
             edited(t) => { AppState.query-edited(t); }
@@ -26,12 +27,12 @@ export component QueryEditor inherits VerticalLayout {
         Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
     }
     if AppState.db-type == 2: HorizontalLayout {
-        spacing: 6px;
+        spacing: 6px; alignment: start;
         Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Chip { text: t; clicked => { AppState.insert-template(t); } }
     }
     if AppState.suggestions.length > 0: HorizontalLayout {
-        spacing: 6px;
+        spacing: 6px; alignment: start;
         Text { text: "Suggest:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for s in AppState.suggestions: Chip { text: s; clicked => { AppState.apply-suggestion(s); } }
     }

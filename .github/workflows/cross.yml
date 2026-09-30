@@ -22,6 +22,14 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: dbtest
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -29,10 +37,11 @@ jobs:
         with: { workspaces: dboard-cross }
       - name: Install Linux GUI deps
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev
-      - name: Test (core unit + Postgres integration)
+      - name: Test (unit + Postgres and MariaDB integration)
         env:
           DBOARD_TEST_PG: localhost:5432:postgres:postgres:postgres
-        run: cargo test -p dboard-core
+          DBOARD_TEST_MYSQL: 127.0.0.1:3306:root:root:dbtest
+        run: cargo test --workspace
 
   build:
     needs: test

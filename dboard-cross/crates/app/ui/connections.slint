@@ -96,7 +96,7 @@ export component ConnectionManager inherits Rectangle {
                 HorizontalLayout {
                     spacing: 12px;
                     Field { label: "Host"; horizontal-stretch: 1; LineEdit { placeholder-text: "host or IP"; text <=> AppState.form.host; } }
-                    Field { label: "Port"; width: 100px; LineEdit { text <=> AppState.form.port; } }
+                    Field { label: "Port"; width: 170px; LineEdit { text <=> AppState.form.port; } }
                 }
                 Field { label: "Database"; LineEdit { placeholder-text: "database name (optional for MongoDB / MySQL)"; text <=> AppState.form.database; } }
                 HorizontalLayout {
@@ -114,7 +114,7 @@ export component ConnectionManager inherits Rectangle {
                     }
                 }
                 if AppState.form-error != "": Text { text: AppState.form-error; color: Theme.err; wrap: word-wrap; }
-                if AppState.form-info != "": Text { text: AppState.form-info; color: Theme.ok; wrap: word-wrap; }
+                if AppState.form-info != "": Text { text: AppState.form-info; color: AppState.form-info.character-count > 60 ? Theme.warn : Theme.ok; wrap: word-wrap; }
                 HorizontalLayout {
                     spacing: 8px; alignment: start;
                     Btn { text: AppState.form-busy ? "Working…" : "Test connection"; enabled: !AppState.form-busy; clicked => { AppState.test-conn(AppState.form); } }

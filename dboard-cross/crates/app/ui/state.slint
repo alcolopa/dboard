@@ -7,6 +7,7 @@ export struct HistoryItem { sql: string, meta: string, ok: bool }
 export struct SavedItem { id: string, name: string, folder: string, sql: string }
 export struct PaletteItem { title: string, subtitle: string, kind: string }
 export struct FieldItem { name: string, type-name: string, hint: string }
+export struct CtxItem { label: string, action: string, sep: bool, danger: bool }
 export struct ConnForm {
     id: string, name: string, type-index: int, host: string, port: string, database: string,
     user: string, password: string, env-index: int, ssl-index: int, uri: string, remember: bool,
@@ -130,6 +131,15 @@ export global AppState {
     callback load-saved(int);
     callback delete-saved(int);
     callback clear-history();
+
+    // ---- context menu (drawn in-window so it behaves the same on every platform) ----
+    in property <bool> ctx-open;
+    in property <length> ctx-x;
+    in property <length> ctx-y;
+    in property <[CtxItem]> ctx-items;
+    callback ctx(string, int, int, length, length);
+    callback ctx-pick(string);
+    callback ctx-close();
 
     // ---- confirmation ----
     in property <bool> confirm-open;

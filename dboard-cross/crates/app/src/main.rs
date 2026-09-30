@@ -92,6 +92,9 @@ fn main() {
     wire!(on_settings_changed, |d, c, p, cf, ac, f| Cmd::SettingsChanged { dark: d, compact: c, page_idx: p as usize, confirm: cf, autocomplete: ac, font: f });
     wire!(on_settings_close, | | Cmd::SettingsClose);
     wire!(on_clear_credentials, | | Cmd::ClearCredentials);
+    wire!(on_ctx, |k, i, j, x, y| Cmd::Ctx(k.to_string(), i as usize, j as usize, x, y));
+    wire!(on_ctx_pick, |a| Cmd::CtxPick(a.to_string()));
+    wire!(on_ctx_close, | | Cmd::CtxClose);
 
     // Switching the engine in the form keeps the port in sync unless the user typed their own.
     {

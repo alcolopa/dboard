@@ -111,6 +111,12 @@ Built with **Swift & SwiftUI** targeting macOS 14.0+, utilizing native macOS App
 
 ---
 
+## 🐧🪟 Linux & Windows
+
+The Swift/SwiftUI app above is macOS-only. A separate, small native client for **Linux and Windows** (Rust + Slint,
+no web view) lives in [`dboard-cross/`](dboard-cross/README.md). It supports PostgreSQL, MySQL/MariaDB and MongoDB,
+stores connections and settings persistently (passwords in the OS keyring) and mirrors the workspace described here.
+
 ## 🌐 Website
 
 A landing page lives in [`docs/`](docs/index.html) and deploys automatically to GitHub Pages via `.github/workflows/pages.yml` whenever `docs/` changes on `main`. One-time setup: in **Settings → Pages**, set **Source** to **GitHub Actions**.
