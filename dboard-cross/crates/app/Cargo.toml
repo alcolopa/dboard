@@ -1,0 +1,12 @@
+[package]
+name = "dboard"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dboard-core = { path = "../core" }
+slint = { version = "1.9", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-skia-opengl", "renderer-software"] }
+tokio = { version = "1", default-features = false, features = ["rt", "time", "sync", "net"] }
+
+[build-dependencies]
+slint-build = "1.9"
