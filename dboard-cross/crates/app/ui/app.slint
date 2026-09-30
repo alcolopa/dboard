@@ -1,4 +1,4 @@
-import { Button, LineEdit, ComboBox, TextEdit, ListView } from "std-widgets.slint";
+import { Button, LineEdit, ComboBox, TextEdit, ListView, Palette } from "std-widgets.slint";
 
 export struct GridCell { text: string, is-null: bool, state: int }
 export struct TreeItem { label: string, header: bool, schema: string, name: string }
@@ -51,7 +51,8 @@ component GridCellView inherits Rectangle {
         }
     }
 
-    if editing: Rectangle {
+    Rectangle {
+        visible: root.editing;
         background: #1d2230;
         border-width: 1px;
         border-color: Theme.accent;
@@ -84,6 +85,7 @@ export component App inherits Window {
     preferred-height: 800px;
     background: Theme.bg;
     default-font-size: 13px;
+    init => { Palette.color-scheme = ColorScheme.dark; }
 
     // ---- connection form ----
     in-out property <string> conn-host: "localhost";
@@ -124,6 +126,7 @@ export component App inherits Window {
     in-out property <string> confirm-typed;
 
     callback open-table(int);
+    callback filter-tree(string);
     callback edit-cell(int, int, string, bool);
     callback undo();
     callback next-page();
@@ -176,17 +179,17 @@ export component App inherits Window {
                 Button { text: "Disconnect"; clicked => { root.disconnect(); } }
             }
         }
-        HorizontalLayout {
+        Rectangle {
+            vertical-stretch: 1;
             // sidebar
             Rectangle {
-                width: 260px; background: Theme.panel;
+                x: 0px; width: 260px; height: parent.height; background: Theme.panel;
                 VerticalLayout {
                     padding: 8px; spacing: 8px;
-                    LineEdit { placeholder-text: "Filter objects"; text <=> root.tree-filter; }
+                    LineEdit { placeholder-text: "Filter objects"; text <=> root.tree-filter; edited(t) => { root.filter-tree(t); } }
                     ListView {
                         for item[i] in root.tree: Rectangle {
                             height: 26px;
-                            visible: root.tree-filter == "" || item.label.to-lowercase().contains(root.tree-filter.to-lowercase()) || item.header;
                             background: !item.header && ta-t.has-hover ? #1f2431 : transparent;
                             Text {
                                 x: item.header ? 4px : 16px;
@@ -202,7 +205,9 @@ export component App inherits Window {
                 }
             }
             // workspace
-            VerticalLayout {
+            Rectangle {
+              x: 260px; width: parent.width - 260px; height: parent.height;
+              VerticalLayout {
                 // tabs
                 Rectangle {
                     height: 34px; background: Theme.bg;
@@ -241,8 +246,8 @@ export component App inherits Window {
                 }
                 // grid
                 Flickable {
-                    viewport-width: max(self.width, root.columns.length * 170px);
-                    viewport-height: self.height;
+                    content-width: max(self.width, root.columns.length * 170px);
+                    content-height: self.height;
                     VerticalLayout {
                         HorizontalLayout {
                             height: 30px;
@@ -277,6 +282,7 @@ export component App inherits Window {
                         Text { text: root.log.length > 0 ? root.log[0] : ""; color: Theme.dim; overflow: elide; vertical-alignment: center; horizontal-stretch: 2; }
                     }
                 }
+            }
             }
         }
     }

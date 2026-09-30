@@ -1,0 +1,61 @@
+name: Cross-platform (Linux / Windows)
+
+on:
+  push:
+    paths: ["dboard-cross/**", ".github/workflows/cross.yml"]
+  pull_request:
+    paths: ["dboard-cross/**", ".github/workflows/cross.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: dboard-cross
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: dboard-cross }
+      - name: Install Linux GUI deps
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev
+      - name: Test (core unit + Postgres integration)
+        env:
+          DBOARD_TEST_PG: localhost:5432:postgres:postgres:postgres
+        run: cargo test -p dboard-core
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: dboard-linux-x86_64
+            bin: dboard
+          - os: windows-latest
+            name: dboard-windows-x86_64
+            bin: dboard.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: dboard-cross }
+      - name: Install Linux GUI deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev
+      - run: cargo build --release -p dboard
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dboard-cross/target/release/${{ matrix.bin }}

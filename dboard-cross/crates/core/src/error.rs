@@ -17,7 +17,15 @@ impl From<tokio_postgres::Error> for Error {
         if let Some(db) = e.as_db_error() {
             return Error::Db(humanize(db.code().code(), db.message()));
         }
-        Error::Db(e.to_string())
+        // Include the underlying cause (e.g. "Connection refused") instead of just
+        // "error connecting to server".
+        let mut msg = e.to_string();
+        let mut src = std::error::Error::source(&e);
+        while let Some(s) = src {
+            msg.push_str(&format!(": {s}"));
+            src = s.source();
+        }
+        Error::Db(msg)
     }
 }
 

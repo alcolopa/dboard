@@ -17,6 +17,7 @@ enum Cmd {
     Connect(ConnectionConfig, String),
     Disconnect,
     OpenTable(usize),
+    FilterTree(String),
     Edit { row: usize, col: usize, text: String, null: bool },
     ClearFlash,
     Undo,
@@ -77,6 +78,7 @@ struct Worker {
     rows: Vec<Vec<Cell>>,
     pending_sql: Option<String>,
     log: Vec<String>,
+    tree_filter: String,
 }
 
 impl Worker {
@@ -123,7 +125,8 @@ impl Worker {
         let Some(d) = &self.driver else { return };
         let mut tree = Vec::new();
         let mut last = String::new();
-        for t in &d.metadata.tables {
+        let f = self.tree_filter.to_lowercase();
+        for t in d.metadata.tables.iter().filter(|t| f.is_empty() || t.name.to_lowercase().contains(&f)) {
             if t.schema != last {
                 tree.push((t.schema.clone(), String::new(), true));
                 last = t.schema.clone();
@@ -261,6 +264,10 @@ impl Worker {
                     a.set_columns(to_strs(Vec::new()));
                     a.set_tree(ModelRc::new(VecModel::from(Vec::<TreeItem>::new())));
                 });
+            }
+            Cmd::FilterTree(f) => {
+                self.tree_filter = f;
+                self.rebuild_tree();
             }
             Cmd::OpenTable(i) => {
                 let Some((s, n, false)) = self.tree.get(i).cloned() else { return };
@@ -433,12 +440,8 @@ fn main() {
         }
     }
 
-    macro_rules! send {
-        ($($body:tt)*) => {{ let tx = tx.clone(); move |$($body)*| }};
-    }
-
     let a = app.as_weak();
-    app.on_connect(send!() => {
+    app.on_connect({ let tx = tx.clone(); move || {
         let Some(app) = a.upgrade() else { return };
         let cfg = ConnectionConfig {
             name: "Postgres".into(),
@@ -451,21 +454,22 @@ fn main() {
         app.set_busy(true);
         app.set_error("".into());
         let _ = tx.send(Cmd::Connect(cfg, app.get_conn_password().to_string()));
-    });
-    app.on_disconnect(send!() => { let _ = tx.send(Cmd::Disconnect); });
-    app.on_open_table(send!(i) => { let _ = tx.send(Cmd::OpenTable(i as usize)); });
-    app.on_edit_cell(send!(r, c, t, n) => {
+    }});
+    app.on_disconnect({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::Disconnect); }});
+    app.on_filter_tree({ let tx = tx.clone(); move |f| { let _ = tx.send(Cmd::FilterTree(f.to_string())); }});
+    app.on_open_table({ let tx = tx.clone(); move |i| { let _ = tx.send(Cmd::OpenTable(i as usize)); }});
+    app.on_edit_cell({ let tx = tx.clone(); move |r, c, t, n| {
         let _ = tx.send(Cmd::Edit { row: r as usize, col: c as usize, text: t.to_string(), null: n });
-    });
-    app.on_undo(send!() => { let _ = tx.send(Cmd::Undo); });
-    app.on_next_page(send!() => { let _ = tx.send(Cmd::NextPage); });
-    app.on_prev_page(send!() => { let _ = tx.send(Cmd::PrevPage); });
-    app.on_sort_by(send!(c) => { let _ = tx.send(Cmd::SortBy(c as usize)); });
-    app.on_apply_filter(send!(f) => { let _ = tx.send(Cmd::ApplyFilter(f.to_string())); });
-    app.on_refresh(send!() => { let _ = tx.send(Cmd::Refresh); });
-    app.on_run_query(send!(s) => { let _ = tx.send(Cmd::Query(s.to_string())); });
-    app.on_confirm_run(send!() => { let _ = tx.send(Cmd::ConfirmRun); });
-    app.on_confirm_cancel(send!() => { let _ = tx.send(Cmd::ConfirmCancel); });
+    }});
+    app.on_undo({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::Undo); }});
+    app.on_next_page({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::NextPage); }});
+    app.on_prev_page({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::PrevPage); }});
+    app.on_sort_by({ let tx = tx.clone(); move |c| { let _ = tx.send(Cmd::SortBy(c as usize)); }});
+    app.on_apply_filter({ let tx = tx.clone(); move |f| { let _ = tx.send(Cmd::ApplyFilter(f.to_string())); }});
+    app.on_refresh({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::Refresh); }});
+    app.on_run_query({ let tx = tx.clone(); move |s| { let _ = tx.send(Cmd::Query(s.to_string())); }});
+    app.on_confirm_run({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::ConfirmRun); }});
+    app.on_confirm_cancel({ let tx = tx.clone(); move || { let _ = tx.send(Cmd::ConfirmCancel); }});
 
     let weak = app.as_weak();
     let worker_tx = tx.clone();
@@ -484,6 +488,7 @@ fn main() {
                 rows: Vec::new(),
                 pending_sql: None,
                 log: Vec::new(),
+                tree_filter: String::new(),
             };
             while let Some(cmd) = rx.recv().await {
                 w.handle(cmd).await;
