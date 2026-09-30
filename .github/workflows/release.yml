@@ -45,3 +45,83 @@ jobs:
           name: dboard ${{ steps.tag.outputs.tag }}
           files: dboard-${{ steps.tag.outputs.tag }}-macos.zip
           generate_release_notes: true
+
+  # ---- Linux & Windows (Rust + Slint client in dboard-cross/) ----
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: dboard-cross }
+
+      - name: Install GUI build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev
+
+      - name: Build
+        working-directory: dboard-cross
+        run: cargo build --release -p dboard
+
+      - name: Package tar.gz
+        run: |
+          name="dboard-${{ steps.tag.outputs.tag }}-linux-x86_64"
+          mkdir "$name"
+          cp dboard-cross/target/release/dboard "$name/"
+          cp dboard-cross/README.md "$name/README.md"
+          tar -czf "$name.tar.gz" "$name"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: dboard ${{ steps.tag.outputs.tag }}
+          files: dboard-${{ steps.tag.outputs.tag }}-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: dboard-cross }
+
+      - name: Build
+        working-directory: dboard-cross
+        run: cargo build --release -p dboard
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $name = "dboard-${{ steps.tag.outputs.tag }}-windows-x86_64"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item dboard-cross/target/release/dboard.exe $name/
+          Copy-Item dboard-cross/README.md $name/README.md
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: dboard ${{ steps.tag.outputs.tag }}
+          files: dboard-${{ steps.tag.outputs.tag }}-windows-x86_64.zip
