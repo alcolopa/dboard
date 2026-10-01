@@ -24,4 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+# Ad-hoc sign the whole bundle (no Developer ID needed). Without a sealed signature, Apple Silicon
+# Macs report a downloaded app as "damaged and can't be opened". Gatekeeper still warns (not notarized).
+codesign --force --deep --sign - "$APP"
 echo "Built $APP"
