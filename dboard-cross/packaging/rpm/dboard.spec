@@ -8,7 +8,6 @@ Release:        1%{?dist}
 Summary:        Native database client for PostgreSQL, MySQL and MongoDB
 License:        MIT
 URL:            https://github.com/alcolopa/dboard
-BuildArch:      x86_64
 
 %description
 Fast desktop client with instant cell editing and production-safety guards.

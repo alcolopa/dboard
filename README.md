@@ -123,12 +123,13 @@ A landing page lives in [`docs/`](docs/index.html) and deploys automatically to 
 
 ### Option 0: Download a Release
 Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases):
-- **macOS**: `dboard-<tag>-macos.zip`, drag `dboard.app` to `/Applications`.
-- **Windows**: `dboard-<tag>-windows-x86_64-setup.exe`, a per-user installer (Start menu entry, optional desktop shortcut, uninstaller). It is unsigned, so SmartScreen may warn (More info → Run anyway).
-- **Debian / Ubuntu**: `dboard-<tag>-linux-amd64.deb` (`sudo apt install ./dboard-*.deb`).
-- **Fedora / RHEL / openSUSE**: `dboard-<version>-1.x86_64.rpm` (`sudo dnf install ./dboard-*.rpm`).
-- **Arch / Manjaro**: `dboard-<version>-1-x86_64.pkg.tar.zst` (`sudo pacman -U dboard-*.pkg.tar.zst`), or build from source with `makepkg -si` in `dboard-cross/packaging/arch`.
-- **Any other Linux**: the `.tar.gz` and run `./install.sh` (user-level, adds a launcher and icon; `--uninstall` removes it).
+Every platform ships for both x86_64 and ARM64 (built natively on GitHub runners):
+- **macOS**: `dboard-<tag>-macos-arm64.zip` (Apple Silicon) or `-macos-x86_64.zip` (Intel); drag `dboard.app` to `/Applications`.
+- **Windows**: `dboard-<version>-windows-x86_64-setup.exe` or `-windows-arm64-setup.exe`, a per-user installer (Start menu entry, optional desktop shortcut, uninstaller). Unsigned, so SmartScreen may warn (More info → Run anyway).
+- **Debian / Ubuntu**: `dboard-<version>-linux-amd64.deb` / `-linux-arm64.deb` (`sudo apt install ./dboard-*.deb`).
+- **Fedora / RHEL / openSUSE**: `dboard-<version>-1.x86_64.rpm` / `.aarch64.rpm` (`sudo dnf install ./dboard-*.rpm`).
+- **Arch / Manjaro**: `dboard-<version>-1-x86_64.pkg.tar.zst` (`sudo pacman -U dboard-*.pkg.tar.zst`). Arch on ARM: run `makepkg -si` in `dboard-cross/packaging/arch` (the PKGBUILD supports aarch64).
+- **Any other Linux**: `dboard-<tag>-linux-x86_64.tar.gz` or `-linux-aarch64.tar.gz`, then run `./install.sh` (user-level, adds a launcher and icon; `--uninstall` removes it).
 
 Since the app isn't notarized/signed, macOS Gatekeeper will block the first launch. Either right-click → **Open** and confirm, or run:
 ```bash

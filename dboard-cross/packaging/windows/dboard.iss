@@ -1,4 +1,12 @@
-; Inno Setup script. Build: iscc /DAppVersion=1.0.0 packaging\windows\dboard.iss  (run from dboard-cross\)
+; Inno Setup script. Build: iscc /DAppVersion=1.0.0 /DArch=x86_64|arm64 packaging\windows\dboard.iss  (run from dboard-cross\)
+#ifndef Arch
+  #define Arch "x86_64"
+#endif
+#if Arch == "arm64"
+  #define ArchAllowed "arm64"
+#else
+  #define ArchAllowed "x64compatible"
+#endif
 #ifndef AppVersion
   #define AppVersion "0.1.0"
 #endif
@@ -14,11 +22,11 @@ DefaultGroupName=dboard
 UninstallDisplayIcon={app}\dboard.exe
 SetupIconFile=..\..\assets\icon.ico
 OutputDir=..\..\dist
-OutputBaseFilename=dboard-{#AppVersion}-windows-x86_64-setup
+OutputBaseFilename=dboard-{#AppVersion}-windows-{#Arch}-setup
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#ArchAllowed}
+ArchitecturesInstallIn64BitMode={#ArchAllowed}
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 WizardStyle=modern
