@@ -84,20 +84,25 @@ jobs:
         working-directory: dboard-cross
         run: cargo build --release -p dboard
 
-      - name: Package tar.gz
+      - name: Package tar.gz (with install.sh) and .deb
         run: |
           name="dboard-${{ steps.tag.outputs.tag }}-linux-x86_64"
           mkdir "$name"
           cp dboard-cross/target/release/dboard "$name/"
+          cp dboard-cross/assets/icon.png "$name/dboard.png"
+          cp dboard-cross/packaging/linux/dboard.desktop dboard-cross/packaging/linux/install.sh "$name/"
           cp dboard-cross/README.md "$name/README.md"
           tar -czf "$name.tar.gz" "$name"
+          (cd dboard-cross && packaging/linux/build-deb.sh "${{ steps.tag.outputs.tag }}")
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: dboard ${{ steps.tag.outputs.tag }}
-          files: dboard-${{ steps.tag.outputs.tag }}-linux-x86_64.tar.gz
+          files: |
+            dboard-${{ steps.tag.outputs.tag }}-linux-x86_64.tar.gz
+            dboard-cross/dist/dboard-*-linux-amd64.deb
 
   build-windows:
     runs-on: windows-latest
@@ -122,18 +127,17 @@ jobs:
         working-directory: dboard-cross
         run: cargo build --release -p dboard
 
-      - name: Package zip
+      - name: Build installer (Inno Setup)
+        working-directory: dboard-cross
         shell: pwsh
         run: |
-          $name = "dboard-${{ steps.tag.outputs.tag }}-windows-x86_64"
-          New-Item -ItemType Directory -Path $name | Out-Null
-          Copy-Item dboard-cross/target/release/dboard.exe $name/
-          Copy-Item dboard-cross/README.md $name/README.md
-          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          choco install innosetup -y --no-progress
+          $v = "${{ steps.tag.outputs.tag }}".TrimStart('v')
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" packaging\windows\dboard.iss
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: dboard ${{ steps.tag.outputs.tag }}
-          files: dboard-${{ steps.tag.outputs.tag }}-windows-x86_64.zip
+          files: dboard-cross/dist/dboard-*-windows-x86_64-setup.exe

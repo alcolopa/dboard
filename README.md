@@ -122,7 +122,10 @@ A landing page lives in [`docs/`](docs/index.html) and deploys automatically to 
 ## 📦 Building & Running
 
 ### Option 0: Download a Release
-Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases): `dboard-<tag>-macos.zip` (drag `dboard.app` to `/Applications`), `dboard-<tag>-windows-x86_64.zip` (unzip, run `dboard.exe`) and `dboard-<tag>-linux-x86_64.tar.gz` (extract, run `./dboard`). The Windows exe is unsigned, so SmartScreen may warn on first launch (More info → Run anyway).
+Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases):
+- **macOS**: `dboard-<tag>-macos.zip`, drag `dboard.app` to `/Applications`.
+- **Windows**: `dboard-<tag>-windows-x86_64-setup.exe`, a per-user installer (Start menu entry, optional desktop shortcut, uninstaller). It is unsigned, so SmartScreen may warn (More info → Run anyway).
+- **Linux**: `dboard-<tag>-linux-amd64.deb` (`sudo apt install ./dboard-*.deb`), or the `.tar.gz` and run `./install.sh` (user-level, adds a launcher and icon; `--uninstall` removes it).
 
 Since the app isn't notarized/signed, macOS Gatekeeper will block the first launch. Either right-click → **Open** and confirm, or run:
 ```bash
