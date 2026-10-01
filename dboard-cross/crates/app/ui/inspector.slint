@@ -6,14 +6,36 @@ import { Btn } from "widgets.slint";
 export component Inspector inherits Rectangle {
     width: 320px;
     background: Theme.panel;
+    drop-shadow-blur: AppState.inspector-pinned ? 0px : 16px;
+    drop-shadow-color: #00000055;
+    drop-shadow-offset-x: -4px;
+    TouchArea { } // swallow clicks so a floating inspector does not close itself
     VerticalLayout {
         HorizontalLayout {
             height: 34px; padding-left: 8px; spacing: 2px;
-            for name[i] in ["Activity", "Edits", "Info"]: Rectangle {
-                width: 78px;
+            for name[i] in ["Activity", "Changes", "Info"]: Rectangle {
+                width: 62px;
                 Text { text: name; color: AppState.inspector-tab == i ? Theme.text : Theme.dim; font-weight: AppState.inspector-tab == i ? 700 : 400; horizontal-alignment: center; vertical-alignment: center; }
                 Rectangle { y: parent.height - 2px; height: 2px; background: AppState.inspector-tab == i ? Theme.accent : transparent; }
                 TouchArea { clicked => { AppState.inspector-tab = i; } }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            // Pin: docked and kept open across restarts. Unpinned, it floats over the workspace.
+            Rectangle {
+                width: 64px; height: 24px; y: 5px; border-radius: 12px;
+                background: AppState.inspector-pinned ? Theme.accent : (pa.has-hover ? Theme.hover : Theme.panel2);
+                Text {
+                    text: AppState.inspector-pinned ? "Pinned" : "Pin";
+                    color: AppState.inspector-pinned ? white : Theme.text;
+                    font-size: 11px; horizontal-alignment: center; vertical-alignment: center;
+                }
+                pa := TouchArea { clicked => { AppState.inspector-changed(true, !AppState.inspector-pinned); } }
+            }
+            Rectangle {
+                width: 26px; height: 24px; y: 5px; border-radius: 12px;
+                background: ca.has-hover ? Theme.hover : transparent;
+                Text { text: "×"; color: Theme.dim; font-size: 15px; horizontal-alignment: center; vertical-alignment: center; }
+                ca := TouchArea { clicked => { AppState.inspector-changed(false, AppState.inspector-pinned); } }
             }
         }
         Rectangle { height: 1px; background: Theme.line; }
@@ -33,12 +55,25 @@ export component Inspector inherits Rectangle {
         if AppState.inspector-tab == 1: VerticalLayout {
             padding: 8px; spacing: 6px;
             HorizontalLayout {
-                Text { text: AppState.undo-count + " reversible edit(s)"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+                Text { text: AppState.undo-count + " change(s) you can undo"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
                 Btn { text: "Undo last"; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } }
             }
+            if AppState.edit-items.length == 0: Text {
+                text: "Edits and deleted rows appear here, newest first. Each one can be undone."; color: Theme.dim; font-size: 11px; wrap: word-wrap;
+            }
             ListView {
-                for line in AppState.edit-log: Text { text: line; color: Theme.text; font-size: 11px; height: 26px; overflow: elide; }
+                for it[i] in AppState.edit-items: Rectangle {
+                    height: 44px; border-radius: 4px;
+                    background: ea.has-hover ? Theme.hover : transparent;
+                    VerticalLayout {
+                        x: 6px; width: parent.width - 70px; alignment: center; spacing: 1px;
+                        Text { text: it.text; color: Theme.text; font-size: 11px; overflow: elide; }
+                        Text { text: it.detail; color: Theme.dim; font-size: 10px; overflow: elide; }
+                    }
+                    ea := TouchArea { }
+                    if it.can-undo: Btn { x: parent.width - 62px; y: 8px; height: 26px; pad: 8px; text: "Undo"; clicked => { AppState.undo-entry(i); } }
+                }
             }
         }
         if AppState.inspector-tab == 2: VerticalLayout {

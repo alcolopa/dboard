@@ -5,9 +5,10 @@ import { AppState, TreeItem } from "state.slint";
 component KindBadge inherits Rectangle {
     in property <int> kind;
     width: 16px; height: 16px; border-radius: 3px;
-    background: kind == 2 ? #3b82f6 : kind == 3 ? #a855f7 : kind == 4 ? #ec4899 : kind == 5 ? #10b981 : kind == 6 ? #f59e0b : kind == 7 ? #f97316 : #64748b;
+    background: kind == 2 ? #3b82f6 : kind == 3 ? #a855f7 : kind == 4 ? #ec4899 : kind == 5 ? #10b981 : kind == 6 ? #f59e0b : kind == 7 ? #f97316
+        : kind == 9 ? #ef4444 : kind == 10 ? #06b6d4 : kind == 11 ? #84cc16 : kind == 12 ? #14b8a6 : kind == 13 ? #8b5cf6 : #64748b;
     Text {
-        text: kind == 2 ? "T" : kind == 3 ? "V" : kind == 4 ? "M" : kind == 5 ? "C" : kind == 6 ? "ƒ" : kind == 7 ? "P" : "#";
+        text: kind == 2 ? "T" : kind == 3 ? "V" : kind == 4 ? "M" : kind == 5 ? "C" : kind == 6 ? "ƒ" : kind == 7 ? "P" : kind == 9 ? "R" : kind == 10 ? "Y" : kind == 11 ? "I" : kind == 12 ? "E" : kind == 13 ? "X" : "#";
         color: white; font-size: 9px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center;
     }
 }

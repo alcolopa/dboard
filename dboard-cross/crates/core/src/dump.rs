@@ -116,7 +116,7 @@ impl InsertWriter {
         if self.rows.is_empty() {
             return Ok(());
         }
-        write!(out, "{}{};\n", self.head, self.rows.join(",\n"))?;
+        writeln!(out, "{}{};", self.head, self.rows.join(",\n"))?;
         self.rows.clear();
         self.bytes = 0;
         Ok(())

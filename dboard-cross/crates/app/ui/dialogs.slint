@@ -1,10 +1,134 @@
-import { LineEdit, ComboBox, CheckBox, TextEdit, ListView, SpinBox } from "std-widgets.slint";
+import { LineEdit, ComboBox, CheckBox, TextEdit, ListView, SpinBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
 import { Btn, Modal } from "widgets.slint";
 
 component Title inherits Text { font-size: 15px; font-weight: 700; color: Theme.text; wrap: word-wrap; }
 component Note inherits Text { color: Theme.dim; font-size: 12px; wrap: word-wrap; }
+
+
+component UsersDialog inherits Modal {
+    box-width: 800px;
+    property <string> nu-name;
+    property <string> nu-host: "%";
+    property <string> nu-pw;
+    property <int> nu-level: 1;
+    property <bool> nu-admin: false;
+    property <string> pw-new;
+    property <int> level-pick: 1;
+    dismissed => { AppState.users-close(); }
+    HorizontalLayout {
+        Title { text: "Users & access"; vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; }
+        Btn { text: "Close"; clicked => { AppState.users-close(); } }
+    }
+    Note { text: AppState.user-scope; }
+    HorizontalLayout {
+        spacing: 14px;
+        height: 380px;
+        // ---- list ----
+        VerticalLayout {
+            width: 250px; spacing: 6px;
+            Btn { text: "+ Add user"; primary: true; clicked => { AppState.user-create-open = true; AppState.user-info = ""; } }
+            Rectangle {
+                vertical-stretch: 1; border-width: 1px; border-color: Theme.line; border-radius: 6px; clip: true;
+                ListView {
+                    for u[i] in AppState.users: Rectangle {
+                        height: 42px;
+                        background: !AppState.user-create-open && i == AppState.user-sel ? Theme.sel : (ua.has-hover ? Theme.hover : transparent);
+                        VerticalLayout {
+                            x: 10px; width: parent.width - 16px; alignment: center;
+                            Text { text: u.name; color: Theme.text; overflow: elide; font-weight: 600; }
+                            Text { text: u.detail; color: Theme.dim; font-size: 10px; overflow: elide; }
+                        }
+                        ua := TouchArea { clicked => { AppState.user-create-open = false; AppState.user-select(i); } }
+                    }
+                }
+            }
+        }
+        // ---- create ----
+        if AppState.user-create-open: VerticalLayout {
+            horizontal-stretch: 1; spacing: 8px; alignment: start;
+            Text { text: "New user"; font-weight: 700; color: Theme.text; font-size: 14px; }
+            Text { text: "User name"; color: Theme.dim; font-size: 11px; }
+            LineEdit { text <=> root.nu-name; placeholder-text: "e.g. report_reader"; }
+            if AppState.user-is-mysql: Text { text: "Allowed from host (% = anywhere)"; color: Theme.dim; font-size: 11px; }
+            if AppState.user-is-mysql: LineEdit { text <=> root.nu-host; }
+            Text { text: "Password"; color: Theme.dim; font-size: 11px; }
+            LineEdit { text <=> root.nu-pw; input-type: InputType.password; }
+            Text { text: "Access to the current database"; color: Theme.dim; font-size: 11px; }
+            ComboBox { model: AppState.access-levels; current-index <=> root.nu-level; enabled: !root.nu-admin; }
+            CheckBox { text: AppState.user-is-pg ? "Superuser (can do everything on the server)" : (AppState.user-is-mysql ? "Administrator (all privileges on every database)" : "Root (administrator of the whole server)"); checked <=> root.nu-admin; }
+            HorizontalLayout {
+                spacing: 8px;
+                Btn { text: "Create user"; primary: true; enabled: root.nu-name != "" && !AppState.user-busy; clicked => { AppState.user-create(root.nu-name, root.nu-host, root.nu-pw, root.nu-level, root.nu-admin); } }
+                Btn { text: "Cancel"; clicked => { AppState.user-create-open = false; } }
+            }
+        }
+        // ---- detail ----
+        if !AppState.user-create-open && AppState.user-sel >= 0 && AppState.user-sel < AppState.users.length: VerticalLayout {
+            horizontal-stretch: 1; spacing: 8px;
+            Text { text: AppState.users[AppState.user-sel].name; font-weight: 700; color: Theme.text; font-size: 15px; overflow: elide; }
+            Text { text: AppState.users[AppState.user-sel].detail; color: Theme.dim; font-size: 11px; wrap: word-wrap; }
+            Text { text: "What this user can do"; color: Theme.dim; font-size: 11px; }
+            Rectangle {
+                vertical-stretch: 1; border-width: 1px; border-color: Theme.line; border-radius: 6px; clip: true;
+                ListView {
+                    for g in AppState.user-grants: Text { text: g; color: Theme.text; font-size: 11px; wrap: word-wrap; x: 8px; width: parent.width - 16px; }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Set access to"; color: Theme.text; vertical-alignment: center; }
+                ComboBox { model: AppState.access-levels; current-index <=> root.level-pick; width: 160px; }
+                Btn { text: "Apply"; enabled: !AppState.user-busy; clicked => { AppState.user-set-level(AppState.user-sel, root.level-pick); } }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; horizontal-stretch: 1; }
+                Btn { text: "Change password"; enabled: root.pw-new != "" && !AppState.user-busy; clicked => { AppState.user-password(AppState.user-sel, root.pw-new); root.pw-new = ""; } }
+                Btn { text: "Drop user"; danger: true; enabled: !AppState.user-busy; clicked => { AppState.user-drop(AppState.user-sel); } }
+            }
+        }
+        if !AppState.user-create-open && (AppState.user-sel < 0 || AppState.user-sel >= AppState.users.length): Rectangle {
+            horizontal-stretch: 1;
+            Text { text: AppState.users.length == 0 ? "No users to show." : "Pick a user on the left, or add a new one."; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+        }
+    }
+    if AppState.user-error != "": Text { text: AppState.user-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
+    if AppState.user-info != "": Text { text: AppState.user-info; color: Theme.ok; wrap: word-wrap; font-size: 12px; }
+}
+
+component TransferDialog inherits Modal {
+    box-width: 560px;
+    dismissed => { if !AppState.xfer-busy { AppState.xfer-cancel(); } }
+    Title { text: AppState.xfer-title; }
+    Note { text: AppState.xfer-note; }
+    HorizontalLayout {
+        spacing: 8px;
+        LineEdit {
+            text <=> AppState.xfer-path; horizontal-stretch: 1;
+            placeholder-text: AppState.xfer-mode == 0 ? "Where to save the export" : "Path of the file to import";
+            enabled: !AppState.xfer-busy;
+        }
+        Btn { text: "Browse…"; enabled: !AppState.xfer-busy; clicked => { AppState.xfer-browse(); } }
+    }
+    if AppState.xfer-mode == 0: CheckBox { text: "Structure (tables, views, routines, triggers, indexes)"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 0: CheckBox { text: "Data (all rows)"; checked <=> AppState.xfer-opt-b; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 1: CheckBox { text: "Stop at the first error"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 2: CheckBox { text: "First CSV row holds the column names"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-info != "": Text { text: AppState.xfer-info; color: AppState.xfer-busy ? Theme.dim : Theme.ok; wrap: word-wrap; font-size: 12px; }
+    if AppState.xfer-error != "": Text { text: AppState.xfer-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
+    HorizontalLayout {
+        spacing: 8px; alignment: end;
+        Btn { text: AppState.xfer-busy ? "Working…" : "Close"; enabled: !AppState.xfer-busy; clicked => { AppState.xfer-cancel(); } }
+        Btn {
+            text: AppState.xfer-mode == 0 ? "Export" : "Import"; primary: true;
+            enabled: !AppState.xfer-busy && AppState.xfer-path != "";
+            clicked => { AppState.xfer-run(AppState.xfer-path, AppState.xfer-opt-a, AppState.xfer-opt-b); }
+        }
+    }
+}
 
 export component Dialogs inherits Rectangle {
     // ---- context menu ----
@@ -29,25 +153,10 @@ export component Dialogs inherits Rectangle {
                         border-radius: 4px;
                         background: ia.has-hover ? Theme.hover : transparent;
                         Text { x: 10px; text: it.label; color: it.danger ? Theme.err : Theme.text; vertical-alignment: center; font-size: 12px; }
-                        ia := TouchArea { clicked => { AppState.ctx-pick(it.action); } }
+                        ia := TouchArea { clicked => { AppState.ctx-pick(it.action, AppState.sel-r0, AppState.sel-c0, AppState.sel-r1, AppState.sel-c1); } }
                     }
                 }
             }
-        }
-    }
-
-    // ---- destructive confirmation ----
-    if AppState.confirm-open: Modal {
-        border: Theme.err;
-        dismissed => { AppState.confirm-cancel(); }
-        Title { text: AppState.confirm-title; color: Theme.err; }
-        Text { text: AppState.confirm-text; color: Theme.text; wrap: word-wrap; font-size: 12px; }
-        if AppState.confirm-typing: Note { text: "Type CONFIRM to proceed."; }
-        if AppState.confirm-typing: LineEdit { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(); } } }
-        HorizontalLayout {
-            spacing: 8px; alignment: end;
-            Btn { text: "Cancel"; clicked => { AppState.confirm-cancel(); } }
-            Btn { text: "Proceed"; danger: true; enabled: !AppState.confirm-typing || AppState.confirm-typed == "CONFIRM"; clicked => { AppState.confirm-run(); } }
         }
     }
 
@@ -153,6 +262,62 @@ export component Dialogs inherits Rectangle {
             Btn { text: "Clear all saved passwords"; danger: true; clicked => { AppState.clear-credentials(); } }
             Rectangle { horizontal-stretch: 1; }
             Btn { text: "Done"; primary: true; clicked => { AppState.settings-close(); } }
+        }
+    }
+
+    // ---- edit a whole row ----
+    if AppState.editrow-open: Modal {
+        box-width: 560px;
+        dismissed => { AppState.editrow-cancel(); }
+        Title { text: AppState.editrow-title; }
+        Note { text: "Change any fields, then Save. Only the fields you changed are written, and each change can be undone from History."; }
+        ListView {
+            height: min(400px, AppState.editrow-fields.length * 58px);
+            for f[i] in AppState.editrow-fields: VerticalLayout {
+                height: 58px; spacing: 3px;
+                Text { text: f.name + "   " + f.type-name; color: Theme.dim; font-size: 11px; overflow: elide; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit {
+                        text: f.value; enabled: !f.is-null; placeholder-text: f.is-null ? "NULL" : f.hint;
+                        horizontal-stretch: 1;
+                        edited(t) => { AppState.editrow-field-edited(i, t); }
+                    }
+                    Rectangle {
+                        width: 52px; height: 32px; border-radius: 5px;
+                        background: f.is-null ? Theme.accent : (na.has-hover ? Theme.hover : Theme.panel2);
+                        Text { text: "NULL"; font-size: 11px; color: f.is-null ? white : Theme.text; horizontal-alignment: center; vertical-alignment: center; }
+                        na := TouchArea { clicked => { AppState.editrow-set-null(i, !f.is-null); } }
+                    }
+                }
+            }
+        }
+        if AppState.editrow-error != "": Text { text: AppState.editrow-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
+        HorizontalLayout {
+            spacing: 8px; alignment: end;
+            Btn { text: "Cancel"; clicked => { AppState.editrow-cancel(); } }
+            Btn { text: "Save"; primary: true; clicked => { AppState.editrow-submit(); } }
+        }
+    }
+
+    // ---- users & access ----
+    if AppState.users-open: UsersDialog { }
+
+    // ---- export / import ----
+    if AppState.xfer-open: TransferDialog { }
+
+    // ---- destructive confirmation ----
+    if AppState.confirm-open: Modal {
+        border: Theme.err;
+        dismissed => { AppState.confirm-cancel(); }
+        Title { text: AppState.confirm-title; color: Theme.err; }
+        Text { text: AppState.confirm-text; color: Theme.text; wrap: word-wrap; font-size: 12px; }
+        if AppState.confirm-typing: Note { text: "Type CONFIRM to proceed."; }
+        if AppState.confirm-typing: LineEdit { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(); } } }
+        HorizontalLayout {
+            spacing: 8px; alignment: end;
+            Btn { text: "Cancel"; clicked => { AppState.confirm-cancel(); } }
+            Btn { text: "Proceed"; danger: true; enabled: !AppState.confirm-typing || AppState.confirm-typed == "CONFIRM"; clicked => { AppState.confirm-run(); } }
         }
     }
 

@@ -56,7 +56,16 @@ async fn scenario(c: ConnectionConfig, pw: String) {
     let filtered = d.fetch_page(&schema, "dboard_t", &Page { filter: Some("id = 1".into()), ..page.clone() }).await.unwrap();
     assert_eq!(filtered.rows.len(), 1);
 
+    // Numbers sort as numbers (PostgreSQL casts to text, which must not leak into ORDER BY).
+    d.execute_query("INSERT INTO dboard_t (id, name) VALUES (10, 'ten'), (9, 'nine')").await.unwrap();
+    let asc = d.fetch_page(&schema, "dboard_t", &Page { sort_ascending: true, ..page.clone() }).await.unwrap();
+    assert_eq!(asc.rows.iter().map(|r| r[0].clone().unwrap()).collect::<Vec<_>>(), ["1", "2", "9", "10"]);
+    let default_order = d.fetch_page(&schema, "dboard_t", &Page { sort_column: None, ..page.clone() }).await.unwrap();
+    assert_eq!(default_order.rows.last().unwrap()[0].as_deref(), Some("10"));
+    d.execute_query("DELETE FROM dboard_t WHERE id IN (9, 10)").await.unwrap();
+
     // Edit + undo.
+    let r = d.fetch_page(&schema, "dboard_t", &page).await.unwrap();
     let row = r.rows[1].clone(); // id = 1
     d.edit_cell(&schema, "dboard_t", &row, "name", Some("bob".into())).await.unwrap();
     assert_eq!(d.execute_query("SELECT name FROM dboard_t WHERE id = 1").await.unwrap().rows[0][0].as_deref(), Some("bob"));

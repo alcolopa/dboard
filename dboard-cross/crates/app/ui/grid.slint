@@ -1,47 +1,56 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState, GridCell, ColInfo } from "state.slint";
-import { Chip } from "widgets.slint";
 
 component GridCellView inherits Rectangle {
     in property <GridCell> cell;
     in property <ColInfo> col-info;
     in property <bool> editable;
     in property <bool> selected;
+    in property <bool> anchor;
     in property <int> row-idx;
     in property <int> ci;
     property <bool> editing: false;
+    property <int> token: AppState.edit-token;
     callback commit(string, bool);
 
     height: Theme.row-h;
-    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (selected ? Theme.panel2 : transparent));
-    border-width: 0.5px;
-    border-color: Theme.line;
+    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (selected ? Theme.sel : transparent));
+    border-width: anchor ? 1.5px : 0.5px;
+    border-color: anchor ? Theme.accent : Theme.line;
     clip: true;
 
-    // Declared first so the toggle / badges drawn after it receive clicks before it does.
-    ta := TouchArea {
-        clicked => { AppState.selected-row = root.row-idx; }
-        pointer-event(e) => {
-            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
-                AppState.selected-row = root.row-idx;
-                AppState.ctx("cell", root.row-idx, root.ci, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
-            }
+    function start-edit() {
+        if (root.editable && !root.col-info.is-json) {
+            ti.text = root.cell.is-null ? "" : root.cell.text;
+            root.editing = true;
+            ti.focus();
+            ti.select-all();
+        } else if (root.editable) {
+            AppState.open-json-cell(root.row-idx, root.ci);
         }
-        double-clicked => {
-            if root.editable {
-                if root.col-info.is-json {
-                    AppState.open-json-cell(root.row-idx, root.ci);
-                } else {
-                    ti.text = root.cell.is-null ? "" : root.cell.text;
-                    root.editing = true;
-                    ti.focus();
-                    ti.select-all();
-                }
-            }
+    }
+    changed token => {
+        if (AppState.edit-r == root.row-idx && AppState.edit-c == root.ci) {
+            root.start-edit();
         }
     }
 
+    // Declared first so the toggle / badges drawn after it receive clicks before it does.
+    ta := TouchArea {
+        pointer-event(e) => {
+            if e.kind != PointerEventKind.down { return; }
+            if e.button == PointerEventButton.left {
+                AppState.select-cell(root.row-idx, root.ci, e.modifiers.shift);
+            } else if e.button == PointerEventButton.right {
+                if !root.selected {
+                    AppState.select-cell(root.row-idx, root.ci, false);
+                }
+                AppState.ctx("cell", root.row-idx, root.ci, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+        double-clicked => { root.start-edit(); }
+    }
 
     if !editing && !(col-info.is-bool && !cell.is-null && editable): Text {
         x: 8px; width: parent.width - (col-info.fk != "" ? 40px : 26px);
@@ -84,6 +93,19 @@ component GridCellView inherits Rectangle {
             accepted => { root.editing = false; root.commit(self.text, false); }
             key-pressed(e) => {
                 if e.text == Key.Escape { root.editing = false; return accept; }
+                if e.text == Key.Tab {
+                    // Commit, then let the worker open the neighbouring cell once the grid has refreshed.
+                    root.editing = false;
+                    root.commit(self.text, false);
+                    AppState.edit-next(root.row-idx, root.ci, 1);
+                    return accept;
+                }
+                if e.text == Key.Backtab {
+                    root.editing = false;
+                    root.commit(self.text, false);
+                    AppState.edit-next(root.row-idx, root.ci, -1);
+                    return accept;
+                }
                 reject
             }
             changed has-focus => {
@@ -102,6 +124,19 @@ component GridCellView inherits Rectangle {
 export component DataGrid inherits Rectangle {
     background: Theme.bg;
     clip: true;
+
+    pure function in-sel(r: int, c: int) -> bool {
+        AppState.sel-kind != 0
+            && r >= min(AppState.sel-r0, AppState.sel-r1) && r <= max(AppState.sel-r0, AppState.sel-r1)
+            && c >= min(AppState.sel-c0, AppState.sel-c1) && c <= max(AppState.sel-c0, AppState.sel-c1)
+    }
+    pure function col-sel(c: int) -> bool {
+        AppState.sel-kind == 2 && c >= min(AppState.sel-c0, AppState.sel-c1) && c <= max(AppState.sel-c0, AppState.sel-c1)
+    }
+    pure function row-sel(r: int) -> bool {
+        AppState.sel-kind == 3 && r >= min(AppState.sel-r0, AppState.sel-r1) && r <= max(AppState.sel-r0, AppState.sel-r1)
+    }
+
     Flickable {
         content-width: max(self.width, 48px + AppState.grid-width);
         content-height: self.height;
@@ -112,22 +147,48 @@ export component DataGrid inherits Rectangle {
             // ---- header ----
             HorizontalLayout {
                 height: 34px;
-                Rectangle { width: 48px; background: Theme.panel; border-width: 0.5px; border-color: Theme.line; }
+                Rectangle {
+                    width: 48px; background: Theme.panel; border-width: 0.5px; border-color: Theme.line;
+                    Text { text: "all"; color: Theme.dim; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { AppState.select-all(); } }
+                }
                 for col[c] in AppState.cols: Rectangle {
                     width: AppState.col-widths[c];
-                    background: Theme.panel;
+                    background: root.col-sel(c) ? Theme.sel : Theme.panel;
                     border-width: 0.5px; border-color: Theme.line;
                     Text {
-                        x: 8px; y: 4px; width: parent.width - 30px;
-                        text: col.name + (AppState.sort-column == col.name ? (AppState.sort-asc ? "  ▲" : "  ▼") : "");
+                        x: 8px; y: 4px; width: parent.width - 34px;
+                        text: col.name;
                         font-weight: 700; color: Theme.text; overflow: elide; font-size: 12px;
                     }
                     Text {
-                        x: 8px; y: 19px; width: parent.width - 30px;
+                        x: 8px; y: 19px; width: parent.width - 34px;
                         text: (col.pk ? "PK · " : "") + (col.fk != "" ? "FK → " + col.fk + " · " : "") + col.type-name;
                         font-size: 9px; color: Theme.dim; overflow: elide;
                     }
-                    TouchArea { width: parent.width - 8px; clicked => { AppState.sort-by(c); } }
+                    // Click selects the whole column (Shift extends); the arrow sorts.
+                    TouchArea {
+                        width: parent.width - 30px;
+                        pointer-event(e) => {
+                            if e.kind != PointerEventKind.down { return; }
+                            if e.button == PointerEventButton.left {
+                                AppState.select-column(c, e.modifiers.shift);
+                            } else if e.button == PointerEventButton.right {
+                                if !root.col-sel(c) { AppState.select-column(c, false); }
+                                AppState.ctx("header", c, c, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                            }
+                        }
+                    }
+                    Rectangle {
+                        x: parent.width - 28px; y: 6px; width: 20px; height: 22px; border-radius: 4px;
+                        background: sa.has-hover ? Theme.hover : transparent;
+                        Text {
+                            text: AppState.sort-column == col.name ? (AppState.sort-asc ? "▲" : "▼") : "⇅";
+                            color: AppState.sort-column == col.name ? Theme.accent : Theme.dim;
+                            font-size: 11px; horizontal-alignment: center; vertical-alignment: center;
+                        }
+                        sa := TouchArea { clicked => { AppState.sort-by(c); } }
+                    }
                     // drag handle to resize
                     Rectangle {
                         x: parent.width - 6px; width: 6px;
@@ -150,10 +211,20 @@ export component DataGrid inherits Rectangle {
                     height: Theme.row-h;
                     Rectangle {
                         width: 48px;
-                        background: AppState.selected-row == r ? Theme.panel2 : Theme.panel;
+                        background: root.row-sel(r) ? Theme.sel : Theme.panel;
                         border-width: 0.5px; border-color: Theme.line;
                         Text { text: "" + (AppState.row-offset + r + 1); color: Theme.dim; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
-                        TouchArea { clicked => { AppState.selected-row = r; } }
+                        TouchArea {
+                            pointer-event(e) => {
+                                if e.kind != PointerEventKind.down { return; }
+                                if e.button == PointerEventButton.left {
+                                    AppState.select-row(r, e.modifiers.shift);
+                                } else if e.button == PointerEventButton.right {
+                                    if !root.row-sel(r) { AppState.select-row(r, false); }
+                                    AppState.ctx("row", r, 0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                                }
+                            }
+                        }
                     }
                     for cell[c] in row: GridCellView {
                         width: AppState.col-widths[c];
@@ -162,8 +233,9 @@ export component DataGrid inherits Rectangle {
                         row-idx: r;
                         ci: c;
                         editable: AppState.editable;
-                        selected: AppState.selected-row == r;
-                        commit(t, n) => { AppState.edit-cell(r, c, t, n); }
+                        selected: root.in-sel(r, c);
+                        anchor: AppState.sel-kind == 1 && r == AppState.sel-r1 && c == AppState.sel-c1;
+                        commit(t, n) => { AppState.edit-cell(r, c, t, n); AppState.focus-token += 1; }
                     }
                 }
             }

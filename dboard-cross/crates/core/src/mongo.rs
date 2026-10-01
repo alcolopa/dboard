@@ -604,7 +604,10 @@ fn collection_header(db: &str, name: &str, indexes: Vec<serde_json::Value>) -> S
 }
 
 /// Inverse of [`collection_header`]; `None` when the line is not a header.
-fn parse_collection_header(line: &str) -> Option<std::result::Result<(String, String, Vec<Document>), String>> {
+/// (database, collection, index specs)
+type CollectionHeader = (String, String, Vec<Document>);
+
+fn parse_collection_header(line: &str) -> Option<std::result::Result<CollectionHeader, String>> {
     const TAIL: &str = ",\"documents\":[";
     if !(line.starts_with("{\"db\":") && line.ends_with(TAIL)) {
         return None;

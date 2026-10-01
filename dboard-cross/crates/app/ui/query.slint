@@ -40,59 +40,97 @@ export component QueryEditor inherits VerticalLayout {
 }
 
 export component HistoryDrawer inherits Rectangle {
-    width: 380px;
+    width: 400px;
     background: Theme.panel;
     border-width: 1px; border-color: Theme.line;
     TouchArea { }
     VerticalLayout {
         padding: 12px; spacing: 8px;
         HorizontalLayout {
-            Text { text: "Saved queries"; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+            spacing: 4px;
+            for name[i] in ["Queries", "Changes"]: Rectangle {
+                width: 84px; height: 28px; border-radius: 14px;
+                background: AppState.drawer-tab == i ? Theme.accent : (ta.has-hover ? Theme.hover : Theme.panel2);
+                Text { text: name; color: AppState.drawer-tab == i ? white : Theme.text; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                ta := TouchArea { clicked => { AppState.drawer-tab = i; } }
+            }
             Rectangle { horizontal-stretch: 1; }
             Btn { text: "Close"; clicked => { AppState.drawer-open = false; } }
         }
-        if AppState.saved.length == 0: Text { text: "Nothing saved yet. Use “Save…” in the editor."; color: Theme.dim; font-size: 11px; }
-        ScrollView {
-            max-height: 200px;
-            VerticalLayout {
-                spacing: 2px;
-                for s[i] in AppState.saved: Rectangle {
-                    height: 36px; border-radius: 4px;
-                    background: sa.has-hover ? Theme.hover : transparent;
-                    VerticalLayout {
-                        x: 8px; width: parent.width - 40px; alignment: center;
-                        Text { text: s.name; color: Theme.text; overflow: elide; }
-                        Text { text: s.folder + " · " + s.sql; color: Theme.dim; font-size: 10px; overflow: elide; }
+        if AppState.drawer-tab == 0: VerticalLayout {
+            spacing: 8px;
+            Text { text: "Saved queries"; font-weight: 700; color: Theme.text; }
+            if AppState.saved.length == 0: Text { text: "Nothing saved yet. Use “Save…” in the editor."; color: Theme.dim; font-size: 11px; }
+            ScrollView {
+                max-height: 200px;
+                VerticalLayout {
+                    spacing: 2px;
+                    for s[i] in AppState.saved: Rectangle {
+                        height: 36px; border-radius: 4px;
+                        background: sa.has-hover ? Theme.hover : transparent;
+                        VerticalLayout {
+                            x: 8px; width: parent.width - 40px; alignment: center;
+                            Text { text: s.name; color: Theme.text; overflow: elide; }
+                            Text { text: s.folder + " · " + s.sql; color: Theme.dim; font-size: 10px; overflow: elide; }
+                        }
+                        sa := TouchArea { clicked => { AppState.load-saved(i); } }
+                        Rectangle {
+                            x: parent.width - 26px; width: 20px; height: 20px; y: 8px; border-radius: 10px;
+                            background: da.has-hover ? Theme.panel2 : transparent;
+                            Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+                            da := TouchArea { clicked => { AppState.delete-saved(i); } }
+                        }
                     }
-                    sa := TouchArea { clicked => { AppState.load-saved(i); } }
-                    Rectangle {
-                        x: parent.width - 26px; width: 20px; height: 20px; y: 8px; border-radius: 10px;
-                        background: da.has-hover ? Theme.panel2 : transparent;
-                        Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
-                        da := TouchArea { clicked => { AppState.delete-saved(i); } }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            HorizontalLayout {
+                Text { text: "History"; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { text: "Clear"; clicked => { AppState.clear-history(); } }
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 2px;
+                    for h[i] in AppState.history: Rectangle {
+                        height: 38px; border-radius: 4px;
+                        background: ha.has-hover ? Theme.hover : transparent;
+                        VerticalLayout {
+                            x: 8px; width: parent.width - 16px; alignment: center;
+                            Text { text: h.sql; color: h.ok ? Theme.text : Theme.err; overflow: elide; font-size: 12px; }
+                            Text { text: h.meta; color: Theme.dim; font-size: 10px; }
+                        }
+                        ha := TouchArea { clicked => { AppState.load-history(i); } }
                     }
                 }
             }
         }
-        Rectangle { height: 1px; background: Theme.line; }
-        HorizontalLayout {
-            Text { text: "History"; font-weight: 700; color: Theme.text; vertical-alignment: center; }
-            Rectangle { horizontal-stretch: 1; }
-            Btn { text: "Clear"; clicked => { AppState.clear-history(); } }
-        }
-        ScrollView {
-            vertical-stretch: 1;
-            VerticalLayout {
-                spacing: 2px;
-                for h[i] in AppState.history: Rectangle {
-                    height: 38px; border-radius: 4px;
-                    background: ha.has-hover ? Theme.hover : transparent;
-                    VerticalLayout {
-                        x: 8px; width: parent.width - 16px; alignment: center;
-                        Text { text: h.sql; color: h.ok ? Theme.text : Theme.err; overflow: elide; font-size: 12px; }
-                        Text { text: h.meta; color: Theme.dim; font-size: 10px; }
+        if AppState.drawer-tab == 1: VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                Text { text: AppState.undo-count + " change(s) you can undo"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { text: "Undo last"; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } }
+            }
+            if AppState.edit-items.length == 0: Text {
+                text: "Cell edits and deleted rows made in this session appear here, newest first. Each one can be undone."; color: Theme.dim; font-size: 11px; wrap: word-wrap;
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 2px;
+                    for it[i] in AppState.edit-items: Rectangle {
+                        height: 46px; border-radius: 4px;
+                        background: ea.has-hover ? Theme.hover : transparent;
+                        VerticalLayout {
+                            x: 8px; width: parent.width - 80px; alignment: center; spacing: 1px;
+                            Text { text: it.text; color: Theme.text; overflow: elide; font-size: 12px; }
+                            Text { text: it.detail; color: Theme.dim; font-size: 10px; overflow: elide; }
+                        }
+                        ea := TouchArea { }
+                        if it.can-undo: Btn { x: parent.width - 72px; y: 9px; pad: 10px; text: "Undo"; clicked => { AppState.undo-entry(i); } }
                     }
-                    ha := TouchArea { clicked => { AppState.load-history(i); } }
                 }
             }
         }

@@ -37,14 +37,15 @@ component Workspace inherits VerticalLayout {
         vertical-stretch: 1;
         VerticalLayout {
             alignment: center; spacing: 8px;
-            Text { text: "Open a table from the sidebar, or press Ctrl+N for a new query."; color: Theme.dim; horizontal-alignment: center; }
-            Text { text: "Ctrl+K command palette   ·   Ctrl+P search objects"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
+            Text { text: "Open a table from the sidebar, or press " + Theme.mod + "+N for a new query."; color: Theme.dim; horizontal-alignment: center; }
+            Text { text: Theme.mod + "+K command palette   ·   " + Theme.mod + "+P search objects   ·   " + Theme.mod + "+Tab next tab"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
         }
     }
     if AppState.tab-kind >= 0 && AppState.tab-kind != 3: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
     if AppState.tab-kind == 2 || AppState.tab-kind == 3: Rectangle {
         vertical-stretch: AppState.tab-kind == 3 ? 1 : 0;
-        height: AppState.tab-kind == 3 ? 100px : 220px;
+        min-height: 100px;
+        preferred-height: AppState.tab-kind == 3 ? 400px : 220px;
         background: Theme.panel; border-width: 1px; border-color: Theme.line;
         TextEdit { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-size: AppState.set-font-size * 1px; }
     }
@@ -52,20 +53,21 @@ component Workspace inherits VerticalLayout {
     if AppState.tab-kind >= 0: Rectangle {
         height: 36px; background: Theme.panel;
         HorizontalLayout {
-            padding-left: 10px; padding-right: 10px; spacing: 8px;
+            padding-left: 10px; padding-right: 10px; spacing: 6px;
             if AppState.tab-kind == 0: Btn { text: "‹"; pad: 10px; clicked => { AppState.prev-page(); } }
             if AppState.tab-kind == 0: Btn { text: "›"; pad: 10px; clicked => { AppState.next-page(); } }
             if AppState.tab-kind == 0: ComboBox {
                 width: 84px; model: AppState.page-sizes; current-index: AppState.page-size-index;
                 selected => { AppState.set-page-size(self.current-index); }
             }
-            Text { text: AppState.page-info; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
-            Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; visible: AppState.tab-kind == 0; }
-            Rectangle { horizontal-stretch: 1; }
-            if AppState.tab-kind == 0 && AppState.db-type == 2: Btn { text: "Edit document"; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } }
-            if AppState.tab-kind == 0: Btn { text: "+ Row"; clicked => { AppState.open-insert(); } }
-            if AppState.tab-kind == 0: Btn { text: "Delete row"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } }
-            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Btn { text: "Export"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } }
+            Text { text: AppState.page-info + (AppState.tab-kind == 0 && AppState.timing != "" ? "  ·  " + AppState.timing : ""); color: Theme.dim; vertical-alignment: center; font-size: 12px; overflow: elide; horizontal-stretch: 1; min-width: 40px; }
+            if AppState.tab-kind == 3: Btn { text: "Copy definition"; pad: 9px; clicked => { AppState.copy-text(AppState.ddl-text); } }
+            if AppState.tab-kind == 0 && AppState.db-type == 2: Btn { text: "Edit document"; pad: 9px; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } }
+            if AppState.tab-kind == 0 && AppState.db-type != 2: Btn { text: "Edit row"; pad: 9px; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } }
+            if AppState.tab-kind == 0: Btn { text: "+ Row"; pad: 9px; clicked => { AppState.open-insert(); } }
+            if AppState.tab-kind == 0: Btn { text: "Delete row"; pad: 9px; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } }
+            if AppState.tab-kind == 0: Btn { text: "Import…"; pad: 9px; clicked => { AppState.open-transfer(2); } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Btn { text: "Export"; pad: 9px; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } }
         }
     }
 }
@@ -83,26 +85,75 @@ export component App inherits Window {
 
     // Closing a dialog destroys its focused input; hand focus back so shortcuts keep working.
     property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
-        || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open;
+        || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open
+        || AppState.editrow-open || AppState.users-open || AppState.xfer-open;
     changed any-modal => { if !self.any-modal { fs.focus(); } }
     // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
     property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
     changed focus-key => { fs.focus(); }
+    // Clicking a cell must pull focus out of whatever text box had it so Copy / Paste act on the grid.
+    property <int> focus-token: AppState.focus-token;
+    changed focus-token => { fs.focus(); }
 
     forward-focus: fs;
     fs := FocusScope {
+        // Shortcuts that must work even while a text field has focus. `control` is Ctrl on Windows
+        // and Linux and Cmd on macOS (the toolkit maps it), so the same code gives native shortcuts.
         capture-key-pressed(e) => {
-            if AppState.connected && (e.modifiers.control || e.modifiers.meta) {
-                // With Ctrl held Slint reports the plain letter; modifier keys arrive as private-use characters.
+            if AppState.connected && e.modifiers.control && !any-modal {
                 if e.text == "k" { AppState.open-palette(false); return accept; }
                 if e.text == "p" { AppState.open-palette(true); return accept; }
-                if e.text == "n" { AppState.new-query-tab(); return accept; }
+                if (e.text == "t" || e.text == "T") && e.modifiers.shift { AppState.reopen-tab(); return accept; }
+                if e.text == "n" || e.text == "t" { AppState.new-query-tab(); return accept; }
                 if e.text == "w" { AppState.close-tab(-1); return accept; }
                 if e.text == "r" { AppState.refresh(); return accept; }
-                if (e.text == "t" || e.text == "T") && e.modifiers.shift { AppState.reopen-tab(); return accept; }
-                if (e.text == "i") && e.modifiers.alt { AppState.inspector-open = !AppState.inspector-open; return accept; }
+                if e.text == "i" && e.modifiers.alt { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); return accept; }
+                if e.text == "," { AppState.open-settings(); return accept; }
+                if e.text == "s" && AppState.tab-kind == 1 { AppState.open-save-query(); return accept; }
+                if e.text == "q" { AppState.quit(); return accept; }
+                if e.text == Key.Tab { AppState.cycle-tab(e.modifiers.shift ? -1 : 1); return accept; }
+                if e.text == Key.Backtab { AppState.cycle-tab(-1); return accept; }
+                if e.text == "1" { AppState.activate-tab(0); return accept; }
+                if e.text == "2" { AppState.activate-tab(1); return accept; }
+                if e.text == "3" { AppState.activate-tab(2); return accept; }
+                if e.text == "4" { AppState.activate-tab(3); return accept; }
+                if e.text == "5" { AppState.activate-tab(4); return accept; }
+                if e.text == "6" { AppState.activate-tab(5); return accept; }
+                if e.text == "7" { AppState.activate-tab(6); return accept; }
+                if e.text == "8" { AppState.activate-tab(7); return accept; }
+                if e.text == "9" { AppState.activate-tab(AppState.tabs.length - 1); return accept; }
                 if (e.text == Key.Return || e.text == "\n") && AppState.tab-kind == 1 { AppState.run-query(AppState.query-text); return accept; }
             }
+            reject
+        }
+        // Grid shortcuts. Text fields consume their own keys first, so these only fire when the
+        // grid (not a text box) is what the user is working in.
+        key-pressed(e) => {
+            if !AppState.connected || any-modal || (AppState.tab-kind != 0 && AppState.tab-kind != 1 && AppState.tab-kind != 2) { return reject; }
+            if e.modifiers.control {
+                if e.text == "c" || e.text == "C" {
+                    if AppState.sel-kind == 0 { return reject; }
+                    AppState.copy-selection(AppState.sel-r0, AppState.sel-c0, AppState.sel-r1, AppState.sel-c1, e.modifiers.shift ? 1 : 0);
+                    return accept;
+                }
+                if e.text == "v" || e.text == "V" {
+                    if AppState.sel-kind == 0 { return reject; }
+                    AppState.paste-selection(AppState.sel-r0, AppState.sel-c0, AppState.sel-r1, AppState.sel-c1);
+                    return accept;
+                }
+                if e.text == "a" || e.text == "A" { AppState.select-all(); return accept; }
+                if (e.text == "z" || e.text == "Z") && !e.modifiers.shift { AppState.undo(); return accept; }
+                return reject;
+            }
+            if e.text == Key.UpArrow { AppState.move-selection(-1, 0, e.modifiers.shift); return accept; }
+            if e.text == Key.DownArrow { AppState.move-selection(1, 0, e.modifiers.shift); return accept; }
+            if e.text == Key.LeftArrow { AppState.move-selection(0, -1, e.modifiers.shift); return accept; }
+            if e.text == Key.RightArrow { AppState.move-selection(0, 1, e.modifiers.shift); return accept; }
+            if (e.text == Key.Return || e.text == Key.F2) && AppState.sel-kind == 1 && AppState.editable {
+                AppState.request-edit(AppState.sel-r1, AppState.sel-c1);
+                return accept;
+            }
+            if e.text == Key.Escape && AppState.sel-kind != 0 { AppState.clear-selection(); return accept; }
             reject
         }
 
@@ -119,17 +170,30 @@ export component App inherits Window {
                         envl := Text { text: AppState.env-label; color: white; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
                     }
                     Text { text: AppState.conn-name; color: Theme.text; font-weight: 700; vertical-alignment: center; }
+                    if AppState.databases.length > 0: ComboBox {
+                        width: 190px; y: 7px; height: 28px;
+                        model: AppState.databases;
+                        current-index: AppState.database-index;
+                        selected => { AppState.switch-database(self.current-index); }
+                    }
                     Text { text: AppState.status; color: Theme.dim; vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; }
                     Btn { text: "Undo (" + AppState.undo-count + ")"; enabled: AppState.undo-count > 0; y: 7px; clicked => { AppState.undo(); } }
+                    Btn { text: "History"; y: 7px; clicked => { AppState.drawer-open = !AppState.drawer-open; } }
+                    dbbtn := Btn {
+                        text: "Database ▾"; y: 7px;
+                        clicked => { AppState.ctx("dbmenu", 0, 0, self.absolute-position.x, self.absolute-position.y + self.height); }
+                    }
                     Btn { text: "Refresh"; y: 7px; clicked => { AppState.refresh(); } }
-                    Btn { text: "Inspector"; y: 7px; clicked => { AppState.inspector-open = !AppState.inspector-open; } }
+                    Btn { text: AppState.inspector-open ? "Inspector ✓" : "Inspector"; y: 7px; clicked => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
                     Btn { text: "Settings"; y: 7px; clicked => { AppState.open-settings(); } }
                     Btn { text: "Disconnect"; y: 7px; clicked => { AppState.disconnect(); } }
                 }
             }
             Rectangle {
                 vertical-stretch: 1;
-                property <length> inspector-w: AppState.inspector-open ? 321px : 0px;
+                // Pinned: docked beside the workspace. Unpinned: floats over it and closes on an outside click.
+                property <bool> docked: AppState.inspector-open && AppState.inspector-pinned;
+                property <length> inspector-w: docked ? 321px : 0px;
                 Sidebar { x: 0px; width: 270px; height: parent.height; }
                 Rectangle { x: 270px; width: 1px; height: parent.height; background: Theme.line; }
                 Rectangle {
@@ -137,11 +201,15 @@ export component App inherits Window {
                     width: parent.width - 271px - parent.inspector-w;
                     height: parent.height;
                     Workspace { width: parent.width; height: parent.height; }
-                    if AppState.drawer-open && AppState.tab-kind == 1: HistoryDrawer {
+                    if AppState.drawer-open: HistoryDrawer {
                         x: parent.width - self.width; height: parent.height;
                     }
                 }
-                if AppState.inspector-open: Rectangle { x: parent.width - 321px; width: 1px; height: parent.height; background: Theme.line; }
+                if AppState.inspector-open && !AppState.inspector-pinned: TouchArea {
+                    x: 271px; width: parent.width - 271px;
+                    clicked => { AppState.inspector-changed(false, false); }
+                }
+                if docked: Rectangle { x: parent.width - 321px; width: 1px; height: parent.height; background: Theme.line; }
                 if AppState.inspector-open: Inspector { x: parent.width - 320px; height: parent.height; }
             }
         }

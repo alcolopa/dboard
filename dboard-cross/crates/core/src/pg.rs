@@ -637,7 +637,9 @@ impl Pg {
                 default: r.get(7),
             });
         }
-        let mut constraints: HashMap<(String, String), Vec<(String, String, String)>> = HashMap::new();
+        // (constraint name, pg_constraint.contype, definition) per table
+        type Constraint = (String, String, String);
+        let mut constraints: HashMap<(String, String), Vec<Constraint>> = HashMap::new();
         for r in self
             .client
             .query(

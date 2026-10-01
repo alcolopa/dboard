@@ -75,11 +75,17 @@ pub fn select_page(d: Dialect, t: &Table, p: &Page) -> String {
     if let Some(f) = p.filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
         sql.push_str(&format!(" WHERE {f}"));
     }
+    // PostgreSQL selects every column as text, and an unqualified ORDER BY name would resolve to
+    // that output column (sorting 10 before 2). Qualifying with the table forces the real column.
+    let order_col = |c: &str| match d {
+        Dialect::Pg => format!("{}.{}", d.qualified(t), d.quote(c)),
+        Dialect::My => d.quote(c),
+    };
     if let Some(c) = &p.sort_column {
-        sql.push_str(&format!(" ORDER BY {} {}", d.quote(c), if p.sort_ascending { "ASC" } else { "DESC" }));
+        sql.push_str(&format!(" ORDER BY {} {}", order_col(c), if p.sort_ascending { "ASC" } else { "DESC" }));
     } else if t.has_primary_key() && matches!(t.kind, crate::model::TableKind::Table) {
         // Stable default order: without it Postgres returns an edited row at the end of the table.
-        let pks = t.primary_keys().iter().map(|c| d.quote(&c.name)).collect::<Vec<_>>().join(", ");
+        let pks = t.primary_keys().iter().map(|c| order_col(&c.name)).collect::<Vec<_>>().join(", ");
         sql.push_str(&format!(" ORDER BY {pks}"));
     }
     sql.push_str(&format!(" LIMIT {} OFFSET {}", p.limit.max(1), p.offset.max(0)));
@@ -283,7 +289,7 @@ mod tests {
         let p = Page { limit: 50, offset: 100, sort_column: Some("name".into()), sort_ascending: false, filter: Some(" id > 3 ".into()) };
         assert_eq!(
             select_page(Dialect::Pg, &table(), &p),
-            "SELECT \"id\"::text, \"name\"::text FROM \"public\".\"us\"\"ers\" WHERE id > 3 ORDER BY \"name\" DESC LIMIT 50 OFFSET 100"
+            "SELECT \"id\"::text, \"name\"::text FROM \"public\".\"us\"\"ers\" WHERE id > 3 ORDER BY \"public\".\"us\"\"ers\".\"name\" DESC LIMIT 50 OFFSET 100"
         );
         assert!(select_page(Dialect::My, &table(), &p).starts_with("SELECT `id`, `name` FROM `public`.`us\"ers`"));
     }
@@ -291,7 +297,7 @@ mod tests {
     #[test]
     fn default_order_is_primary_key() {
         let p = Page { limit: 10, offset: 0, sort_column: None, sort_ascending: true, filter: None };
-        assert!(select_page(Dialect::Pg, &table(), &p).ends_with("ORDER BY \"id\" LIMIT 10 OFFSET 0"));
+        assert!(select_page(Dialect::Pg, &table(), &p).ends_with("ORDER BY \"public\".\"us\"\"ers\".\"id\" LIMIT 10 OFFSET 0"));
         let mut t = table();
         t.columns[0].is_primary_key = false;
         assert!(!select_page(Dialect::Pg, &t, &p).contains("ORDER BY"));
