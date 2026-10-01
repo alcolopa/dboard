@@ -14,11 +14,10 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-macos:
     runs-on: macos-15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Resolve tag
         id: tag
@@ -29,16 +28,29 @@ jobs:
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build dboard.app
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: dboard-cross }
+
+      - name: Build universal binary
+        working-directory: dboard-cross
         run: |
-          chmod +x build.sh
-          ./build.sh
+          cargo build --release -p dboard --target aarch64-apple-darwin
+          cargo build --release -p dboard --target x86_64-apple-darwin
+          mkdir -p target/release
+          lipo -create -output target/release/dboard \
+            target/aarch64-apple-darwin/release/dboard \
+            target/x86_64-apple-darwin/release/dboard
+
+      - name: Bundle dboard.app
+        working-directory: dboard-cross
+        run: packaging/macos/bundle.sh ../dboard.app "${{ steps.tag.outputs.tag }}"
 
       - name: Zip app bundle
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent dboard.app "dboard-${{ steps.tag.outputs.tag }}-macos.zip"
+        run: ditto -c -k --sequesterRsrc --keepParent dboard.app "dboard-${{ steps.tag.outputs.tag }}-macos.zip"
 
-      - name: Create release
+      - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
@@ -46,7 +58,7 @@ jobs:
           files: dboard-${{ steps.tag.outputs.tag }}-macos.zip
           generate_release_notes: true
 
-  # ---- Linux & Windows (Rust + Slint client in dboard-cross/) ----
+  # ---- Linux & Windows (same Rust + Slint client) ----
   build-linux:
     runs-on: ubuntu-22.04
     steps:

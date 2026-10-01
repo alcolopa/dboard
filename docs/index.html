@@ -174,7 +174,7 @@
       <a class="btn btn-primary" href="#download">Download</a>
       <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">View Source</a>
     </div>
-    <p class="subnote">macOS 14+ · Windows x86_64 · Linux x86_64</p>
+    <p class="subnote">macOS 11+ · Windows x86_64 · Linux x86_64</p>
   </section>
 
   <div class="wrap">
@@ -279,7 +279,7 @@
       <div class="grid">
         <div class="card">
           <h3>macOS</h3>
-          <p>Swift and SwiftUI app, macOS 14 or later. Unzip it and drag it to Applications.</p>
+          <p>Universal build (Apple Silicon and Intel). Unzip it and drag it to Applications.</p>
           <p class="note">The build is unsigned. Run <code>xattr -cr dboard.app</code> once to get past Gatekeeper.</p>
           <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
         </div>
@@ -297,8 +297,8 @@
         </div>
       </div>
       <p class="subnote" style="text-align:center;margin-top:24px;">
-        The Windows and Linux client is a separate Rust codebase in <a href="https://github.com/alcolopa/dboard/tree/main/dboard-cross">dboard-cross</a>.
-        It covers the same core features; SSH tunnels, SQL syntax highlighting and data import are not there yet.
+        One Rust + Slint codebase serves every platform, in <a href="https://github.com/alcolopa/dboard/tree/main/dboard-cross">dboard-cross</a>.
+        SSH tunnels, SQL syntax highlighting and data import are not there yet.
         Or <a href="https://github.com/alcolopa/dboard#-building--running">build from source</a>.
       </p>
     </div>
