@@ -9,69 +9,13 @@ public final class ConnectionManager: ObservableObject {
     @Published public var activeConnection: ConnectionConfig?
     @Published public var activeDriver: (any DatabaseDriver)?
     @Published public var connectionStatus: ConnectionStatus = .disconnected
-    @Published public var activeDatabase: String = "safeatlas"
+    @Published public var activeDatabase: String = ""
     @Published public var activeSchema: String = "public"
-    @Published public var availableDatabases: [String] = ["safeatlas", "postgres", "testing"]
+    @Published public var availableDatabases: [String] = []
     @Published public var isConnecting: Bool = false
     @Published public var lastErrorMessage: String?
 
-    private init() {
-        loadDefaultConnections()
-    }
-
-    private func loadDefaultConnections() {
-        let pgConn = ConnectionConfig(
-            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-            name: "Local PostgreSQL (safeatlas)",
-            type: .postgresql,
-            host: "127.0.0.1",
-            port: 5432,
-            databaseName: "safeatlas",
-            username: "safeatlas",
-            sslMode: .disable,
-            environment: .local,
-            colorTag: "#10B981",
-            useDemoData: true,
-            isFavorite: true,
-            groupName: "Local"
-        )
-        _ = KeychainManager.shared.savePassword("secret", for: pgConn.keychainKey)
-
-        let mysqlConn = ConnectionConfig(
-            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
-            name: "Staging MySQL Store",
-            type: .mysql,
-            host: "127.0.0.1",
-            port: 3306,
-            databaseName: "shop_staging",
-            username: "root",
-            sslMode: .disable,
-            environment: .staging,
-            colorTag: "#F59E0B",
-            useDemoData: true,
-            isFavorite: false,
-            groupName: "Staging"
-        )
-
-        let mongoConn = ConnectionConfig(
-            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
-            name: "Local MongoDB Cluster",
-            type: .mongodb,
-            host: "localhost",
-            port: 27017,
-            databaseName: "ecom_nosql",
-            username: "admin",
-            mongoURI: "mongodb://admin:secret@localhost:27017/ecom_nosql",
-            sslMode: .disable,
-            environment: .local,
-            colorTag: "#10B981",
-            useDemoData: true,
-            isFavorite: false,
-            groupName: "Local"
-        )
-
-        savedConnections = [pgConn, mysqlConn, mongoConn]
-    }
+    private init() {}
 
     public func autoConnectIfPossible() async {
         guard activeDriver == nil, let first = savedConnections.first else { return }
