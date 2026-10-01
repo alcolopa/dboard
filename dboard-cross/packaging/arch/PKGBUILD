@@ -2,7 +2,7 @@
 # Builds from the tagged source. Build/install: `makepkg -si` in this directory.
 # CI overrides pkgver with the release tag (pkgver=1.2.3 makepkg ...).
 pkgname=dboard
-pkgver=${pkgver:-0.1.0}
+pkgver=${pkgver:-1.0.0}
 pkgrel=1
 pkgdesc='Native database client for PostgreSQL, MySQL and MongoDB'
 arch=('x86_64' 'aarch64')

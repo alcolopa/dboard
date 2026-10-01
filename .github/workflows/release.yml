@@ -42,6 +42,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           name: dboard ${{ env.TAG }}
           files: dboard-${{ env.TAG }}-macos-${{ matrix.arch }}.zip
           generate_release_notes: true
@@ -80,6 +81,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           name: dboard ${{ env.TAG }}
           files: |
             dboard-${{ env.TAG }}-linux-${{ matrix.arch }}.tar.gz
@@ -88,6 +90,7 @@ jobs:
 
   # ---- Arch Linux (x86_64 only: there is no official aarch64 Arch container; the PKGBUILD also builds on aarch64) ----
   build-arch:
+    needs: build-linux # the release/tag must exist: the PKGBUILD downloads the tag tarball
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
@@ -103,6 +106,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           name: dboard ${{ env.TAG }}
           files: dboard-cross/packaging/arch/dboard-*.pkg.tar.zst
 
@@ -133,5 +137,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           name: dboard ${{ env.TAG }}
           files: dboard-cross/dist/dboard-*-windows-${{ matrix.arch }}-setup.exe
