@@ -1,11 +1,14 @@
 //! MongoDB driver. Collections are presented as tables whose columns are the union of
 //! top-level keys seen in the fetched documents; `_id` is the key.
 
+use crate::admin;
+use crate::dump::{DumpOptions, DumpStats, ImportOptions, ImportStats};
 use crate::model::*;
 use crate::{Error, Result};
-use mongodb::bson::{oid::ObjectId, Bson, Document};
+use mongodb::bson::{doc, oid::ObjectId, Bson, Document};
 use mongodb::options::ClientOptions;
 use mongodb::Client;
+use std::io::{BufRead, Write};
 use std::time::{Duration, Instant};
 
 impl From<mongodb::error::Error> for Error {
@@ -377,6 +380,7 @@ impl Mongo {
                     estimated_rows,
                     size_bytes: None,
                     indexes: Vec::new(),
+                    keyless_edit: false,
                 });
             }
         }
@@ -479,14 +483,14 @@ impl Mongo {
         Ok(Rows { columns: cols, rows, duration_ms: started.elapsed().as_secs_f64() * 1000.0, total_estimate: None })
     }
 
-    fn key_filter(t: &Table, key: &[String]) -> Result<Document> {
+    fn key_filter(t: &Table, key: &[Cell]) -> Result<Document> {
         let ty = t.column("_id").map(|c| c.type_name.as_str()).unwrap_or("objectId");
-        let raw = key.first().ok_or_else(|| Error::Unsafe("This document has no _id.".into()))?;
-        let id = parse_typed(raw, ty).map_err(Error::Db)?;
+        let raw = key.first().cloned().flatten().ok_or_else(|| Error::Unsafe("This document has no _id.".into()))?;
+        let id = parse_typed(&raw, ty).map_err(Error::Db)?;
         Ok(mongodb::bson::doc! { "_id": id })
     }
 
-    pub async fn update(&mut self, t: &Table, column: &str, key: &[String], new: Option<&str>) -> Result<()> {
+    pub async fn update(&mut self, t: &Table, column: &str, key: &[Cell], new: Option<&str>) -> Result<()> {
         let value = match new {
             None => Bson::Null,
             Some(text) => {
@@ -505,7 +509,7 @@ impl Mongo {
     }
 
     /// Replace a whole document (raw JSON editor).
-    pub async fn replace_document(&mut self, t: &Table, key: &[String], json: &str) -> Result<()> {
+    pub async fn replace_document(&mut self, t: &Table, key: &[Cell], json: &str) -> Result<()> {
         let mut doc = json_to_doc(json).map_err(Error::Db)?;
         doc.remove("_id");
         let r = self.coll(t).replace_one(Self::key_filter(t, key)?, doc).await?;
@@ -515,7 +519,7 @@ impl Mongo {
         Ok(())
     }
 
-    pub async fn get_document_json(&mut self, t: &Table, key: &[String]) -> Result<String> {
+    pub async fn get_document_json(&mut self, t: &Table, key: &[Cell]) -> Result<String> {
         let d = self.coll(t).find_one(Self::key_filter(t, key)?).await?.ok_or_else(|| Error::Db("Document not found".into()))?;
         serde_json::to_string_pretty(&Bson::Document(d).into_relaxed_extjson()).map_err(|e| Error::Db(e.to_string()))
     }
@@ -535,7 +539,7 @@ impl Mongo {
         Ok(())
     }
 
-    pub async fn delete(&mut self, t: &Table, key: &[String]) -> Result<()> {
+    pub async fn delete(&mut self, t: &Table, key: &[Cell]) -> Result<()> {
         let r = self.coll(t).delete_one(Self::key_filter(t, key)?).await?;
         if r.deleted_count == 0 {
             return Err(Error::Db("No document matched; it may have been changed or deleted.".into()));
@@ -593,9 +597,308 @@ impl Mongo {
     }
 }
 
+/// First line of a collection in a dboard export: everything but the documents, then `"documents":[`.
+fn collection_header(db: &str, name: &str, indexes: Vec<serde_json::Value>) -> String {
+    let head = serde_json::json!({ "db": db, "name": name, "indexes": indexes }).to_string();
+    format!("{},\"documents\":[", &head[..head.len() - 1])
+}
+
+/// Inverse of [`collection_header`]; `None` when the line is not a header.
+fn parse_collection_header(line: &str) -> Option<std::result::Result<(String, String, Vec<Document>), String>> {
+    const TAIL: &str = ",\"documents\":[";
+    if !(line.starts_with("{\"db\":") && line.ends_with(TAIL)) {
+        return None;
+    }
+    let json = format!("{}}}", &line[..line.len() - TAIL.len()]);
+    Some((|| {
+        let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        let indexes = v["indexes"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|i| match Bson::try_from(i) {
+                Ok(Bson::Document(d)) => Some(d),
+                _ => None,
+            })
+            .collect();
+        Ok((v["db"].as_str().unwrap_or("test").to_string(), v["name"].as_str().unwrap_or("").to_string(), indexes))
+    })())
+}
+
+/// Database a user lives in / commands run against.
+const ADMIN_DB: &str = "admin";
+
+impl Mongo {
+    pub async fn list_databases(&mut self) -> Result<Vec<String>> {
+        let mut names = self.client.list_database_names().await?;
+        names.retain(|n| !matches!(n.as_str(), "admin" | "local" | "config"));
+        names.sort();
+        Ok(names)
+    }
+
+    pub fn current_database(&self) -> Option<String> {
+        self.default_db.clone()
+    }
+
+    pub fn use_database(&mut self, db: Option<&str>) {
+        self.default_db = db.map(str::to_string);
+    }
+
+    fn user_db(&self) -> String {
+        self.default_db.clone().unwrap_or_else(|| ADMIN_DB.into())
+    }
+
+    fn roles_of(d: &Document) -> Vec<(String, String)> {
+        d.get_array("roles")
+            .map(|a| a.iter().filter_map(|r| r.as_document()).map(|r| (r.get_str("role").unwrap_or("").to_string(), r.get_str("db").unwrap_or("").to_string())).collect())
+            .unwrap_or_default()
+    }
+
+    pub async fn list_users(&mut self) -> Result<Vec<UserInfo>> {
+        let all = self.client.database(ADMIN_DB).run_command(doc! { "usersInfo": { "forAllDBs": true } }).await;
+        let reply = match all {
+            Ok(r) => r,
+            Err(_) => self.client.database(&self.user_db()).run_command(doc! { "usersInfo": 1 }).await?,
+        };
+        let mut out = Vec::new();
+        for u in reply.get_array("users").map(|a| a.to_vec()).unwrap_or_default() {
+            let Some(u) = u.as_document() else { continue };
+            let roles: Vec<String> = Self::roles_of(u).into_iter().map(|(r, d)| format!("{r}@{d}")).collect();
+            out.push(UserInfo { name: u.get_str("user").unwrap_or("").into(), origin: u.get_str("db").unwrap_or("").into(), summary: roles.join(", ") });
+        }
+        out.sort_by(|a, b| (&a.origin, &a.name).cmp(&(&b.origin, &b.name)));
+        Ok(out)
+    }
+
+    pub async fn user_grants(&mut self, u: &UserInfo) -> Result<Vec<String>> {
+        let r = self
+            .client
+            .database(&u.origin)
+            .run_command(doc! { "usersInfo": { "user": &u.name, "db": &u.origin }, "showPrivileges": true })
+            .await?;
+        let Some(user) = r.get_array("users").ok().and_then(|a| a.first()).and_then(|x| x.as_document()).cloned() else {
+            return Ok(vec!["User not found.".into()]);
+        };
+        let mut out: Vec<String> = Self::roles_of(&user).into_iter().map(|(r, d)| format!("Role {r} on {d}")).collect();
+        if let Ok(p) = user.get_array("inheritedPrivileges") {
+            for priv_ in p.iter().filter_map(|x| x.as_document()).take(60) {
+                let res = priv_.get_document("resource").map(|r| Bson::Document(r.clone()).into_relaxed_extjson().to_string()).unwrap_or_default();
+                let actions = priv_.get_array("actions").map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                out.push(format!("{res}: {actions}"));
+            }
+        }
+        Ok(out)
+    }
+
+    pub async fn create_user(&mut self, n: &NewUser) -> Result<()> {
+        let (db, roles) = if n.admin {
+            (ADMIN_DB.to_string(), vec![doc! { "role": "root", "db": ADMIN_DB }])
+        } else {
+            let db = self.user_db();
+            let roles: Vec<Document> = admin::mongo_role(n.access).map(|r| doc! { "role": r, "db": &db }).into_iter().collect();
+            (db, roles)
+        };
+        self.client.database(&db).run_command(doc! { "createUser": &n.name, "pwd": &n.password, "roles": roles }).await?;
+        Ok(())
+    }
+
+    pub async fn set_password(&mut self, u: &UserInfo, password: &str) -> Result<()> {
+        self.client.database(&u.origin).run_command(doc! { "updateUser": &u.name, "pwd": password }).await?;
+        Ok(())
+    }
+
+    pub async fn drop_user(&mut self, u: &UserInfo) -> Result<()> {
+        self.client.database(&u.origin).run_command(doc! { "dropUser": &u.name }).await?;
+        Ok(())
+    }
+
+    /// Replace the user's roles on the current database, keeping roles on other databases.
+    pub async fn set_access(&mut self, u: &UserInfo, level: AccessLevel) -> Result<()> {
+        let target = self.default_db.clone().ok_or_else(|| Error::Db("Select a database first; access levels apply to one database.".into()))?;
+        let info = self.client.database(&u.origin).run_command(doc! { "usersInfo": { "user": &u.name, "db": &u.origin } }).await?;
+        let current = info.get_array("users").ok().and_then(|a| a.first()).and_then(|x| x.as_document()).map(Self::roles_of).unwrap_or_default();
+        let mut roles: Vec<Document> = current.into_iter().filter(|(_, d)| *d != target).map(|(r, d)| doc! { "role": r, "db": d }).collect();
+        if let Some(r) = admin::mongo_role(level) {
+            roles.push(doc! { "role": r, "db": &target });
+        }
+        self.client.database(&u.origin).run_command(doc! { "updateUser": &u.name, "roles": roles }).await?;
+        Ok(())
+    }
+
+    // ---- export / import --------------------------------------------------------------------
+
+    async fn index_specs(&self, db: &str, coll: &str) -> Vec<Document> {
+        let Ok(r) = self.client.database(db).run_command(doc! { "listIndexes": coll }).await else { return Vec::new() };
+        r.get_document("cursor")
+            .and_then(|c| c.get_array("firstBatch"))
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_document().cloned())
+                    .filter(|d| d.get_str("name").unwrap_or("") != "_id_")
+                    .map(|mut d| {
+                        d.remove("v");
+                        d.remove("ns");
+                        d
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Line-oriented JSON: one document per line, so import can stream the file.
+    pub async fn dump(&mut self, opts: &DumpOptions, tables: &[Table], out: &mut dyn Write, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+        let mut st = DumpStats::default();
+        writeln!(out, "{{\"format\":\"dboard-mongo-dump\",\"version\":1,\"collections\":[")?;
+        let colls: Vec<&Table> = tables.iter().filter(|t| t.kind == TableKind::Collection).collect();
+        for (n, t) in colls.iter().enumerate() {
+            let indexes: Vec<serde_json::Value> = if opts.schema {
+                self.index_specs(&t.schema, &t.name).await.into_iter().map(|d| Bson::Document(d).into_canonical_extjson()).collect()
+            } else {
+                Vec::new()
+            };
+            writeln!(out, "{}", collection_header(&t.schema, &t.name, indexes))?;
+            let mut count = 0u64;
+            if opts.data {
+                let mut cur = self.coll(t).find(Document::new()).await?;
+                let mut first = true;
+                while cur.advance().await? {
+                    let d = cur.deserialize_current()?;
+                    if !first {
+                        writeln!(out, ",")?;
+                    }
+                    first = false;
+                    write!(out, "{}", Bson::Document(d).into_canonical_extjson())?;
+                    count += 1;
+                }
+                if !first {
+                    writeln!(out)?;
+                }
+            }
+            writeln!(out, "]}}{}", if n + 1 < colls.len() { "," } else { "" })?;
+            st.tables += 1;
+            st.rows += count;
+            progress(format!("Exported {} ({count} documents)", t.full_name()));
+        }
+        writeln!(out, "]}}")?;
+        out.flush()?;
+        Ok(st)
+    }
+
+    async fn flush_docs(&self, db: &str, coll: &str, batch: &mut Vec<Document>, stats: &mut ImportStats) -> Result<()> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+        let n = batch.len() as u64;
+        self.client.database(db).collection::<Document>(coll).insert_many(std::mem::take(batch)).await?;
+        stats.rows_copied += n;
+        Ok(())
+    }
+
+    /// Restore a dump written by [`Mongo::dump`]. With `target_db`, every collection goes there.
+    pub async fn import(&mut self, reader: &mut dyn BufRead, target_db: Option<&str>, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+        let mut stats = ImportStats::default();
+        let mut cur: Option<(String, String)> = None; // (db, collection)
+        let mut batch: Vec<Document> = Vec::new();
+        let mut cur_indexes: Vec<Document> = Vec::new();
+        let mut seen_header = false;
+        let mut line_no = 0usize;
+        let mut raw = Vec::new();
+        loop {
+            raw.clear();
+            if reader.read_until(b'\n', &mut raw)? == 0 {
+                break;
+            }
+            line_no += 1;
+            let text = String::from_utf8_lossy(&raw);
+            let line = text.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line.starts_with("{\"format\"") {
+                seen_header = true;
+                continue;
+            }
+            if !seen_header {
+                return Err(Error::Db("This file is not a dboard MongoDB export.".into()));
+            }
+            if let Some(h) = parse_collection_header(line) {
+                let (file_db, name, indexes) = h.map_err(|e| Error::Db(format!("Line {line_no}: {e}")))?;
+                let db = target_db.map(str::to_string).unwrap_or(file_db);
+                cur_indexes = indexes;
+                progress(format!("Importing {db}.{name}…"));
+                cur = Some((db, name));
+                stats.statements += 1;
+                continue;
+            }
+            if line == "]}" || line == "]}," {
+                if let Some((db, name)) = cur.take() {
+                    self.flush_docs(&db, &name, &mut batch, &mut stats).await?;
+                    if !cur_indexes.is_empty() {
+                        let r = self.client.database(&db).run_command(doc! { "createIndexes": &name, "indexes": std::mem::take(&mut cur_indexes) }).await;
+                        if let Err(e) = r {
+                            let msg = format!("Indexes of {db}.{name} could not be created: {e}");
+                            if opts.stop_on_error {
+                                return Err(Error::Db(msg));
+                            }
+                            stats.errors.push(msg);
+                        }
+                    }
+                }
+                continue;
+            }
+            let Some((db, name)) = &cur else { continue };
+            let json = line.trim_end_matches(',');
+            let parsed = serde_json::from_str::<serde_json::Value>(json).map_err(|e| e.to_string()).and_then(|v| match Bson::try_from(v) {
+                Ok(Bson::Document(d)) => Ok(d),
+                Ok(_) => Err("not a document".to_string()),
+                Err(e) => Err(e.to_string()),
+            });
+            match parsed {
+                Ok(d) => batch.push(d),
+                Err(e) => {
+                    let msg = format!("Line {line_no}: invalid document: {e}");
+                    if opts.stop_on_error {
+                        return Err(Error::Db(msg));
+                    }
+                    stats.errors.push(msg);
+                }
+            }
+            if batch.len() >= 500 {
+                let (db, name) = (db.clone(), name.clone());
+                if let Err(e) = self.flush_docs(&db, &name, &mut batch, &mut stats).await {
+                    let msg = format!("Inserting into {db}.{name} failed: {e}");
+                    if opts.stop_on_error {
+                        return Err(Error::Db(format!("{msg}\nDocuments inserted before this point were kept.")));
+                    }
+                    batch.clear();
+                    stats.errors.push(msg);
+                }
+            }
+        }
+        if !seen_header {
+            return Err(Error::Db("This file is not a dboard MongoDB export.".into()));
+        }
+        Ok(stats)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collection_headers_round_trip() {
+        let idx = Bson::Document(doc! { "key": { "a": 1 }, "name": "a_1", "unique": true }).into_canonical_extjson();
+        let line = collection_header("shop", "us\"ers", vec![idx]);
+        assert!(line.starts_with("{\"db\":\"shop\"") && line.ends_with("\"documents\":["));
+        let (db, name, indexes) = parse_collection_header(&line).unwrap().unwrap();
+        assert_eq!((db.as_str(), name.as_str()), ("shop", "us\"ers"));
+        assert_eq!(indexes[0].get_str("name").unwrap(), "a_1");
+        assert!(indexes[0].get_bool("unique").unwrap());
+        assert!(parse_collection_header("{\"_id\": 1, \"x\": \"documents\":[").is_none());
+        assert!(parse_collection_header("{\"db\":\"x\"}").is_none());
+    }
 
     #[test]
     fn splits_and_joins_uri_password() {

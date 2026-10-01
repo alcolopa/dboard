@@ -1096,6 +1096,8 @@ dependencies = [
 name = "dboard-core"
 version = "1.0.0"
 dependencies = [
+ "bytes",
+ "futures-util",
  "keyring",
  "mongodb",
  "mysql_async",
