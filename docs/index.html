@@ -99,6 +99,7 @@
   .section-head h2{font-size:30px;letter-spacing:-0.01em;margin:0 0 10px;}
   .section-head p{color:var(--text-dim);margin:0;}
 
+  #download .card.detected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
   @media (max-width:820px){.grid{grid-template-columns:1fr;}}
   .card{
@@ -156,7 +157,7 @@
       <a href="#shortcuts">Shortcuts</a>
       <a href="#download">Download</a>
       <a href="https://github.com/alcolopa/dboard" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
+      <a class="btn btn-primary" id="dl-nav" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -171,7 +172,7 @@
       destructive statement against production by accident. Now available on Windows and Linux as well as macOS.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="#download">Download</a>
+      <a class="btn btn-primary" id="dl-hero" href="#download">Download</a>
       <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">View Source</a>
     </div>
     <p class="subnote">macOS 11+ · Windows x86_64 · Linux x86_64</p>
@@ -281,19 +282,24 @@
           <h3>macOS</h3>
           <p>Universal build (Apple Silicon and Intel). Unzip it and drag it to Applications.</p>
           <p class="note">The build is unsigned. Run <code>xattr -cr dboard.app</code> once to get past Gatekeeper.</p>
-          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
+          <p><a class="btn btn-primary" id="dl-mac" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
         </div>
         <div class="card">
           <h3>Windows</h3>
 <p>Setup installer (x86_64): Start menu entry, optional desktop shortcut, uninstaller. No runtime to install.</p>
           <p class="note">CI builds this, but it hasn't been tested by hand on Windows yet. Bug reports welcome.</p>
-          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the installer</a></p>
+          <p><a class="btn btn-primary" id="dl-win" href="https://github.com/alcolopa/dboard/releases/latest">Get the installer</a></p>
         </div>
         <div class="card">
           <h3>Linux</h3>
           <p>Packages for Debian/Ubuntu (.deb), Fedora (.rpm) and Arch (.pkg.tar.zst), plus a tar.gz with an installer script for other distros (x86_64). Built with Rust and Slint, so it runs on X11 and Wayland.</p>
           <p class="note">Extract it and run <code>./dboard</code>. Saved passwords need a Secret Service keyring.</p>
-          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get .deb / .rpm / Arch / .tar.gz</a></p>
+          <p id="dl-linux" style="display:flex;flex-wrap:wrap;gap:8px;">
+            <a class="btn btn-primary" data-ext=".deb" href="https://github.com/alcolopa/dboard/releases/latest">.deb (Debian / Ubuntu)</a>
+            <a class="btn btn-primary" data-ext=".rpm" href="https://github.com/alcolopa/dboard/releases/latest">.rpm (Fedora)</a>
+            <a class="btn btn-primary" data-ext=".pkg.tar.zst" href="https://github.com/alcolopa/dboard/releases/latest">Arch</a>
+            <a class="btn btn-ghost" data-ext="linux-x86_64.tar.gz" href="https://github.com/alcolopa/dboard/releases/latest">.tar.gz</a>
+          </p>
         </div>
       </div>
       <p class="subnote" style="text-align:center;margin-top:24px;">
@@ -316,5 +322,44 @@
   </div>
 </footer>
 
+<script>
+(function () {
+  var ua = navigator.userAgent || "", plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  var os = /Win/i.test(plat + ua) ? "win" : /Mac/i.test(plat) && !/iPhone|iPad/i.test(ua) ? "mac" : /Linux|X11|CrOS/i.test(plat + ua) && !/Android/i.test(ua) ? "linux" : null;
+  var names = { win: "Windows", mac: "macOS", linux: "Linux" };
+  var cards = { win: "dl-win", mac: "dl-mac", linux: "dl-linux" };
+  
+
+  if (os) {
+    var card = document.getElementById(cards[os]).closest(".card");
+    card.classList.add("detected");
+    var grid = card.parentNode; grid.insertBefore(card, grid.firstChild); // detected platform first
+    ["dl-hero", "dl-nav"].forEach(function (id) {
+      var el = document.getElementById(id);
+      el.textContent = "Download for " + names[os];
+      el.setAttribute("href", "#download");
+    });
+  }
+
+  function find(assets, test) { for (var i = 0; i < assets.length; i++) if (test(assets[i].name)) return assets[i].browser_download_url; return null; }
+  fetch("https://api.github.com/repos/alcolopa/dboard/releases/latest").then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (rel) {
+    var a = rel.assets || [];
+    var urls = {
+      mac: find(a, function (n) { return /macos\.zip$/.test(n); }),
+      win: find(a, function (n) { return /setup\.exe$/.test(n); })
+    };
+    if (urls.mac) document.getElementById("dl-mac").href = urls.mac;
+    if (urls.win) document.getElementById("dl-win").href = urls.win;
+    var linuxPrimary = null;
+    document.querySelectorAll("#dl-linux a[data-ext]").forEach(function (el) {
+      var ext = el.getAttribute("data-ext"), u = find(a, function (n) { return n.indexOf(ext) !== -1 && n.slice(-ext.length) === ext; });
+      if (u) el.href = u; else el.style.display = "none";
+    });
+    if (os && os !== "linux" && urls[os]) {
+      ["dl-hero", "dl-nav"].forEach(function (id) { document.getElementById(id).href = urls[os]; });
+    }
+  }).catch(function () { /* keep links to the releases page */ });
+})();
+</script>
 </body>
 </html>
