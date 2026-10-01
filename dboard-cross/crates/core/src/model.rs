@@ -211,6 +211,9 @@ pub struct Table {
     pub estimated_rows: Option<i64>,
     pub size_bytes: Option<i64>,
     pub indexes: Vec<String>,
+    /// No primary key, but rows can still be addressed exactly (PostgreSQL `ctid`), so inline
+    /// edits are allowed. Set by the driver.
+    pub keyless_edit: bool,
 }
 
 impl Table {
@@ -226,9 +229,9 @@ impl Table {
     pub fn full_name(&self) -> String {
         if self.schema.is_empty() { self.name.clone() } else { format!("{}.{}", self.schema, self.name) }
     }
-    /// Only base tables / collections with a key can be edited inline.
+    /// Only base tables / collections whose rows can be addressed exactly are edited inline.
     pub fn is_editable(&self) -> bool {
-        matches!(self.kind, TableKind::Table | TableKind::Collection) && self.has_primary_key()
+        matches!(self.kind, TableKind::Table | TableKind::Collection) && (self.has_primary_key() || self.keyless_edit)
     }
 }
 
@@ -237,14 +240,81 @@ pub enum ObjectKind {
     Function,
     Procedure,
     Sequence,
+    Trigger,
+    Type,
+    Index,
+    Event,
+    Extension,
 }
 
-/// Routines and sequences shown in the sidebar.
+impl ObjectKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Procedure => "procedure",
+            Self::Sequence => "sequence",
+            Self::Trigger => "trigger",
+            Self::Type => "type",
+            Self::Index => "index",
+            Self::Event => "event",
+            Self::Extension => "extension",
+        }
+    }
+}
+
+/// Everything in a database that is not a table or view: routines, sequences, triggers, ...
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbObject {
     pub schema: String,
     pub name: String,
     pub kind: ObjectKind,
+    /// Kind-specific: routine argument list, the table a trigger / index belongs to, ...
+    pub detail: String,
+}
+
+/// An account that can log in to the server.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UserInfo {
+    pub name: String,
+    /// MySQL: the host part of `'user'@'host'`; MongoDB: the database the user is defined in.
+    pub origin: String,
+    /// Short human summary, e.g. "superuser · can create databases".
+    pub summary: String,
+}
+
+impl UserInfo {
+    pub fn display(&self) -> String {
+        if self.origin.is_empty() { self.name.clone() } else { format!("{} @ {}", self.name, self.origin) }
+    }
+}
+
+/// How much a user may do in the current database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessLevel {
+    None,
+    ReadOnly,
+    ReadWrite,
+    Full,
+}
+
+impl AccessLevel {
+    pub const ALL: [AccessLevel; 4] = [Self::None, Self::ReadOnly, Self::ReadWrite, Self::Full];
+    pub const LABELS: [&'static str; 4] = ["No access", "Read only", "Read & write", "Full control"];
+
+    pub fn from_index(i: i32) -> Self {
+        Self::ALL[(i.max(0) as usize).min(3)]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewUser {
+    pub name: String,
+    /// MySQL host (defaults to `%`); ignored elsewhere.
+    pub host: String,
+    pub password: String,
+    pub access: AccessLevel,
+    /// PostgreSQL: SUPERUSER. MySQL: all privileges on `*.*`. MongoDB: the `root` role.
+    pub admin: bool,
 }
 
 #[derive(Debug, Clone, Default)]

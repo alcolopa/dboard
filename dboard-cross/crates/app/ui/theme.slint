@@ -8,7 +8,10 @@ export global Theme {
     out property <color> line: dark ? #262b38 : #d9dde6;
     out property <color> text: dark ? #e6e8ee : #1c2030;
     out property <color> dim: dark ? #8b91a3 : #667089;
+    /// Modifier shown in hints; the app maps Cmd (macOS) and Ctrl (elsewhere) to the same shortcut.
+    in property <string> mod: "Ctrl";
     out property <color> accent: #5b7cfa;
+    out property <color> sel: dark ? #26335a : #dbe4ff;
     out property <color> ok: #10b981;
     out property <color> err: #ef4444;
     out property <color> warn: dark ? #f5c46b : #9a6b00;

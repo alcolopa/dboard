@@ -184,6 +184,8 @@ pub struct Settings {
     pub autocomplete: bool,
     pub editor_font_size: u32,
     pub inspector_open: bool,
+    /// Docked and kept open across restarts; otherwise the inspector floats over the workspace.
+    pub inspector_pinned: bool,
     pub last_connection_id: String,
 }
 
@@ -198,6 +200,7 @@ impl Default for Settings {
             autocomplete: true,
             editor_font_size: 13,
             inspector_open: false,
+            inspector_pinned: false,
             last_connection_id: String::new(),
         }
     }

@@ -9,6 +9,76 @@ pub struct ExportCol {
 }
 
 
+/// Tab-separated text as spreadsheets expect it: fields holding a tab, newline or quote are quoted.
+pub fn tsv(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool) -> String {
+    fn field(s: &str) -> String {
+        if s.contains(['\t', '\n', '\r', '"']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
+    }
+    let mut lines: Vec<String> = Vec::with_capacity(rows.len() + 1);
+    if headers {
+        lines.push(cols.iter().map(|c| field(&c.name)).collect::<Vec<_>>().join("\t"));
+    }
+    for r in rows {
+        lines.push(r.iter().map(|c| c.as_deref().map(field).unwrap_or_default()).collect::<Vec<_>>().join("\t"));
+    }
+    lines.join("\n")
+}
+
+/// Parse clipboard text copied from a spreadsheet, a terminal or this app (TSV, with optional
+/// quoted fields). A trailing newline does not create an empty last row.
+pub fn parse_tsv(text: &str) -> Vec<Vec<String>> {
+    parse_delimited(text, '\t')
+}
+
+/// RFC 4180-style parser shared by clipboard paste (tab) and CSV import (comma).
+pub fn parse_delimited(text: &str, sep: char) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut row: Vec<String> = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut was_quoted = false;
+    let mut chars = text.trim_start_matches('\u{feff}').chars().peekable();
+    let mut any = false;
+    while let Some(c) = chars.next() {
+        any = true;
+        if quoted {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    field.push('"');
+                    chars.next();
+                } else {
+                    quoted = false;
+                }
+            } else {
+                field.push(c);
+            }
+            continue;
+        }
+        match c {
+            '"' if field.is_empty() && !was_quoted => {
+                quoted = true;
+                was_quoted = true;
+            }
+            c if c == sep => {
+                row.push(std::mem::take(&mut field));
+                was_quoted = false;
+            }
+            '\r' => {}
+            '\n' => {
+                row.push(std::mem::take(&mut field));
+                rows.push(std::mem::take(&mut row));
+                was_quoted = false;
+            }
+            c => field.push(c),
+        }
+    }
+    if any && (!field.is_empty() || !row.is_empty() || was_quoted) {
+        row.push(field);
+        rows.push(row);
+    }
+    rows
+}
+
 pub fn extension(format: usize) -> &'static str {
     match format {
         0 => "csv",
@@ -136,6 +206,27 @@ mod tests {
     fn csv_quotes_and_nulls() {
         assert_eq!(csv(&cols(), &rows(), true), "id,note,ok\r\n1,\"a,\"\"b\"\"\",true\r\n2,,f\r\n");
         assert!(!csv(&cols(), &rows(), false).starts_with("id"));
+    }
+
+    #[test]
+    fn tsv_round_trips_through_the_parser() {
+        let r = vec![vec![Some("a\tb".into()), Some("say \"hi\"\nnow".into()), None], vec![Some("1".into()), Some("".into()), Some("x".into())]];
+        let text = tsv(&cols(), &r, true);
+        assert!(text.starts_with("id\tnote\tok\n"));
+        let back = parse_tsv(&text);
+        assert_eq!(back[0], ["id", "note", "ok"]);
+        assert_eq!(back[1], ["a\tb", "say \"hi\"\nnow", ""]);
+        assert_eq!(back[2], ["1", "", "x"]);
+    }
+
+    #[test]
+    fn parser_handles_spreadsheet_and_csv_text() {
+        assert_eq!(parse_tsv("a\tb\r\nc\td\r\n"), vec![vec!["a", "b"], vec!["c", "d"]]);
+        assert_eq!(parse_tsv("single"), vec![vec!["single"]]);
+        assert!(parse_tsv("").is_empty());
+        assert_eq!(parse_delimited("h1,h2\n\"x,1\",\"q\"\"\"\n,\n", ','), vec![vec!["h1", "h2"], vec!["x,1", "q\""], vec!["", ""]]);
+        assert_eq!(parse_delimited("\u{feff}a,b", ','), vec![vec!["a", "b"]]);
+        assert_eq!(parse_tsv("\"\"\n"), vec![vec![""]]);
     }
 
     #[test]

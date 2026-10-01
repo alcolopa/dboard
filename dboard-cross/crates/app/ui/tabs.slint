@@ -4,10 +4,32 @@ import { AppState } from "state.slint";
 export component TabBar inherits Rectangle {
     height: 34px;
     background: Theme.bg;
-    HorizontalLayout {
-        padding-left: 6px; spacing: 2px;
+
+    // Tabs shrink to a minimum width, then the strip scrolls (arrows, or automatically to the active tab).
+    property <length> tab-w: max(120px, min(190px, (root.width - 96px) / max(AppState.tabs.length, 1) - 2px));
+    property <length> strip-w: root.width - 96px;
+    property <length> content-w: AppState.tabs.length * (root.tab-w + 2px) + 6px;
+    property <int> active: AppState.active-tab;
+
+    function reveal() {
+        if (AppState.active-tab < 0) { return; }
+        if (AppState.active-tab * (root.tab-w + 2px) + 6px < -strip.content-x) {
+            strip.content-x = -(AppState.active-tab * (root.tab-w + 2px));
+        } else if ((AppState.active-tab + 1) * (root.tab-w + 2px) + 6px > -strip.content-x + root.strip-w) {
+            strip.content-x = -((AppState.active-tab + 1) * (root.tab-w + 2px) + 6px - root.strip-w);
+        }
+    }
+    changed active => { root.reveal(); }
+    changed tab-w => { root.reveal(); }
+
+    strip := Flickable {
+        x: 0px; width: root.strip-w; height: parent.height;
+        content-width: max(root.content-w, root.strip-w);
+        content-height: self.height;
         for tab[i] in AppState.tabs: Rectangle {
-            width: 170px;
+            x: 6px + i * (root.tab-w + 2px);
+            width: root.tab-w;
+            height: strip.height;
             background: tab.active ? Theme.panel : (ta.has-hover ? Theme.hover : transparent);
             border-radius: 6px;
             Rectangle { y: parent.height - 2px; height: 2px; background: tab.active ? Theme.accent : transparent; }
@@ -20,8 +42,11 @@ export component TabBar inherits Rectangle {
             ta := TouchArea {
                 clicked => { AppState.activate-tab(i); }
                 pointer-event(e) => {
-                    if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                    if e.kind != PointerEventKind.down { return; }
+                    if e.button == PointerEventButton.right {
                         AppState.ctx("tab", i, 0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    } else if e.button == PointerEventButton.middle && !tab.pinned {
+                        AppState.close-tab(i);
                     }
                 }
             }
@@ -32,11 +57,26 @@ export component TabBar inherits Rectangle {
                 xa := TouchArea { clicked => { AppState.close-tab(i); } }
             }
         }
-        Rectangle {
-            width: 30px;
-            background: pa.has-hover ? Theme.hover : transparent; border-radius: 6px;
-            Text { text: "+"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
-            pa := TouchArea { clicked => { AppState.new-query-tab(); } }
-        }
+    }
+    // scroll arrows (only useful when the tabs overflow)
+    Rectangle {
+        x: root.strip-w; width: 22px; height: parent.height;
+        opacity: root.content-w > root.strip-w ? 1.0 : 0.25;
+        background: la.has-hover ? Theme.hover : transparent; border-radius: 6px;
+        Text { text: "‹"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+        la := TouchArea { clicked => { strip.content-x = min(0px, strip.content-x + 3 * (root.tab-w + 2px)); } }
+    }
+    Rectangle {
+        x: root.strip-w + 22px; width: 22px; height: parent.height;
+        opacity: root.content-w > root.strip-w ? 1.0 : 0.25;
+        background: ra.has-hover ? Theme.hover : transparent; border-radius: 6px;
+        Text { text: "›"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+        ra := TouchArea { clicked => { strip.content-x = max(-(max(root.content-w - root.strip-w, 0px)), strip.content-x - 3 * (root.tab-w + 2px)); } }
+    }
+    Rectangle {
+        x: root.strip-w + 44px; width: 32px; height: parent.height;
+        background: pa.has-hover ? Theme.hover : transparent; border-radius: 6px;
+        Text { text: "+"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+        pa := TouchArea { clicked => { AppState.new-query-tab(); } }
     }
 }

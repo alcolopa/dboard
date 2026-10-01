@@ -6,7 +6,9 @@ export struct ConnItem { id: string, name: string, subtitle: string, color: colo
 export struct HistoryItem { sql: string, meta: string, ok: bool }
 export struct SavedItem { id: string, name: string, folder: string, sql: string }
 export struct PaletteItem { title: string, subtitle: string, kind: string }
-export struct FieldItem { name: string, type-name: string, hint: string }
+export struct FieldItem { name: string, type-name: string, hint: string, value: string, is-null: bool }
+export struct EditItem { text: string, detail: string, can-undo: bool }
+export struct UserRow { name: string, detail: string }
 export struct CtxItem { label: string, action: string, sep: bool, danger: bool }
 export struct ConnForm {
     id: string, name: string, type-index: int, host: string, port: string, database: string,
@@ -15,6 +17,77 @@ export struct ConnForm {
 
 // Everything the Rust worker pushes to the UI, and every action the UI can request.
 export global AppState {
+    public function request-edit(r: int, c: int) {
+        edit-r = r;
+        edit-c = c;
+        edit-token += 1;
+    }
+    public function clear-selection() {
+        sel-kind = 0;
+        selected-row = -1;
+    }
+    public function select-cell(r: int, c: int, extend: bool) {
+        if (extend && sel-kind == 1) {
+            sel-r1 = r;
+            sel-c1 = c;
+        } else {
+            sel-r0 = r; sel-r1 = r; sel-c0 = c; sel-c1 = c;
+        }
+        sel-kind = 1;
+        selected-row = r;
+        focus-token += 1;
+    }
+    public function select-column(c: int, extend: bool) {
+        if (extend && sel-kind == 2) {
+            sel-c1 = c;
+        } else {
+            sel-c0 = c; sel-c1 = c;
+        }
+        sel-r0 = 0;
+        sel-r1 = max(rows.length - 1, 0);
+        sel-kind = 2;
+        selected-row = -1;
+        focus-token += 1;
+    }
+    public function select-row(r: int, extend: bool) {
+        if (extend && sel-kind == 3) {
+            sel-r1 = r;
+        } else {
+            sel-r0 = r; sel-r1 = r;
+        }
+        sel-c0 = 0;
+        sel-c1 = max(cols.length - 1, 0);
+        sel-kind = 3;
+        selected-row = r;
+        focus-token += 1;
+    }
+    public function select-all() {
+        sel-r0 = 0; sel-r1 = max(rows.length - 1, 0);
+        sel-c0 = 0; sel-c1 = max(cols.length - 1, 0);
+        sel-kind = 1;
+        focus-token += 1;
+    }
+    /// Arrow-key navigation; with `extend` the selection grows from its anchor.
+    public function move-selection(dr: int, dc: int, extend: bool) {
+        if (rows.length == 0 || cols.length == 0) { return; }
+        if (sel-kind == 0) {
+            select-cell(0, 0, false);
+            return;
+        }
+        if (sel-kind == 2) {
+            // columns: left/right move the column, up/down start a cell selection
+            if (dc != 0) { select-column(max(0, min(cols.length - 1, sel-c1 + dc)), extend); return; }
+            select-cell(0, sel-c1, false);
+            return;
+        }
+        if (sel-kind == 3) {
+            if (dr != 0) { select-row(max(0, min(rows.length - 1, sel-r1 + dr)), extend); return; }
+            select-cell(sel-r1, 0, false);
+            return;
+        }
+        select-cell(max(0, min(rows.length - 1, sel-r1 + dr)), max(0, min(cols.length - 1, sel-c1 + dc)), extend);
+    }
+
     // ---- screens ----
     in-out property <bool> connected;
     in property <bool> busy;
@@ -60,8 +133,10 @@ export global AppState {
     // ---- tabs ----
     in property <[TabInfo]> tabs;
     in property <int> tab-kind: -1; // 0 table, 1 query, 2 structure, 3 routine
+    in property <int> active-tab: -1;
     callback new-query-tab();
     callback activate-tab(int);
+    callback cycle-tab(int);
     callback close-tab(int);
     callback tab-action(int, string);
     callback reopen-tab();
@@ -73,6 +148,18 @@ export global AppState {
     in property <[[GridCell]]> rows;
     in property <int> row-offset;
     in-out property <int> selected-row: -1;
+    // Selection: a rectangle of cells (kind 1), whole columns (2) or whole rows (3); 0 = none.
+    in-out property <int> sel-kind: 0;
+    in-out property <int> sel-r0: 0;
+    in-out property <int> sel-c0: 0;
+    in-out property <int> sel-r1: 0;
+    in-out property <int> sel-c1: 0;
+    // Bumped to hand keyboard focus back to the window after clicking a cell.
+    in-out property <int> focus-token: 0;
+    // Ask one cell to open its editor (set by the keyboard or, after a commit, by the worker).
+    in-out property <int> edit-r: -1;
+    in-out property <int> edit-c: -1;
+    in-out property <int> edit-token: 0;
     in property <string> table-title;
     in property <string> page-info;
     in property <string> timing;
@@ -94,6 +181,10 @@ export global AppState {
     callback prev-page();
     callback set-page-size(int);
     callback copy-text(string);
+    callback copy-selection(int, int, int, int, int);
+    callback paste-selection(int, int, int, int);
+    callback edit-next(int, int, int);
+    callback quit();
     callback cell-copy(int, int);
     callback delete-row(int);
     callback open-insert();
@@ -116,15 +207,19 @@ export global AppState {
 
     // ---- inspector ----
     in-out property <bool> inspector-open;
+    in-out property <bool> inspector-pinned;
     in-out property <int> inspector-tab;
     in property <[string]> activity;
-    in property <[string]> edit-log;
+    in property <[EditItem]> edit-items;
     in property <int> undo-count;
+    callback inspector-changed(bool, bool);
+    callback undo-entry(int);
     in property <[string]> meta-lines;
     callback clear-activity();
 
     // ---- history & saved queries ----
     in-out property <bool> drawer-open;
+    in-out property <int> drawer-tab: 0;
     in property <[HistoryItem]> history;
     in property <[SavedItem]> saved;
     callback load-history(int);
@@ -138,7 +233,7 @@ export global AppState {
     in property <length> ctx-y;
     in property <[CtxItem]> ctx-items;
     callback ctx(string, int, int, length, length);
-    callback ctx-pick(string);
+    callback ctx-pick(string, int, int, int, int);
     callback ctx-close();
 
     // ---- confirmation ----
@@ -196,6 +291,59 @@ export global AppState {
     callback export-copy(int, bool);
     callback export-save(int, bool);
     callback export-cancel();
+
+    // ---- databases on this server ----
+    in property <[string]> databases;
+    in property <int> database-index: -1;
+    callback switch-database(int);
+
+    // ---- edit a whole row ----
+    in property <bool> editrow-open;
+    in property <string> editrow-title;
+    in property <[FieldItem]> editrow-fields;
+    in property <string> editrow-error;
+    callback open-edit-row(int);
+    callback editrow-field-edited(int, string);
+    callback editrow-set-null(int, bool);
+    callback editrow-submit();
+    callback editrow-cancel();
+
+    // ---- users & access ----
+    in property <bool> users-open;
+    in property <[UserRow]> users;
+    in-out property <int> user-sel: -1;
+    in property <[string]> user-grants;
+    in property <string> user-error;
+    in property <string> user-info;
+    in property <bool> user-busy;
+    in property <bool> user-is-mysql;
+    in property <bool> user-is-pg;
+    in property <string> user-scope;
+    in property <[string]> access-levels: ["No access", "Read only", "Read & write", "Full control"];
+    in-out property <bool> user-create-open;
+    callback open-users();
+    callback user-select(int);
+    callback user-create(string, string, string, int, bool);
+    callback user-set-level(int, int);
+    callback user-password(int, string);
+    callback user-drop(int);
+    callback users-close();
+
+    // ---- export / import a database, import rows into a table ----
+    in property <bool> xfer-open;
+    in property <int> xfer-mode; // 0 export database, 1 import database, 2 import rows into a table
+    in property <string> xfer-title;
+    in property <string> xfer-note;
+    in-out property <string> xfer-path;
+    in-out property <bool> xfer-opt-a: true;
+    in-out property <bool> xfer-opt-b: true;
+    in property <string> xfer-info;
+    in property <string> xfer-error;
+    in property <bool> xfer-busy;
+    callback open-transfer(int);
+    callback xfer-browse();
+    callback xfer-run(string, bool, bool);
+    callback xfer-cancel();
 
     // ---- settings ----
     in property <bool> settings-open;

@@ -37,6 +37,29 @@ pub fn quote_ident(s: &str) -> String {
     Dialect::Pg.quote(s)
 }
 
+/// SQL string literal. PostgreSQL assumes `standard_conforming_strings = on` (the default and
+/// what dumps set explicitly); MySQL escapes backslashes the way its default mode reads them.
+pub fn literal(d: Dialect, s: &str) -> String {
+    match d {
+        Dialect::Pg => format!("'{}'", s.replace('\'', "''")),
+        Dialect::My => {
+            let mut out = String::with_capacity(s.len() + 2);
+            out.push('\'');
+            for c in s.chars() {
+                match c {
+                    '\\' => out.push_str("\\\\"),
+                    '\'' => out.push_str("\\'"),
+                    '\0' => out.push_str("\\0"),
+                    '\x1a' => out.push_str("\\Z"),
+                    c => out.push(c),
+                }
+            }
+            out.push('\'');
+            out
+        }
+    }
+}
+
 /// `SELECT "a"::text, ... FROM ... WHERE ... ORDER BY ... LIMIT n OFFSET m`
 pub fn select_page(d: Dialect, t: &Table, p: &Page) -> String {
     let cols = t
@@ -52,21 +75,48 @@ pub fn select_page(d: Dialect, t: &Table, p: &Page) -> String {
     if let Some(f) = p.filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
         sql.push_str(&format!(" WHERE {f}"));
     }
+    // PostgreSQL selects every column as text, and an unqualified ORDER BY name would resolve to
+    // that output column (sorting 10 before 2). Qualifying with the table forces the real column.
+    let order_col = |c: &str| match d {
+        Dialect::Pg => format!("{}.{}", d.qualified(t), d.quote(c)),
+        Dialect::My => d.quote(c),
+    };
     if let Some(c) = &p.sort_column {
-        sql.push_str(&format!(" ORDER BY {} {}", d.quote(c), if p.sort_ascending { "ASC" } else { "DESC" }));
+        sql.push_str(&format!(" ORDER BY {} {}", order_col(c), if p.sort_ascending { "ASC" } else { "DESC" }));
     } else if t.has_primary_key() && matches!(t.kind, crate::model::TableKind::Table) {
         // Stable default order: without it Postgres returns an edited row at the end of the table.
-        let pks = t.primary_keys().iter().map(|c| d.quote(&c.name)).collect::<Vec<_>>().join(", ");
+        let pks = t.primary_keys().iter().map(|c| order_col(&c.name)).collect::<Vec<_>>().join(", ");
         sql.push_str(&format!(" ORDER BY {pks}"));
     }
     sql.push_str(&format!(" LIMIT {} OFFSET {}", p.limit.max(1), p.offset.max(0)));
     sql
 }
 
+/// Number of key parameters a statement built with [`key_where`] expects.
+pub fn key_len(t: &Table) -> usize {
+    let n = t.primary_keys().len();
+    if n > 0 { n } else { t.columns.len() }
+}
+
+/// WHERE clause that addresses exactly one row. Primary key columns when there are any;
+/// otherwise (PostgreSQL only) the physical row id of the first row equal to the whole row.
 fn key_where(d: Dialect, t: &Table, mut idx: usize) -> Option<String> {
     let pks = t.primary_keys();
     if pks.is_empty() {
-        return None;
+        if d != Dialect::Pg || !t.keyless_edit || t.columns.is_empty() {
+            return None;
+        }
+        let eq = t
+            .columns
+            .iter()
+            .map(|c| {
+                let s = format!("{}::text IS NOT DISTINCT FROM ${idx}::text", d.quote(&c.name));
+                idx += 1;
+                s
+            })
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        return Some(format!("ctid = (SELECT ctid FROM {} WHERE {eq} LIMIT 1)", d.qualified(t)));
     }
     Some(
         pks.iter()
@@ -109,6 +159,31 @@ pub fn insert_row(d: Dialect, t: &Table, columns: &[&str]) -> Option<String> {
         "INSERT INTO {} ({}) VALUES ({})",
         d.qualified(t),
         columns.iter().map(|c| d.quote(c)).collect::<Vec<_>>().join(", "),
+        ph.join(", ")
+    ))
+}
+
+/// `INSERT` that can also set columns to NULL explicitly (used to restore a deleted row).
+/// Params: one per non-NULL column, in order.
+pub fn insert_row_with_nulls(d: Dialect, t: &Table, columns: &[(&str, bool)]) -> Option<String> {
+    if columns.is_empty() {
+        return insert_row(d, t, &[]);
+    }
+    let mut n = 0;
+    let mut ph = Vec::new();
+    for (c, is_null) in columns {
+        let col = t.column(c)?;
+        if *is_null {
+            ph.push("NULL".to_string());
+        } else {
+            n += 1;
+            ph.push(d.ph(n, &col.type_name));
+        }
+    }
+    Some(format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        d.qualified(t),
+        columns.iter().map(|(c, _)| d.quote(c)).collect::<Vec<_>>().join(", "),
         ph.join(", ")
     ))
 }
@@ -192,7 +267,15 @@ mod tests {
             estimated_rows: None,
             size_bytes: None,
             indexes: vec![],
+            keyless_edit: false,
         }
+    }
+
+    #[test]
+    fn literals_are_escaped_per_dialect() {
+        assert_eq!(literal(Dialect::Pg, "it's \\ ok"), "'it''s \\ ok'");
+        assert_eq!(literal(Dialect::My, "it's \\ ok"), "'it\\'s \\\\ ok'");
+        assert_eq!(literal(Dialect::My, "a\0b"), "'a\\0b'");
     }
 
     #[test]
@@ -206,7 +289,7 @@ mod tests {
         let p = Page { limit: 50, offset: 100, sort_column: Some("name".into()), sort_ascending: false, filter: Some(" id > 3 ".into()) };
         assert_eq!(
             select_page(Dialect::Pg, &table(), &p),
-            "SELECT \"id\"::text, \"name\"::text FROM \"public\".\"us\"\"ers\" WHERE id > 3 ORDER BY \"name\" DESC LIMIT 50 OFFSET 100"
+            "SELECT \"id\"::text, \"name\"::text FROM \"public\".\"us\"\"ers\" WHERE id > 3 ORDER BY \"public\".\"us\"\"ers\".\"name\" DESC LIMIT 50 OFFSET 100"
         );
         assert!(select_page(Dialect::My, &table(), &p).starts_with("SELECT `id`, `name` FROM `public`.`us\"ers`"));
     }
@@ -214,7 +297,7 @@ mod tests {
     #[test]
     fn default_order_is_primary_key() {
         let p = Page { limit: 10, offset: 0, sort_column: None, sort_ascending: true, filter: None };
-        assert!(select_page(Dialect::Pg, &table(), &p).ends_with("ORDER BY \"id\" LIMIT 10 OFFSET 0"));
+        assert!(select_page(Dialect::Pg, &table(), &p).ends_with("ORDER BY \"public\".\"us\"\"ers\".\"id\" LIMIT 10 OFFSET 0"));
         let mut t = table();
         t.columns[0].is_primary_key = false;
         assert!(!select_page(Dialect::Pg, &t, &p).contains("ORDER BY"));
@@ -242,6 +325,35 @@ mod tests {
         t.columns[0].is_primary_key = false;
         assert!(update_cell(Dialect::Pg, &t, "name", false).is_none());
         assert!(delete_row(Dialect::Pg, &t).is_none());
+    }
+
+    #[test]
+    fn keyless_postgres_tables_are_addressed_by_ctid() {
+        let mut t = table();
+        t.columns[0].is_primary_key = false;
+        assert!(update_cell(Dialect::Pg, &t, "name", false).is_none());
+        t.keyless_edit = true;
+        assert_eq!(key_len(&t), 2);
+        assert_eq!(
+            update_cell(Dialect::Pg, &t, "name", false).unwrap(),
+            "UPDATE \"public\".\"us\"\"ers\" SET \"name\" = $1::text::text WHERE ctid = (SELECT ctid FROM \"public\".\"us\"\"ers\" \
+             WHERE \"id\"::text IS NOT DISTINCT FROM $2::text AND \"name\"::text IS NOT DISTINCT FROM $3::text LIMIT 1)"
+        );
+        assert!(delete_row(Dialect::Pg, &t).unwrap().starts_with("DELETE FROM \"public\".\"us\"\"ers\" WHERE ctid = ("));
+        assert!(delete_row(Dialect::My, &t).is_none(), "MySQL has no exact row id, so it stays read-only");
+    }
+
+    #[test]
+    fn insert_with_explicit_nulls() {
+        let t = table();
+        assert_eq!(
+            insert_row_with_nulls(Dialect::Pg, &t, &[("id", false), ("name", true)]).unwrap(),
+            "INSERT INTO \"public\".\"us\"\"ers\" (\"id\", \"name\") VALUES ($1::text::int4, NULL)"
+        );
+        assert_eq!(
+            insert_row_with_nulls(Dialect::My, &t, &[("id", true), ("name", false)]).unwrap(),
+            "INSERT INTO `public`.`us\"ers` (`id`, `name`) VALUES (NULL, ?)"
+        );
     }
 
     #[test]

@@ -3,10 +3,12 @@
 
 use crate::export::{self, ExportCol};
 use crate::suggest;
-use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, FieldItem, GridCell, HistoryItem, PaletteItem, SavedItem, TabInfo, TreeItem};
+use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, EditItem, FieldItem, GridCell, HistoryItem, PaletteItem, SavedItem, TabInfo, TreeItem, UserRow};
 use dboard_core::config::{self, secrets, HistoryEntry, SavedQuery, Settings, Store, Theme as ThemePref, FOLDERS};
 use dboard_core::model::*;
 use dboard_core::sql::Dialect;
+use dboard_core::dump::{DumpOptions, ImportOptions};
+use dboard_core::edit::EditKind;
 use dboard_core::{mongo, safety, Conn};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel, Weak};
 use std::collections::HashSet;
@@ -29,6 +31,9 @@ pub enum Cmd {
     Disconnect,
     Refresh,
     Undo,
+    UndoEntry(usize),
+    InspectorChanged(bool, bool),
+    SwitchDatabase(usize),
     // sidebar
     FilterTree(String),
     TreeClick(usize),
@@ -36,6 +41,7 @@ pub enum Cmd {
     // tabs
     NewQueryTab,
     ActivateTab(usize),
+    CycleTab(i32),
     CloseTab(i32),
     TabAction(usize, String),
     ReopenTab,
@@ -50,6 +56,14 @@ pub enum Cmd {
     PrevPage,
     SetPageSize(usize),
     CopyText(String),
+    CopySelection { r0: usize, c0: usize, r1: usize, c1: usize, mode: i32 },
+    PasteSelection { r0: usize, c0: usize, r1: usize, c1: usize },
+    EditNext(usize, usize, i32),
+    OpenEditRow(usize),
+    EditRowFieldEdited(usize, String),
+    EditRowSetNull(usize, bool),
+    EditRowSubmit,
+    EditRowCancel,
     CellCopy(usize, usize),
     DeleteRow(usize),
     OpenInsert,
@@ -89,8 +103,21 @@ pub enum Cmd {
     SettingsChanged { dark: bool, compact: bool, page_idx: usize, confirm: bool, autocomplete: bool, font: i32 },
     SettingsClose,
     ClearCredentials,
+    // users & access
+    OpenUsers,
+    UserSelect(usize),
+    UserCreate { name: String, host: String, password: String, level: i32, admin: bool },
+    UserSetLevel(usize, i32),
+    UserPassword(usize, String),
+    UserDrop(usize),
+    UsersClose,
+    // export / import
+    OpenTransfer(i32),
+    XferBrowse,
+    XferRun { path: String, a: bool, b: bool },
+    XferCancel,
     Ctx(String, usize, usize, f32, f32),
-    CtxPick(String),
+    CtxPick(String, [i32; 4]),
     CtxClose,
     // internal
     ClearFlash,
@@ -257,6 +284,18 @@ enum Pending {
     DeleteRow(usize),
     Truncate(String, String),
     Drop(String, String),
+    DropUser(usize),
+    /// (top-left row, top-left column, values)
+    Paste(usize, usize, Vec<Vec<String>>),
+    ImportDatabase(String, bool),
+    ImportRows(String, bool),
+}
+
+/// The "edit whole row" dialog: the row as loaded and what the user has typed since.
+struct EditRowState {
+    row: usize,
+    original: Vec<Cell>,
+    values: Vec<Cell>,
 }
 
 enum JsonTarget {
@@ -269,6 +308,9 @@ enum CtxTarget {
     Tree(usize),
     Tab(usize),
     Cell(usize, usize),
+    Header(usize),
+    Row(usize),
+    DbMenu,
 }
 
 enum PaletteAction {
@@ -285,6 +327,8 @@ struct TreeEntry {
     kind: i32,
     schema: String,
     name: String,
+    /// Routine arguments, owning table, ... (see `DbObject::detail`).
+    detail: String,
     key: String,
 }
 
@@ -315,6 +359,16 @@ pub struct Worker {
     export_dialect: Dialect,
     form_id: String,
     ctx_target: Option<CtxTarget>,
+    /// Kept in memory for this session only, to reconnect when another database is picked.
+    session_pw: String,
+    databases: Vec<String>,
+    /// MySQL / MongoDB list an extra "All databases" entry first.
+    db_all_entry: bool,
+    users: Vec<UserInfo>,
+    edit_row: Option<EditRowState>,
+    xfer_mode: i32,
+    /// The cell whose "saved ✓" / "!" marker is cleared by the next `ClearFlash`.
+    flashed: Vec<(usize, usize)>,
 }
 
 impl Worker {
@@ -350,6 +404,13 @@ impl Worker {
             export_dialect: Dialect::Pg,
             form_id: String::new(),
             ctx_target: None,
+            session_pw: String::new(),
+            databases: Vec::new(),
+            db_all_entry: false,
+            users: Vec::new(),
+            edit_row: None,
+            xfer_mode: 0,
+            flashed: Vec::new(),
         }
     }
 
@@ -414,7 +475,8 @@ impl Worker {
                 st.set_set_confirm(s.confirm_destructive);
                 st.set_set_autocomplete(s.autocomplete);
                 st.set_set_font_size(s.editor_font_size as i32);
-                st.set_inspector_open(s.inspector_open);
+                st.set_inspector_open(s.inspector_open && s.inspector_pinned);
+                st.set_inspector_pinned(s.inspector_pinned);
             }
         });
     }
@@ -598,12 +660,12 @@ impl Worker {
             st.set_form_error("".into());
         });
         match Conn::connect(cfg.clone(), &pw).await {
-            Ok(conn) => self.on_connected(cfg, conn),
+            Ok(conn) => self.on_connected(cfg, conn, pw).await,
             Err(e) => self.form_error(e.to_string()),
         }
     }
 
-    fn on_connected(&mut self, cfg: ConnectionConfig, conn: Conn) {
+    async fn on_connected(&mut self, cfg: ConnectionConfig, conn: Conn, pw: String) {
         self.env = cfg.environment;
         self.tabs.clear();
         self.active = None;
@@ -617,20 +679,12 @@ impl Worker {
         let _ = self.store.save_connections(&self.connections);
         self.settings.last_connection_id = cfg.id.clone();
         self.persist_settings();
-        let who = if cfg.db_type == DbType::Mongo && !cfg.mongo_uri.is_empty() {
-            cfg.mongo_uri.clone()
-        } else {
-            format!(
-                "{}{}:{}{}",
-                if cfg.username.is_empty() { String::new() } else { format!("{}@", cfg.username) },
-                cfg.host,
-                cfg.port,
-                if cfg.database.is_empty() { String::new() } else { format!(" / {}", cfg.database) }
-            )
-        };
-        let status = format!("{} {} · {who}", cfg.db_type.label(), conn.server_version);
+        self.session_pw = pw;
+        self.users.clear();
         let (name, env, protected, db) = (cfg.display_name(), cfg.environment, self.protected(), cfg.db_type.index() as i32);
         self.conn = Some(conn);
+        self.load_databases().await;
+        let status = self.status_line();
         self.rebuild_tree();
         self.push_saved_and_history();
         self.show_active();
@@ -648,8 +702,91 @@ impl Worker {
         });
     }
 
+    /// "PostgreSQL 16.4 · user@host:5432 / database", for the top bar.
+    fn status_line(&self) -> String {
+        let Some(conn) = &self.conn else { return String::new() };
+        let cfg = &conn.config;
+        let who = if cfg.db_type == DbType::Mongo && !cfg.mongo_uri.is_empty() {
+            cfg.mongo_uri.clone()
+        } else {
+            format!(
+                "{}{}:{}{}",
+                if cfg.username.is_empty() { String::new() } else { format!("{}@", cfg.username) },
+                cfg.host,
+                cfg.port,
+                if cfg.database.is_empty() { String::new() } else { format!(" / {}", cfg.database) }
+            )
+        };
+        format!("{} {} · {who}", cfg.db_type.label(), conn.server_version)
+    }
+
+    /// Fill the database drop-down with every database on the server.
+    async fn load_databases(&mut self) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        let list = conn.list_databases().await.unwrap_or_default();
+        let current = conn.current_database().await.ok().flatten();
+        self.db_all_entry = conn.db_type() != DbType::Postgres;
+        let mut entries = Vec::new();
+        if self.db_all_entry && !list.is_empty() {
+            entries.push("All databases".to_string());
+        }
+        entries.extend(list.iter().cloned());
+        let idx = match &current {
+            Some(c) => entries.iter().position(|e| e == c).unwrap_or(0),
+            None => 0,
+        };
+        self.databases = list;
+        let show = !entries.is_empty();
+        ui(&self.w, move |st| {
+            st.set_databases(strs(if show { entries } else { Vec::new() }));
+            st.set_database_index(idx as i32);
+        });
+    }
+
+    async fn switch_database(&mut self, i: usize) {
+        let pick: Option<String> = if self.db_all_entry {
+            if i == 0 { None } else { self.databases.get(i - 1).cloned() }
+        } else {
+            self.databases.get(i).cloned()
+        };
+        let pw = self.session_pw.clone();
+        let Some(conn) = self.conn.as_mut() else { return };
+        ui(&self.w, |st| st.set_busy(true));
+        let res = conn.switch_database(pick.as_deref(), &pw).await;
+        match res {
+            Ok(()) => {
+                self.tabs.clear();
+                self.closed.clear();
+                self.active = None;
+                self.collapsed.clear();
+                self.tree_filter.clear();
+                let name = pick.clone().unwrap_or_else(|| "all databases".into());
+                self.log_activity(None, &format!("USE {name}"));
+                let status = self.status_line();
+                self.rebuild_tree();
+                self.show_active();
+                self.push_inspector();
+                ui(&self.w, move |st| {
+                    st.set_status(status.into());
+                    st.set_tree_filter("".into());
+                    st.set_busy(false);
+                });
+                self.toast(format!("Now using {name}"));
+            }
+            Err(e) => {
+                // Put the drop-down back on the database that is still in use.
+                self.load_databases().await;
+                ui(&self.w, |st| st.set_busy(false));
+                self.toast(format!("Could not switch database: {e}"));
+            }
+        }
+    }
+
     fn disconnect(&mut self) {
         self.conn = None;
+        self.session_pw.clear();
+        self.users.clear();
+        self.edit_row = None;
         self.tabs.clear();
         self.active = None;
         self.pending = None;
@@ -662,6 +799,10 @@ impl Worker {
             st.set_json_open(false);
             st.set_palette_open(false);
             st.set_export_open(false);
+            st.set_editrow_open(false);
+            st.set_users_open(false);
+            st.set_xfer_open(false);
+            st.set_databases(strs(Vec::new()));
         });
     }
 
@@ -721,27 +862,56 @@ impl Worker {
             let skey = format!("s:{s}");
             let open = filtering || !self.collapsed.contains(&skey);
             let label = if s.is_empty() { "database".to_string() } else { s.clone() };
-            entries.push((TreeEntry { kind: 0, schema: s.clone(), name: String::new(), key: skey }, label, 0, open));
+            entries.push((TreeEntry { kind: 0, schema: s.clone(), name: String::new(), detail: String::new(), key: skey }, label, 0, open));
             if !open {
                 continue;
             }
-            let sections: [(&str, i32, Vec<(String, i32)>); 5] = [
-                ("Tables", 1, tables.iter().filter(|t| t.kind == TableKind::Table).map(|t| (t.name.clone(), 2)).collect()),
-                ("Views", 1, tables.iter().filter(|t| matches!(t.kind, TableKind::View | TableKind::MaterializedView)).map(|t| (t.name.clone(), if t.kind == TableKind::View { 3 } else { 4 })).collect()),
-                ("Collections", 1, tables.iter().filter(|t| t.kind == TableKind::Collection).map(|t| (t.name.clone(), 5)).collect()),
-                ("Routines", 1, objects.iter().filter(|o| o.kind != ObjectKind::Sequence).map(|o| (o.name.clone(), if o.kind == ObjectKind::Procedure { 7 } else { 6 })).collect()),
-                ("Sequences", 1, objects.iter().filter(|o| o.kind == ObjectKind::Sequence).map(|o| (o.name.clone(), 8)).collect()),
+            // (label, badge, name, detail)
+            type Item = (String, i32, String, String);
+            let of_kind = |k: ObjectKind, badge: i32| -> Vec<Item> {
+                objects
+                    .iter()
+                    .filter(|o| o.kind == k)
+                    .map(|o| {
+                        let label = match k {
+                            ObjectKind::Function | ObjectKind::Procedure if !o.detail.is_empty() => format!("{}({})", o.name, o.detail),
+                            ObjectKind::Trigger | ObjectKind::Index | ObjectKind::Extension if !o.detail.is_empty() => format!("{}  ({})", o.name, o.detail),
+                            _ => o.name.clone(),
+                        };
+                        (label, badge, o.name.clone(), o.detail.clone())
+                    })
+                    .collect()
+            };
+            let table_items = |f: &dyn Fn(&Table) -> Option<i32>| -> Vec<Item> {
+                tables.iter().filter_map(|t| f(t).map(|b| (t.name.clone(), b, t.name.clone(), String::new()))).collect()
+            };
+            let mut routines = of_kind(ObjectKind::Function, 6);
+            routines.extend(of_kind(ObjectKind::Procedure, 7));
+            routines.sort_by(|a, b| a.0.cmp(&b.0));
+            // (title, items, open by default). Bulky lists start collapsed so the tree stays readable.
+            let sections: Vec<(&str, Vec<Item>, bool)> = vec![
+                ("Tables", table_items(&|t| (t.kind == TableKind::Table).then_some(2)), true),
+                ("Views", table_items(&|t| match t.kind { TableKind::View => Some(3), TableKind::MaterializedView => Some(4), _ => None }), true),
+                ("Collections", table_items(&|t| (t.kind == TableKind::Collection).then_some(5)), true),
+                ("Routines", routines, true),
+                ("Sequences", of_kind(ObjectKind::Sequence, 8), true),
+                ("Triggers", of_kind(ObjectKind::Trigger, 9), false),
+                ("Types", of_kind(ObjectKind::Type, 10), false),
+                ("Indexes", of_kind(ObjectKind::Index, 11), false),
+                ("Events", of_kind(ObjectKind::Event, 12), false),
+                ("Extensions", of_kind(ObjectKind::Extension, 13), false),
             ];
-            for (title, _, items) in sections {
+            for (title, items, default_open) in sections {
                 if items.is_empty() {
                     continue;
                 }
                 let key = format!("s:{s}/{title}");
-                let sopen = filtering || !self.collapsed.contains(&key);
-                entries.push((TreeEntry { kind: 1, schema: s.clone(), name: title.into(), key: key.clone() }, format!("{title} ({})", items.len()), 1, sopen));
+                // `collapsed` holds sections the user flipped away from their default.
+                let sopen = filtering || (default_open != self.collapsed.contains(&key));
+                entries.push((TreeEntry { kind: 1, schema: s.clone(), name: title.into(), detail: String::new(), key: key.clone() }, format!("{title} ({})", items.len()), 1, sopen));
                 if sopen {
-                    for (name, kind) in items {
-                        entries.push((TreeEntry { kind, schema: s.clone(), name: name.clone(), key: format!("{key}/{name}") }, name, 2, false));
+                    for (label, kind, name, detail) in items {
+                        entries.push((TreeEntry { kind, schema: s.clone(), key: format!("{key}/{label}"), name, detail }, label, 2, false));
                     }
                 }
             }
@@ -757,13 +927,25 @@ impl Worker {
         });
     }
 
-    fn find_object(&self, schema: &str, name: &str, kind: i32) -> Option<DbObject> {
-        let want = |o: &DbObject| match kind {
-            6 => o.kind == ObjectKind::Function,
-            7 => o.kind == ObjectKind::Procedure,
-            _ => o.kind == ObjectKind::Sequence,
+    fn find_object(&self, e: &TreeEntry) -> Option<DbObject> {
+        let want = match e.kind {
+            6 => ObjectKind::Function,
+            7 => ObjectKind::Procedure,
+            8 => ObjectKind::Sequence,
+            9 => ObjectKind::Trigger,
+            10 => ObjectKind::Type,
+            11 => ObjectKind::Index,
+            12 => ObjectKind::Event,
+            13 => ObjectKind::Extension,
+            _ => return None,
         };
-        self.conn.as_ref()?.metadata.objects.iter().find(|o| o.schema == schema && o.name == name && want(o)).cloned()
+        self.conn
+            .as_ref()?
+            .metadata
+            .objects
+            .iter()
+            .find(|o| o.schema == e.schema && o.name == e.name && o.kind == want && o.detail == e.detail)
+            .cloned()
     }
 }
 
@@ -795,7 +977,9 @@ impl Worker {
     fn push_tabs(&self) {
         let tabs: Vec<(String, i32, bool, bool)> =
             self.tabs.iter().enumerate().map(|(i, t)| (t.title.clone(), t.kind as i32, t.pinned, Some(i) == self.active)).collect();
+        let active = self.active.map_or(-1, |i| i as i32);
         ui(&self.w, move |st| {
+            st.set_active_tab(active);
             let v: Vec<TabInfo> = tabs.into_iter().map(|(title, kind, pinned, active)| TabInfo { title: title.into(), kind, pinned, active }).collect();
             st.set_tabs(ModelRc::new(VecModel::from(v)));
         });
@@ -816,6 +1000,7 @@ impl Worker {
                 st.set_table_title("".into());
                 st.set_ddl_text("".into());
                 st.set_selected_row(-1);
+                st.set_sel_kind(0);
             }
             Some(t) => {
                 let cols: Vec<ColInfo> = t
@@ -830,6 +1015,7 @@ impl Worker {
                 st.set_rows(grid_model(t.rows.iter().map(|r| r.iter().map(|c| (c.clone(), 0)).collect()).collect()));
                 st.set_row_offset(t.page.offset as i32);
                 st.set_selected_row(-1);
+                st.set_sel_kind(0);
                 st.set_table_title(if t.schema.is_empty() { t.name.clone() } else { format!("{}.{}", t.schema, t.name) }.into());
                 st.set_page_info(t.page_info.into());
                 st.set_timing(t.timing.into());
@@ -847,16 +1033,17 @@ impl Worker {
         });
     }
 
-    /// Re-push only the row data, optionally flashing one cell (1 saving, 2 saved, 3 error).
-    fn push_rows(&self, flash: Option<(usize, usize, i32)>) {
-        let Some(t) = self.active_tab() else { return };
-        let grid: Vec<Vec<(Cell, i32)>> = t
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(r, row)| row.iter().enumerate().map(|(c, v)| (v.clone(), flash.filter(|f| f.0 == r && f.1 == c).map_or(0, |f| f.2))).collect())
-            .collect();
-        ui(&self.w, move |st| st.set_rows(grid_model(grid)));
+    /// Change one displayed cell in place (value and 0 idle / 1 saving / 2 saved / 3 error flag).
+    /// Unlike rebuilding the grid this keeps every other cell, including one being edited, intact.
+    fn set_cell(&self, r: usize, c: usize, value: Cell, state: i32) {
+        ui(&self.w, move |st| {
+            let rows = st.get_rows();
+            if let Some(row) = slint::Model::row_data(&rows, r) {
+                if c < slint::Model::row_count(&row) {
+                    slint::Model::set_row_data(&row, c, GridCell { is_null: value.is_none(), text: value.unwrap_or_default().into(), state });
+                }
+            }
+        });
     }
 
     fn set_banner(&mut self, msg: &str, is_err: bool) {
@@ -881,11 +1068,20 @@ impl Worker {
     }
 
     async fn open_table(&mut self, schema: &str, name: &str) {
-        if let Some(i) = self.tabs.iter().position(|t| t.kind == Kind::Table && t.schema == schema && t.name == name) {
-            self.active = Some(i);
-            return self.show_active();
+        self.open_table_in(schema, name, false).await
+    }
+
+    /// Open a table; with `new_tab` always in a fresh tab (e.g. to compare two sort orders or filters).
+    async fn open_table_in(&mut self, schema: &str, name: &str, new_tab: bool) {
+        if !new_tab {
+            if let Some(i) = self.tabs.iter().position(|t| t.kind == Kind::Table && t.schema == schema && t.name == name) {
+                self.active = Some(i);
+                return self.show_active();
+            }
         }
-        let mut t = Tab::new(Kind::Table, name, self.default_page_size());
+        let same = self.tabs.iter().filter(|t| t.kind == Kind::Table && t.schema == schema && t.name == name).count();
+        let title = if same == 0 { name.to_string() } else { format!("{name} ({})", same + 1) };
+        let mut t = Tab::new(Kind::Table, title, self.default_page_size());
         t.schema = schema.into();
         t.name = name.into();
         self.add_tab(t);
@@ -1112,12 +1308,21 @@ impl Worker {
                 self.rebuild_tree();
             }
             2..=5 => self.open_table(&e.schema, &e.name).await,
-            k => {
-                if let Some(o) = self.find_object(&e.schema, &e.name, k) {
+            _ => {
+                if let Some(o) = self.find_object(&e) {
                     self.open_routine(o).await;
                 }
             }
         }
+    }
+
+    /// SQL that calls a routine, with its arguments spelled out as NULL placeholders.
+    fn call_template(&self, o: &DbObject) -> String {
+        let d = self.dialect();
+        let name = format!("{}.{}", d.quote(&o.schema), d.quote(&o.name));
+        let args: Vec<String> = o.detail.split(", ").filter(|a| !a.trim().is_empty()).map(|a| format!("/* {} */ NULL", a.trim())).collect();
+        let args = args.join(", ");
+        if o.kind == ObjectKind::Procedure { format!("CALL {name}({args});") } else { format!("SELECT {name}({args});") }
     }
 
     async fn tree_action(&mut self, i: usize, action: &str) {
@@ -1125,10 +1330,32 @@ impl Worker {
         let is_data = (2..=5).contains(&e.kind);
         match action {
             "open" if is_data => self.open_table(&e.schema, &e.name).await,
+            "open-new" if is_data => self.open_table_in(&e.schema, &e.name, true).await,
             "structure" if is_data => self.open_structure(&e.schema, &e.name).await,
             "structure" | "definition" => {
-                if let Some(o) = self.find_object(&e.schema, &e.name, e.kind) {
+                if let Some(o) = self.find_object(&e) {
                     self.open_routine(o).await;
+                }
+            }
+            "copy-def" => {
+                if is_data {
+                    let ddl = match self.conn.as_mut() {
+                        Some(c) => c.ddl(&e.schema, &e.name).await.unwrap_or_default(),
+                        None => String::new(),
+                    };
+                    self.copy_to_clipboard(&ddl);
+                } else if let Some(o) = self.find_object(&e) {
+                    let def = match self.conn.as_mut() {
+                        Some(c) => c.object_def(&o).await.unwrap_or_default(),
+                        None => String::new(),
+                    };
+                    self.copy_to_clipboard(&def);
+                }
+            }
+            "run" => {
+                if let Some(o) = self.find_object(&e) {
+                    let text = self.call_template(&o);
+                    self.new_query_tab(text);
                 }
             }
             "query" if is_data => {
@@ -1142,6 +1369,10 @@ impl Worker {
             "export" if is_data => {
                 self.open_table(&e.schema, &e.name).await;
                 self.open_export();
+            }
+            "import" if is_data => {
+                self.open_table(&e.schema, &e.name).await;
+                self.open_transfer(2);
             }
             "truncate" if is_data => self.confirm_object(Pending::Truncate(e.schema, e.name), "Truncate"),
             "drop" if is_data => self.confirm_object(Pending::Drop(e.schema, e.name), "Drop"),
@@ -1197,40 +1428,73 @@ impl Worker {
         });
     }
 
-    async fn edit_cell(&mut self, r: usize, c: usize, text: String, null: bool) {
-        let Some(tab) = self.active_tab().cloned() else { return };
+    /// Write one cell. On success the grid shows the new value; on failure it is left unchanged.
+    async fn try_edit_cell(&mut self, r: usize, c: usize, text: String, null: bool) -> Result<bool, String> {
+        let Some(tab) = self.active_tab().cloned() else { return Ok(false) };
         if tab.kind != Kind::Table || !tab.editable {
-            return;
+            return Err("This table cannot be edited.".into());
         }
-        let (Some(col), Some(row)) = (tab.cols.get(c).cloned(), tab.rows.get(r).cloned()) else { return };
+        let (Some(col), Some(row)) = (tab.cols.get(c).cloned(), tab.rows.get(r).cloned()) else { return Ok(false) };
         let new: Cell = if null { None } else { Some(text) };
         if row.get(c) == Some(&new) {
-            return; // unchanged
+            return Ok(false); // unchanged
         }
         if let Some(t) = self.active_mut() {
             t.rows[r][c] = new.clone();
         }
-        self.push_rows(Some((r, c, 1)));
+        self.set_cell(r, c, new.clone(), 1);
+        self.flashed.push((r, c));
         let res = match self.conn.as_mut() {
-            Some(conn) => conn.edit_cell(&tab.schema, &tab.name, &row, &col.name, new).await,
-            None => return,
+            Some(conn) => conn.edit_cell(&tab.schema, &tab.name, &row, &col.name, new.clone()).await,
+            None => return Ok(false),
         };
         match res {
             Ok(()) => {
-                self.push_rows(Some((r, c, 2)));
+                self.set_cell(r, c, new, 2);
                 self.log_activity(None, &format!("UPDATE {}.{} SET {}", tab.schema, tab.name, col.name));
                 self.push_inspector();
+                self.schedule_clear();
+                Ok(true)
             }
             Err(e) => {
                 if let Some(t) = self.active_mut() {
                     t.rows[r][c] = row[c].clone();
                 }
-                self.push_rows(Some((r, c, 3)));
-                self.set_banner(&e.to_string(), true);
+                self.set_cell(r, c, row[c].clone(), 3);
                 self.log_activity(None, &format!("ERROR {e}"));
+                self.schedule_clear();
+                Err(e.to_string())
             }
         }
-        self.schedule_clear();
+    }
+
+    async fn edit_cell(&mut self, r: usize, c: usize, text: String, null: bool) {
+        if let Err(e) = self.try_edit_cell(r, c, text, null).await {
+            self.set_banner(&e, true);
+        }
+    }
+
+    /// After Tab / Shift+Tab in a cell editor: open the neighbouring editable cell.
+    fn edit_next(&mut self, r: usize, c: usize, dir: i32) {
+        let Some(t) = self.active_tab().filter(|t| t.kind == Kind::Table && t.editable) else { return };
+        let (rows, cols) = (t.rows.len() as i64, t.cols.len() as i64);
+        if rows == 0 || cols == 0 {
+            return;
+        }
+        let flat = r as i64 * cols + c as i64 + dir as i64;
+        if flat < 0 || flat >= rows * cols {
+            return;
+        }
+        let (nr, nc) = ((flat / cols) as i32, (flat % cols) as i32);
+        ui(&self.w, move |st| {
+            st.invoke_request_edit(nr, nc);
+            st.set_selected_row(nr);
+            st.set_sel_kind(1);
+            st.set_sel_r0(nr);
+            st.set_sel_r1(nr);
+            st.set_sel_c0(nc);
+            st.set_sel_c1(nc);
+        });
     }
 
     async fn toggle_bool(&mut self, r: usize, c: usize) {
@@ -1385,7 +1649,7 @@ impl Worker {
             .collect();
         let title = format!("Insert row · {}", table.full_name());
         ui(&self.w, move |st| {
-            let v: Vec<FieldItem> = fields.into_iter().map(|(n, t, h)| FieldItem { name: n.into(), type_name: t.into(), hint: h.into() }).collect();
+            let v: Vec<FieldItem> = fields.into_iter().map(|(n, t, h)| FieldItem { name: n.into(), type_name: t.into(), hint: h.into(), value: "".into(), is_null: false }).collect();
             st.set_insert_fields(ModelRc::new(VecModel::from(v)));
             st.set_insert_title(title.into());
             st.set_insert_error("".into());
@@ -1427,7 +1691,7 @@ impl Worker {
             return;
         }
         let title = format!("Delete row {}", tab.page.offset + r as i64 + 1);
-        let text = format!("Delete the selected row from {}.{}? This cannot be undone.", tab.schema, tab.name);
+        let text = format!("Delete the selected row from {}.{}? You can bring it back with Undo (top bar or History) until you disconnect.", tab.schema, tab.name);
         self.ask(Pending::DeleteRow(r), title, text);
     }
 
@@ -1444,8 +1708,9 @@ impl Worker {
                 };
                 match res {
                     Ok(()) => {
-                        self.toast("Row deleted");
+                        self.toast("Row deleted. Undo is in History.");
                         self.log_activity(None, &format!("DELETE FROM {}.{}", tab.schema, tab.name));
+                        self.push_inspector();
                         self.load_active().await;
                     }
                     Err(e) => self.set_banner(&e.to_string(), true),
@@ -1484,6 +1749,10 @@ impl Worker {
                     Err(e) => self.toast(e.to_string()),
                 }
             }
+            Some(Pending::DropUser(i)) => self.user_drop(i).await,
+            Some(Pending::Paste(r, c, grid)) => self.apply_paste(r, c, grid).await,
+            Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop).await,
+            Some(Pending::ImportRows(path, header)) => self.run_import_rows(path, header).await,
             None => {}
         }
     }
@@ -1711,7 +1980,7 @@ impl Worker {
 // Palette, export, settings, inspector
 // ---------------------------------------------------------------------------------------------
 
-const COMMANDS: [(&str, &str, &str); 9] = [
+const COMMANDS: [(&str, &str, &str); 14] = [
     ("new-query", "New query tab", "Ctrl+N"),
     ("refresh", "Refresh database metadata", "Ctrl+R"),
     ("undo", "Undo last database edit", ""),
@@ -1721,6 +1990,11 @@ const COMMANDS: [(&str, &str, &str); 9] = [
     ("export", "Export current results…", ""),
     ("settings", "Open preferences", ""),
     ("disconnect", "Disconnect / switch connection", ""),
+    ("users", "Users & access…", ""),
+    ("export-db", "Export database…", ""),
+    ("import-db", "Import database…", ""),
+    ("import-rows", "Import rows into the open table…", ""),
+    ("history", "Show history, saved queries and changes", ""),
 ];
 
 impl Worker {
@@ -1756,12 +2030,8 @@ impl Worker {
         }
         for o in &conn.metadata.objects {
             let label = format!("{}.{}", o.schema, o.name);
-            let kind = match o.kind {
-                ObjectKind::Function => "function",
-                ObjectKind::Procedure => "procedure",
-                ObjectKind::Sequence => "sequence",
-            };
-            add(suggest::fuzzy(q, &label), label, String::new(), kind, PaletteAction::Object(o.clone()));
+            let sub = if o.detail.is_empty() || o.kind == ObjectKind::Type { String::new() } else { o.detail.clone() };
+            add(suggest::fuzzy(q, &label), label, sub, o.kind.label(), PaletteAction::Object(o.clone()));
         }
         if !self.palette_search {
             for (i, s) in self.saved.iter().enumerate() {
@@ -1815,14 +2085,15 @@ impl Worker {
                 "export" => self.open_export(),
                 "settings" => ui(&self.w, |st| st.set_settings_open(true)),
                 "disconnect" => self.disconnect(),
+                "users" => self.open_users().await,
+                "export-db" => self.open_transfer(0),
+                "import-db" => self.open_transfer(1),
+                "import-rows" => self.open_transfer(2),
+                "history" => ui(&self.w, |st| st.set_drawer_open(true)),
                 _ => {}
             },
             PaletteAction::OpenTable(s, n) | PaletteAction::Column(s, n) => self.open_table(&s, &n).await,
-            PaletteAction::Object(o) => {
-                if o.kind == ObjectKind::Sequence || self.conn.is_some() {
-                    self.open_routine(o).await;
-                }
-            }
+            PaletteAction::Object(o) => self.open_routine(o).await,
             PaletteAction::Saved(i) => {
                 if let Some(q) = self.saved.get(i).map(|q| q.sql.clone()) {
                     self.load_into_query_tab(q);
@@ -1839,16 +2110,14 @@ impl Worker {
         self.select_conn(id);
         ui(&self.w, |st| st.set_busy(true));
         match Conn::connect(cfg.clone(), &pw).await {
-            Ok(conn) => self.on_connected(cfg, conn),
+            Ok(conn) => self.on_connected(cfg, conn, pw).await,
             Err(e) => self.form_error(e.to_string()),
         }
     }
 
     fn toggle_inspector(&mut self) {
-        self.settings.inspector_open = !self.settings.inspector_open;
-        self.persist_settings();
-        let open = self.settings.inspector_open;
-        ui(&self.w, move |st| st.set_inspector_open(open));
+        let (open, pinned) = (!self.settings.inspector_open, self.settings.inspector_pinned);
+        self.inspector_changed(open, pinned);
     }
 
     async fn refresh(&mut self) {
@@ -1857,40 +2126,34 @@ impl Worker {
                 return self.toast(e.to_string());
             }
         }
+        self.load_databases().await;
         self.rebuild_tree();
         self.load_active().await;
         self.toast("Metadata refreshed");
     }
 
-    async fn undo(&mut self) {
-        let res = match self.conn.as_mut() {
-            Some(c) => c.undo().await,
-            None => return,
-        };
-        match res {
-            Ok(Some(r)) => {
-                self.log_activity(None, &format!("UNDO {}.{} SET {}", r.schema, r.table, r.column));
-                self.toast(format!("Reverted {}", r.column));
-                if self.active_tab().is_some_and(|t| t.kind == Kind::Table && t.schema == r.schema && t.name == r.table) {
-                    self.load_active().await;
-                }
-            }
-            Ok(None) => self.toast("Nothing to undo"),
-            Err(e) => self.toast(e.to_string()),
-        }
-        self.push_inspector();
-    }
-
     fn push_inspector(&self) {
         let Some(conn) = &self.conn else { return };
-        let log: Vec<String> = conn
-            .history
-            .entries()
+        let entries = conn.history.entries();
+        let show = |v: &Cell| v.as_deref().map(|s| one_line(s).chars().take(24).collect::<String>()).unwrap_or_else(|| "NULL".into());
+        let log: Vec<(String, String, bool)> = entries
             .iter()
+            .enumerate()
             .rev()
-            .map(|r| {
-                let show = |v: &Cell| v.as_deref().map(|s| one_line(s).chars().take(24).collect::<String>()).unwrap_or_else(|| "NULL".into());
-                format!("{}.{}.{}   {} → {}", r.schema, r.table, r.column, show(&r.old), show(&r.new))
+            .map(|(i, r)| {
+                let can_undo = !conn.history.blocked_by_newer(i);
+                match &r.kind {
+                    EditKind::Update { column, old, new } => (
+                        format!("{}.{}   {} → {}", r.table, column, show(old), show(new)),
+                        format!("{}.{} · {}{}", r.schema, r.table, when(r.at), if can_undo { "" } else { " · undo the newer change first" }),
+                        can_undo,
+                    ),
+                    EditKind::Delete { row, .. } => (
+                        format!("Deleted a row from {}", r.table),
+                        format!("{} · {}", row.iter().take(4).map(&show).collect::<Vec<_>>().join(", "), when(r.at)),
+                        true,
+                    ),
+                }
             })
             .collect();
         let n_undo = conn.history.len() as i32;
@@ -1924,7 +2187,8 @@ impl Worker {
             }
         }
         ui(&self.w, move |st| {
-            st.set_edit_log(strs(log));
+            let items: Vec<EditItem> = log.into_iter().map(|(t, d, u)| EditItem { text: t.into(), detail: d.into(), can_undo: u }).collect();
+            st.set_edit_items(ModelRc::new(VecModel::from(items)));
             st.set_undo_count(n_undo);
             st.set_meta_lines(strs(meta));
         });
@@ -1949,13 +2213,7 @@ impl Worker {
         let t = self.active_tab()?;
         let cols: Vec<ExportCol> = t.cols.iter().map(|c| ExportCol { name: c.name.clone(), type_name: c.type_name.clone() }).collect();
         let d = self.export_dialect;
-        let table = if t.name.is_empty() {
-            "results".to_string()
-        } else if t.schema.is_empty() {
-            d.quote(&t.name)
-        } else {
-            format!("{}.{}", d.quote(&t.schema), d.quote(&t.name))
-        };
+        let table = self.export_table_name(t);
         let text = export::format(format, &cols, &t.rows, headers, &table, d);
         let base = sanitize(if t.name.is_empty() { &t.title } else { &t.name });
         Some((text, format!("{base}-{}.{}", chrono::Local::now().format("%Y%m%d-%H%M%S"), export::extension(format))))
@@ -2006,6 +2264,687 @@ impl Worker {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Selection, clipboard, whole-row editing
+// ---------------------------------------------------------------------------------------------
+
+impl Worker {
+    /// A selection rectangle (any corner order) clamped to what is loaded: (row0, col0, row1, col1).
+    fn norm_rect(&self, r0: usize, c0: usize, r1: usize, c1: usize) -> Option<(usize, usize, usize, usize)> {
+        let t = self.active_tab()?;
+        if t.rows.is_empty() || t.cols.is_empty() {
+            return None;
+        }
+        let (rmax, cmax) = (t.rows.len() - 1, t.cols.len() - 1);
+        Some((r0.min(r1).min(rmax), c0.min(c1).min(cmax), r0.max(r1).min(rmax), c0.max(c1).min(cmax)))
+    }
+
+    fn selection_data(&self, rect: (usize, usize, usize, usize)) -> Option<(Vec<ExportCol>, Vec<Vec<Cell>>)> {
+        let t = self.active_tab()?;
+        let (r0, c0, r1, c1) = rect;
+        let cols = t.cols.iter().skip(c0).take(c1 - c0 + 1).map(|c| ExportCol { name: c.name.clone(), type_name: c.type_name.clone() }).collect();
+        let rows = t.rows.iter().skip(r0).take(r1 - r0 + 1).map(|r| r.iter().skip(c0).take(c1 - c0 + 1).cloned().collect()).collect();
+        Some((cols, rows))
+    }
+
+    fn export_table_name(&self, t: &Tab) -> String {
+        let d = self.export_dialect;
+        if t.name.is_empty() {
+            "results".to_string()
+        } else if t.schema.is_empty() {
+            d.quote(&t.name)
+        } else {
+            format!("{}.{}", d.quote(&t.schema), d.quote(&t.name))
+        }
+    }
+
+    /// Copy the selected cells. Modes: 0 plain, 1 with header row, 2 CSV, 3 JSON, 4 SQL INSERT, 5 column names.
+    fn copy_selection(&mut self, r0: usize, c0: usize, r1: usize, c1: usize, mode: i32) {
+        let Some(rect) = self.norm_rect(r0, c0, r1, c1) else { return self.toast("Nothing selected") };
+        let Some((cols, rows)) = self.selection_data(rect) else { return };
+        self.export_dialect = self.dialect();
+        let table = self.active_tab().map(|t| self.export_table_name(t)).unwrap_or_default();
+        let text = match mode {
+            1 => export::tsv(&cols, &rows, true),
+            2 => export::csv(&cols, &rows, true),
+            3 => export::json(&cols, &rows),
+            4 => export::sql_inserts(&cols, &rows, &table, self.export_dialect),
+            5 => cols.iter().map(|c| c.name.clone()).collect::<Vec<_>>().join("\t"),
+            _ => export::tsv(&cols, &rows, false),
+        };
+        let what = if mode == 5 {
+            format!("{} column name(s)", cols.len())
+        } else if cols.len() == 1 && rows.len() > 1 {
+            format!("column “{}” ({} values)", cols[0].name, rows.len())
+        } else if rows.len() == 1 && cols.len() > 1 {
+            format!("row ({} values)", cols.len())
+        } else if rows.len() == 1 {
+            "value".to_string()
+        } else {
+            format!("{} rows × {} columns", rows.len(), cols.len())
+        };
+        match crate::clipboard::set(&text) {
+            Ok(()) => self.toast(format!("Copied {what}")),
+            Err(e) => self.toast(format!("Clipboard unavailable: {e}")),
+        }
+    }
+
+    fn paste_selection(&mut self, r0: usize, c0: usize, r1: usize, c1: usize) {
+        let Some(t) = self.active_tab() else { return };
+        if t.kind != Kind::Table || !t.editable {
+            return self.toast("This table is read-only, so nothing can be pasted into it");
+        }
+        let Some((rr0, cc0, rr1, cc1)) = self.norm_rect(r0, c0, r1, c1) else { return };
+        let text = match crate::clipboard::get() {
+            Ok(t) => t,
+            Err(e) => return self.toast(format!("Clipboard unavailable: {e}")),
+        };
+        let mut grid = export::parse_tsv(&text);
+        if grid.is_empty() {
+            return self.toast("The clipboard is empty");
+        }
+        let (sel_rows, sel_cols) = (rr1 - rr0 + 1, cc1 - cc0 + 1);
+        if grid.len() == 1 && grid[0].len() == 1 && sel_rows * sel_cols > 1 {
+            // One value over a selection fills the whole selection, like a spreadsheet.
+            grid = vec![vec![grid[0][0].clone(); sel_cols]; sel_rows];
+        }
+        let (rows, cols) = (t.rows.len(), t.cols.len());
+        grid.truncate(rows - rr0);
+        for r in grid.iter_mut() {
+            r.truncate(cols - cc0);
+        }
+        let n: usize = grid.iter().map(Vec::len).sum();
+        if n == 0 {
+            return;
+        }
+        if n == 1 {
+            let v = grid[0][0].clone();
+            let tx = self.tx.clone();
+            let _ = tx.send(Cmd::EditCell(rr0, cc0, v, false));
+            return;
+        }
+        let name = if t.name.is_empty() { t.title.clone() } else { t.name.clone() };
+        self.ask(Pending::Paste(rr0, cc0, grid), format!("Paste {n} cells"), format!("Write {n} pasted values into {name}, starting at row {} of this page? Every change can be undone from History.", rr0 + 1));
+    }
+
+    async fn apply_paste(&mut self, r0: usize, c0: usize, grid: Vec<Vec<String>>) {
+        let (mut done, mut failed) = (0usize, None);
+        'outer: for (dr, row) in grid.iter().enumerate() {
+            for (dc, v) in row.iter().enumerate() {
+                match self.try_edit_cell(r0 + dr, c0 + dc, v.clone(), false).await {
+                    Ok(true) => done += 1,
+                    Ok(false) => {}
+                    Err(e) => {
+                        failed = Some(e);
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        match failed {
+            None => self.toast(format!("Pasted {done} value(s)")),
+            Some(e) => {
+                self.set_banner(&format!("Paste stopped after {done} value(s): {e}"), true);
+            }
+        }
+    }
+
+    // ---- edit a whole row -------------------------------------------------------------------
+
+    fn push_edit_row(&self) {
+        let (Some(er), Some(t)) = (&self.edit_row, self.active_tab()) else { return };
+        let fields: Vec<(String, String, String, String, bool)> = t
+            .cols
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let v = er.values.get(i).cloned().flatten();
+                (c.name.clone(), format!("{}{}", c.type_name, if c.pk { " · PK" } else { "" }), if c.pk { "primary key" } else { "" }.to_string(), v.clone().unwrap_or_default(), v.is_none())
+            })
+            .collect();
+        ui(&self.w, move |st| {
+            let v: Vec<FieldItem> = fields.into_iter().map(|(n, t, h, val, nul)| FieldItem { name: n.into(), type_name: t.into(), hint: h.into(), value: val.into(), is_null: nul }).collect();
+            st.set_editrow_fields(ModelRc::new(VecModel::from(v)));
+        });
+    }
+
+    fn open_edit_row(&mut self, r: usize) {
+        let Some(t) = self.active_tab() else { return };
+        if t.kind != Kind::Table || !t.editable {
+            return self.toast("This table is read-only");
+        }
+        let Some(row) = t.rows.get(r).cloned() else { return };
+        let title = format!("Edit row {} · {}.{}", t.page.offset + r as i64 + 1, t.schema, t.name);
+        self.edit_row = Some(EditRowState { row: r, original: row.clone(), values: row });
+        self.push_edit_row();
+        ui(&self.w, move |st| {
+            st.set_editrow_title(title.into());
+            st.set_editrow_error("".into());
+            st.set_editrow_open(true);
+        });
+    }
+
+    async fn editrow_submit(&mut self) {
+        let Some(er) = self.edit_row.as_ref() else { return };
+        let (row, original, values) = (er.row, er.original.clone(), er.values.clone());
+        let names: Vec<String> = self.active_tab().map(|t| t.cols.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
+        let mut saved = 0;
+        for c in 0..values.len() {
+            if values[c] == original[c] {
+                continue;
+            }
+            let (text, null) = (values[c].clone().unwrap_or_default(), values[c].is_none());
+            match self.try_edit_cell(row, c, text, null).await {
+                Ok(_) => {
+                    saved += 1;
+                    if let Some(er) = self.edit_row.as_mut() {
+                        er.original[c] = values[c].clone();
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("Could not save “{}”: {e}", names.get(c).cloned().unwrap_or_default());
+                    ui(&self.w, move |st| st.set_editrow_error(msg.into()));
+                    return;
+                }
+            }
+        }
+        self.edit_row = None;
+        ui(&self.w, |st| st.set_editrow_open(false));
+        self.toast(if saved == 0 { "No changes".to_string() } else { format!("Saved {saved} change(s)") });
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Undo / history
+// ---------------------------------------------------------------------------------------------
+
+impl Worker {
+    async fn after_undo(&mut self, r: dboard_core::edit::EditRecord) {
+        let what = match &r.kind {
+            EditKind::Update { column, .. } => format!("Reverted {column}"),
+            EditKind::Delete { .. } => format!("Restored the deleted row in {}", r.table),
+        };
+        self.log_activity(None, &format!("UNDO {}.{}", r.schema, r.table));
+        self.toast(what);
+        if self.active_tab().is_some_and(|t| t.kind == Kind::Table && t.schema == r.schema && t.name == r.table) {
+            self.load_active().await;
+        }
+    }
+
+    async fn undo(&mut self) {
+        let res = match self.conn.as_mut() {
+            Some(c) => c.undo().await,
+            None => return,
+        };
+        match res {
+            Ok(Some(r)) => self.after_undo(r).await,
+            Ok(None) => self.toast("Nothing to undo"),
+            Err(e) => self.toast(e.to_string()),
+        }
+        self.push_inspector();
+    }
+
+    /// Undo one entry of the list, which is shown newest first.
+    async fn undo_entry(&mut self, shown: usize) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        let n = conn.history.len();
+        if shown >= n {
+            return;
+        }
+        match conn.undo_at(n - 1 - shown).await {
+            Ok(r) => self.after_undo(r).await,
+            Err(e) => self.toast(e.to_string()),
+        }
+        self.push_inspector();
+    }
+
+    fn inspector_changed(&mut self, open: bool, pinned: bool) {
+        self.settings.inspector_open = open;
+        self.settings.inspector_pinned = pinned;
+        self.persist_settings();
+        ui(&self.w, move |st| {
+            st.set_inspector_open(open);
+            st.set_inspector_pinned(pinned);
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Users & access
+// ---------------------------------------------------------------------------------------------
+
+impl Worker {
+    fn user_scope_text(&self, db: Option<String>) -> String {
+        match (self.conn.as_ref().map(|c| c.db_type()), db) {
+            (Some(DbType::MySql), None) => "Access levels apply to all databases (pick one in the top bar to limit them to it).".to_string(),
+            (Some(DbType::Mongo), None) => "Pick a database in the top bar first: MongoDB access levels apply to one database.".to_string(),
+            (_, Some(d)) => format!("Access levels apply to the database “{d}”. Users themselves are server-wide."),
+            _ => String::new(),
+        }
+    }
+
+    fn push_users(&self, select: i32) {
+        let rows: Vec<(String, String)> = self
+            .users
+            .iter()
+            .map(|u| (u.display(), u.summary.clone()))
+            .collect();
+        ui(&self.w, move |st| {
+            let v: Vec<UserRow> = rows.into_iter().map(|(n, d)| UserRow { name: n.into(), detail: d.into() }).collect();
+            st.set_users(ModelRc::new(VecModel::from(v)));
+            st.set_user_sel(select);
+        });
+    }
+
+    async fn open_users(&mut self) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        let db = conn.current_database().await.ok().flatten();
+        let ty = conn.db_type();
+        let scope = self.user_scope_text(db);
+        ui(&self.w, move |st| {
+            st.set_user_is_mysql(ty == DbType::MySql);
+            st.set_user_is_pg(ty == DbType::Postgres);
+            st.set_user_scope(scope.into());
+            st.set_user_error("".into());
+            st.set_user_info("".into());
+            st.set_user_grants(strs(Vec::new()));
+            st.set_user_create_open(false);
+            st.set_users_open(true);
+        });
+        self.reload_users(None).await;
+    }
+
+    /// Re-read the user list; keep `select` (by display name) selected when it still exists.
+    async fn reload_users(&mut self, select: Option<String>) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        match conn.list_users().await {
+            Ok(list) => {
+                self.users = list;
+                let idx = select.and_then(|n| self.users.iter().position(|u| u.display() == n)).map_or(-1, |i| i as i32);
+                self.push_users(idx);
+                if idx >= 0 {
+                    self.user_select(idx as usize).await;
+                } else {
+                    ui(&self.w, |st| st.set_user_grants(strs(Vec::new())));
+                }
+                ui(&self.w, |st| st.set_user_error("".into()));
+            }
+            Err(e) => {
+                self.users.clear();
+                self.push_users(-1);
+                let m = e.to_string();
+                ui(&self.w, move |st| st.set_user_error(m.into()));
+            }
+        }
+    }
+
+    async fn user_select(&mut self, i: usize) {
+        let Some(u) = self.users.get(i).cloned() else { return };
+        ui(&self.w, move |st| st.set_user_sel(i as i32));
+        let lines = match self.conn.as_mut() {
+            Some(c) => c.user_grants(&u).await.unwrap_or_else(|e| vec![format!("Could not read privileges: {e}")]),
+            None => return,
+        };
+        ui(&self.w, move |st| {
+            st.set_user_grants(strs(lines));
+            st.set_user_error("".into());
+        });
+    }
+
+    fn user_busy(&self, busy: bool) {
+        ui(&self.w, move |st| st.set_user_busy(busy));
+    }
+
+    fn user_result(&self, ok: Option<String>, err: Option<String>) {
+        ui(&self.w, move |st| {
+            st.set_user_busy(false);
+            st.set_user_info(ok.unwrap_or_default().into());
+            st.set_user_error(err.unwrap_or_default().into());
+        });
+    }
+
+    async fn user_create(&mut self, name: String, host: String, password: String, level: i32, admin: bool) {
+        let new = NewUser { name: name.trim().to_string(), host: host.trim().to_string(), password, access: AccessLevel::from_index(level), admin };
+        self.user_busy(true);
+        let res = match self.conn.as_mut() {
+            Some(c) => c.create_user(&new).await,
+            None => return,
+        };
+        match res {
+            Ok(()) => {
+                self.log_activity(None, &format!("CREATE USER {}", new.name));
+                let shown = UserInfo { name: new.name.clone(), origin: if self.conn.as_ref().is_some_and(|c| c.db_type() == DbType::MySql) { if new.host.is_empty() { "%".into() } else { new.host.clone() } } else { String::new() }, summary: String::new() }.display();
+                ui(&self.w, |st| st.set_user_create_open(false));
+                self.reload_users(Some(shown)).await;
+                self.user_result(Some(format!("User “{}” created.", new.name)), None);
+            }
+            Err(e) => self.user_result(None, Some(e.to_string())),
+        }
+    }
+
+    async fn user_set_level(&mut self, i: usize, level: i32) {
+        let Some(u) = self.users.get(i).cloned() else { return };
+        self.user_busy(true);
+        let res = match self.conn.as_mut() {
+            Some(c) => c.set_access(&u, AccessLevel::from_index(level)).await,
+            None => return,
+        };
+        match res {
+            Ok(()) => {
+                self.log_activity(None, &format!("SET ACCESS {} = {}", u.name, AccessLevel::LABELS[level.clamp(0, 3) as usize]));
+                self.user_select(i).await;
+                self.user_result(Some(format!("{} now has “{}”.", u.name, AccessLevel::LABELS[level.clamp(0, 3) as usize])), None);
+            }
+            Err(e) => self.user_result(None, Some(e.to_string())),
+        }
+    }
+
+    async fn user_password(&mut self, i: usize, pw: String) {
+        let Some(u) = self.users.get(i).cloned() else { return };
+        self.user_busy(true);
+        let res = match self.conn.as_mut() {
+            Some(c) => c.set_password(&u, &pw).await,
+            None => return,
+        };
+        match res {
+            Ok(()) => {
+                self.log_activity(None, &format!("CHANGE PASSWORD {}", u.name));
+                self.user_result(Some(format!("Password changed for {}.", u.name)), None);
+            }
+            Err(e) => self.user_result(None, Some(e.to_string())),
+        }
+    }
+
+    async fn user_drop(&mut self, i: usize) {
+        let Some(u) = self.users.get(i).cloned() else { return };
+        self.user_busy(true);
+        let res = match self.conn.as_mut() {
+            Some(c) => c.drop_user(&u).await,
+            None => return,
+        };
+        match res {
+            Ok(()) => {
+                self.log_activity(None, &format!("DROP USER {}", u.name));
+                self.reload_users(None).await;
+                self.user_result(Some(format!("User {} dropped.", u.name)), None);
+            }
+            Err(e) => self.user_result(None, Some(e.to_string())),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Export / import
+// ---------------------------------------------------------------------------------------------
+
+/// One record to import: (column, value) pairs, plus the raw JSON object when the source was JSON.
+type Record = (Vec<(String, String)>, Option<String>);
+
+impl Worker {
+    fn xfer_progress(&self) -> impl FnMut(String) {
+        let w = self.w.clone();
+        move |m| ui(&w, move |st| st.set_xfer_info(m.into()))
+    }
+
+    fn xfer_done(&self, info: String, error: String) {
+        ui(&self.w, move |st| {
+            st.set_xfer_busy(false);
+            st.set_xfer_info(info.into());
+            st.set_xfer_error(error.into());
+        });
+    }
+
+    fn open_transfer(&mut self, mode: i32) {
+        let Some(conn) = &self.conn else { return };
+        let mongo = conn.db_type() == DbType::Mongo;
+        let db = if conn.config.database.is_empty() { conn.config.display_name() } else { conn.config.database.clone() };
+        let (title, note, path, a) = match mode {
+            0 => {
+                let ext = if mongo { "json" } else { "sql" };
+                let name = format!("{}-{}.{ext}", sanitize(&db), chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                (
+                    format!("Export {db}"),
+                    if mongo {
+                        "Writes every collection (documents and indexes) to one JSON file that this app can import again.".to_string()
+                    } else {
+                        "Writes a SQL script that recreates the database: tables, constraints, indexes, views, routines, triggers and data. It runs on an empty database with this app, psql or mysql.".to_string()
+                    },
+                    downloads_dir().join(name).display().to_string(),
+                    true,
+                )
+            }
+            1 => {
+                let kind = if mongo { "a dboard MongoDB export (.json)" } else { "a SQL script (.sql), including pg_dump and mysqldump files" };
+                (
+                    format!("Import into {db}"),
+                    format!("Runs {kind} against this database. Existing objects with the same names will make statements fail, so use an empty database for a clean restore."),
+                    String::new(),
+                    true,
+                )
+            }
+            _ => {
+                let Some(t) = self.active_tab().filter(|t| t.kind == Kind::Table) else { return self.toast("Open a table first, then import rows into it") };
+                (
+                    format!("Import rows into {}", t.name),
+                    "Reads a CSV / TSV file (first row = column names) or a JSON file (an array of objects, or one object per line) and inserts each record as a new row. Empty values use the column default.".to_string(),
+                    String::new(),
+                    true,
+                )
+            }
+        };
+        self.xfer_mode = mode;
+        ui(&self.w, move |st| {
+            st.set_xfer_mode(mode);
+            st.set_xfer_title(title.into());
+            st.set_xfer_note(note.into());
+            st.set_xfer_path(path.into());
+            st.set_xfer_opt_a(a);
+            st.set_xfer_opt_b(true);
+            st.set_xfer_info("".into());
+            st.set_xfer_error("".into());
+            st.set_xfer_busy(false);
+            st.set_xfer_open(true);
+        });
+    }
+
+    async fn xfer_browse(&mut self) {
+        let mongo = self.is_mongo();
+        let mut dlg = rfd::AsyncFileDialog::new();
+        let picked = if self.xfer_mode == 0 {
+            let ext = if mongo { "json" } else { "sql" };
+            dlg = dlg.set_title("Save export").add_filter(ext, &[ext]).set_directory(downloads_dir());
+            dlg.set_file_name(format!("export.{ext}")).save_file().await
+        } else {
+            dlg = dlg.set_title("Choose a file to import").set_directory(downloads_dir());
+            dlg = if self.xfer_mode == 1 { dlg.add_filter("SQL / JSON", &["sql", "json", "txt"]) } else { dlg.add_filter("CSV / TSV / JSON", &["csv", "tsv", "txt", "json"]) };
+            dlg.pick_file().await
+        };
+        if let Some(f) = picked {
+            let p = f.path().display().to_string();
+            ui(&self.w, move |st| st.set_xfer_path(p.into()));
+        }
+    }
+
+    async fn xfer_run(&mut self, path: String, a: bool, b: bool) {
+        let path = path.trim().to_string();
+        if path.is_empty() {
+            return;
+        }
+        match self.xfer_mode {
+            0 => self.run_export(path, a, b).await,
+            1 => {
+                if self.protected() {
+                    let env = self.env.label();
+                    self.ask(Pending::ImportDatabase(path.clone(), a), format!("Import into {env}"), format!("Run every statement in {path} against this {env} database?"));
+                } else {
+                    self.run_import_db(path, a).await;
+                }
+            }
+            _ => {
+                if self.protected() {
+                    let env = self.env.label();
+                    self.ask(Pending::ImportRows(path.clone(), a), format!("Import rows into {env}"), format!("Insert every record in {path} as a new row?"));
+                } else {
+                    self.run_import_rows(path, a).await;
+                }
+            }
+        }
+    }
+
+    async fn run_export(&mut self, path: String, schema: bool, data: bool) {
+        if !schema && !data {
+            return self.xfer_done(String::new(), "Choose structure, data, or both.".into());
+        }
+        ui(&self.w, |st| {
+            st.set_xfer_busy(true);
+            st.set_xfer_error("".into());
+            st.set_xfer_info("Exporting…".into());
+        });
+        let mut progress = self.xfer_progress();
+        let res = match self.conn.as_mut() {
+            Some(c) => c.export_database(std::path::Path::new(&path), &DumpOptions { schema, data }, &mut progress).await,
+            None => return,
+        };
+        match res {
+            Ok(st) => {
+                let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                self.log_activity(None, &format!("EXPORT DATABASE {path}"));
+                self.xfer_done(format!("Done: {} table(s), {} row(s), {} other object(s) · {:.1} KB written to {path}", st.tables, st.rows, st.objects, size as f64 / 1024.0), String::new());
+            }
+            Err(e) => self.xfer_done(String::new(), e.to_string()),
+        }
+    }
+
+    async fn run_import_db(&mut self, path: String, stop: bool) {
+        ui(&self.w, |st| {
+            st.set_xfer_busy(true);
+            st.set_xfer_error("".into());
+            st.set_xfer_info("Importing…".into());
+        });
+        let mut progress = self.xfer_progress();
+        let res = match self.conn.as_mut() {
+            Some(c) => c.import_database(std::path::Path::new(&path), &ImportOptions { stop_on_error: stop }, &mut progress).await,
+            None => return,
+        };
+        match res {
+            Ok(st) => {
+                self.log_activity(None, &format!("IMPORT DATABASE {path}"));
+                let mut info = format!("Done: {} statement(s) run", st.statements);
+                if st.rows_copied > 0 {
+                    info.push_str(&format!(", {} row(s) loaded", st.rows_copied));
+                }
+                let err = if st.errors.is_empty() {
+                    String::new()
+                } else {
+                    format!("{} problem(s):\n{}", st.errors.len(), st.errors.iter().take(5).cloned().collect::<Vec<_>>().join("\n"))
+                };
+                self.xfer_done(info, err);
+                self.rebuild_tree();
+                self.load_databases().await;
+                self.load_active().await;
+            }
+            Err(e) => {
+                self.xfer_done(String::new(), e.to_string());
+                self.rebuild_tree();
+            }
+        }
+    }
+
+    /// Records (column name, value) from a CSV / TSV / JSON file, plus the raw JSON object when the
+    /// source was JSON (MongoDB keeps nested values that way).
+    fn read_records(path: &str, header: bool, columns: &[String]) -> Result<Vec<Record>, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+        let lower = path.to_lowercase();
+        if lower.ends_with(".json") || trimmed.starts_with('[') || trimmed.starts_with('{') {
+            let values: Vec<serde_json::Value> = match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(serde_json::Value::Array(a)) => a,
+                Ok(v @ serde_json::Value::Object(_)) => vec![v],
+                _ => trimmed
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .enumerate()
+                    .map(|(i, l)| serde_json::from_str(l.trim().trim_end_matches(',')).map_err(|e| format!("Line {}: {e}", i + 1)))
+                    .collect::<Result<_, _>>()?,
+            };
+            return values
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    let serde_json::Value::Object(m) = &v else { return Err(format!("Record {} is not a JSON object", i + 1)) };
+                    let pairs = m
+                        .iter()
+                        .filter(|(_, x)| !x.is_null())
+                        .map(|(k, x)| (k.clone(), match x { serde_json::Value::String(s) => s.clone(), other => other.to_string() }))
+                        .collect();
+                    Ok((pairs, Some(v.to_string())))
+                })
+                .collect();
+        }
+        let sep = if lower.ends_with(".tsv") || (trimmed.lines().next().unwrap_or("").matches('\t').count() > trimmed.lines().next().unwrap_or("").matches(',').count()) { '\t' } else { ',' };
+        let mut grid = export::parse_delimited(&text, sep);
+        let names: Vec<String> = if header {
+            if grid.is_empty() {
+                return Ok(Vec::new());
+            }
+            grid.remove(0).into_iter().map(|h| h.trim().to_string()).collect()
+        } else {
+            columns.to_vec()
+        };
+        Ok(grid
+            .into_iter()
+            .map(|r| (names.iter().cloned().zip(r).filter(|(_, v)| !v.is_empty()).collect(), None))
+            .collect())
+    }
+
+    async fn run_import_rows(&mut self, path: String, header: bool) {
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
+        let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
+        let all_cols: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
+        ui(&self.w, |st| {
+            st.set_xfer_busy(true);
+            st.set_xfer_error("".into());
+            st.set_xfer_info("Reading file…".into());
+        });
+        let records = match Self::read_records(&path, header, &all_cols) {
+            Ok(r) => r,
+            Err(e) => return self.xfer_done(String::new(), e),
+        };
+        // Match file columns to table columns ignoring case; unknown ones are reported, not skipped.
+        let resolve = |name: &str| -> Option<String> { table.columns.iter().find(|c| c.name.eq_ignore_ascii_case(name.trim())).map(|c| c.name.clone()) };
+        let mongo = self.is_mongo();
+        let total = records.len();
+        let mut progress = self.xfer_progress();
+        for (n, (pairs, raw)) in records.into_iter().enumerate() {
+            let result: Result<(), String> = async {
+                let conn = self.conn.as_mut().ok_or("Not connected")?;
+                if let (true, Some(json)) = (mongo, raw) {
+                    return conn.insert_document(&tab.schema, &tab.name, &json).await.map_err(|e| e.to_string());
+                }
+                let mut vals = Vec::new();
+                for (k, v) in pairs {
+                    let col = resolve(&k).ok_or_else(|| format!("the table has no column “{k}”"))?;
+                    vals.push((col, v));
+                }
+                conn.insert_row(&tab.schema, &tab.name, &vals).await.map_err(|e| e.to_string())
+            }
+            .await;
+            if let Err(e) = result {
+                self.xfer_done(String::new(), format!("Record {} failed: {e}\n{n} record(s) before it were inserted and kept.", n + 1));
+                self.load_active().await;
+                return;
+            }
+            if n % 50 == 0 {
+                progress(format!("Inserted {n} of {total}…"));
+            }
+        }
+        self.log_activity(None, &format!("IMPORT {total} rows into {}.{}", tab.schema, tab.name));
+        self.xfer_done(format!("Done: {total} row(s) inserted into {}.", tab.name), String::new());
+        self.load_active().await;
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Command dispatch
 // ---------------------------------------------------------------------------------------------
 
@@ -2025,6 +2964,9 @@ impl Worker {
             Cmd::Disconnect => self.disconnect(),
             Cmd::Refresh => self.refresh().await,
             Cmd::Undo => self.undo().await,
+            Cmd::UndoEntry(i) => self.undo_entry(i).await,
+            Cmd::InspectorChanged(open, pinned) => self.inspector_changed(open, pinned),
+            Cmd::SwitchDatabase(i) => self.switch_database(i).await,
 
             Cmd::FilterTree(f) => {
                 self.tree_filter = f;
@@ -2037,6 +2979,14 @@ impl Worker {
             Cmd::ActivateTab(i) => {
                 if i < self.tabs.len() {
                     self.active = Some(i);
+                    self.show_active();
+                }
+            }
+            Cmd::CycleTab(d) => {
+                let n = self.tabs.len() as i32;
+                if n > 1 {
+                    let cur = self.active.unwrap_or(0) as i32;
+                    self.active = Some((cur + d).rem_euclid(n) as usize);
                     self.show_active();
                 }
             }
@@ -2098,6 +3048,44 @@ impl Worker {
                 }
             }
             Cmd::CopyText(t) => self.copy_to_clipboard(&t),
+            Cmd::CopySelection { r0, c0, r1, c1, mode } => self.copy_selection(r0, c0, r1, c1, mode),
+            Cmd::PasteSelection { r0, c0, r1, c1 } => self.paste_selection(r0, c0, r1, c1),
+            Cmd::EditNext(r, c, d) => self.edit_next(r, c, d),
+            Cmd::OpenEditRow(r) => self.open_edit_row(r),
+            Cmd::EditRowFieldEdited(i, v) => {
+                if let Some(slot) = self.edit_row.as_mut().and_then(|er| er.values.get_mut(i)) {
+                    *slot = Some(v);
+                }
+            }
+            Cmd::EditRowSetNull(i, null) => {
+                if let Some(er) = self.edit_row.as_mut() {
+                    if let Some(slot) = er.values.get_mut(i) {
+                        *slot = if null { None } else { Some(er.original.get(i).cloned().flatten().unwrap_or_default()) };
+                    }
+                }
+                self.push_edit_row();
+            }
+            Cmd::EditRowSubmit => self.editrow_submit().await,
+            Cmd::EditRowCancel => {
+                self.edit_row = None;
+                ui(&self.w, |st| st.set_editrow_open(false));
+            }
+            Cmd::OpenUsers => self.open_users().await,
+            Cmd::UserSelect(i) => self.user_select(i).await,
+            Cmd::UserCreate { name, host, password, level, admin } => self.user_create(name, host, password, level, admin).await,
+            Cmd::UserSetLevel(i, l) => self.user_set_level(i, l).await,
+            Cmd::UserPassword(i, pw) => self.user_password(i, pw).await,
+            Cmd::UserDrop(i) => {
+                if let Some(u) = self.users.get(i) {
+                    let name = u.display();
+                    self.ask(Pending::DropUser(i), format!("Drop user {name}"), format!("Remove the account {name}? Anyone or anything using it will lose access. This cannot be undone."));
+                }
+            }
+            Cmd::UsersClose => ui(&self.w, |st| st.set_users_open(false)),
+            Cmd::OpenTransfer(m) => self.open_transfer(m),
+            Cmd::XferBrowse => self.xfer_browse().await,
+            Cmd::XferRun { path, a, b } => self.xfer_run(path, a, b).await,
+            Cmd::XferCancel => ui(&self.w, |st| st.set_xfer_open(false)),
             Cmd::CellCopy(r, c) => {
                 let text = self.cell_text(r, c).flatten().unwrap_or_default();
                 self.copy_to_clipboard(&text);
@@ -2192,12 +3180,18 @@ impl Worker {
             Cmd::ClearCredentials => self.clear_credentials(),
 
             Cmd::Ctx(kind, i, j, x, y) => self.open_ctx(&kind, i, j, x, y),
-            Cmd::CtxPick(a) => self.ctx_pick(&a).await,
+            Cmd::CtxPick(a, rect) => self.ctx_pick(&a, rect).await,
             Cmd::CtxClose => {
                 self.ctx_target = None;
                 ui(&self.w, |st| st.set_ctx_open(false));
             }
-            Cmd::ClearFlash => self.push_rows(None),
+            Cmd::ClearFlash => {
+                for (r, c) in std::mem::take(&mut self.flashed) {
+                    if let Some(v) = self.active_tab().and_then(|t| t.rows.get(r)).and_then(|row| row.get(c)).cloned() {
+                        self.set_cell(r, c, v, 0);
+                    }
+                }
+            }
             Cmd::ClearToast(id) => {
                 if id == self.toast_id {
                     ui(&self.w, |st| st.set_toast("".into()));
@@ -2223,13 +3217,17 @@ fn sep() -> (String, String, bool, bool) {
 
 impl Worker {
     fn open_ctx(&mut self, kind: &str, i: usize, j: usize, x: f32, y: f32) {
+        let editable = self.active_tab().is_some_and(|t| t.kind == Kind::Table && t.editable);
+        let is_table_tab = self.active_tab().is_some_and(|t| t.kind == Kind::Table);
+        let relational = !self.is_mongo();
         let (target, items) = match kind {
             "tree" => {
                 let Some(e) = self.tree.get(i) else { return };
                 let items = match e.kind {
-                    2 | 5 => vec![item("Open data", "open"), item("Inspect structure", "structure"), item("Query…", "query"), item("Insert row…", "insert"), item("Export data…", "export"), sep(), danger("Truncate…", "truncate"), danger("Drop…", "drop"), sep(), item("Copy name", "copy")],
-                    3 | 4 => vec![item("Open data", "open"), item("Inspect structure", "structure"), item("Query…", "query"), item("Export data…", "export"), sep(), danger("Drop…", "drop"), sep(), item("Copy name", "copy")],
-                    _ => vec![item("View definition", "definition"), item("Copy name", "copy")],
+                    2 | 5 => vec![item("Open data", "open"), item("Open in new tab", "open-new"), item("Inspect structure", "structure"), item("Query…", "query"), item("Insert row…", "insert"), item("Import rows…", "import"), item("Export data…", "export"), sep(), item("Copy definition", "copy-def"), item("Copy name", "copy"), sep(), danger("Truncate…", "truncate"), danger("Drop…", "drop")],
+                    3 | 4 => vec![item("Open data", "open"), item("Open in new tab", "open-new"), item("Inspect structure", "structure"), item("Query…", "query"), item("Export data…", "export"), sep(), item("Copy definition", "copy-def"), item("Copy name", "copy"), sep(), danger("Drop…", "drop")],
+                    6 | 7 => vec![item("View definition", "definition"), item("Run in query tab", "run"), item("Copy definition", "copy-def"), item("Copy name", "copy")],
+                    _ => vec![item("View definition", "definition"), item("Copy definition", "copy-def"), item("Copy name", "copy")],
                 };
                 (CtxTarget::Tree(i), items)
             }
@@ -2238,9 +3236,18 @@ impl Worker {
                 (CtxTarget::Tab(i), vec![item(if t.pinned { "Unpin tab" } else { "Pin tab" }, "pin"), item("Duplicate tab", "duplicate"), sep(), item("Close tab", "close"), item("Close other tabs", "close-others")])
             }
             "cell" => {
-                let editable = self.active_tab().is_some_and(|t| t.kind == Kind::Table && t.editable);
-                let mut v = vec![item("Copy value", "copy")];
+                let mut v = vec![item("Copy", "copy"), item("Copy with column header", "copy-h")];
                 if editable {
+                    v.push(item("Paste", "paste"));
+                }
+                v.push(sep());
+                v.push(item("Select whole row", "sel-row"));
+                v.push(item("Select whole column", "sel-col"));
+                if editable {
+                    v.push(sep());
+                    if relational {
+                        v.push(item("Edit row…", "edit-row"));
+                    }
                     v.push(item("Set to NULL", "null"));
                     v.push(item("Edit as JSON / text…", "json"));
                     v.push(sep());
@@ -2248,6 +3255,36 @@ impl Worker {
                 }
                 (CtxTarget::Cell(i, j), v)
             }
+            "header" => {
+                let mut v = vec![item("Copy column", "copy"), item("Copy column with header", "copy-h"), item("Copy column name", "copy-names"), item("Copy as CSV", "copy-csv"), item("Copy as JSON", "copy-json")];
+                if editable {
+                    v.push(item("Paste into column", "paste"));
+                }
+                if is_table_tab {
+                    v.push(sep());
+                    v.push(item("Sort ascending", "sort-asc"));
+                    v.push(item("Sort descending", "sort-desc"));
+                }
+                (CtxTarget::Header(j), v)
+            }
+            "row" => {
+                let mut v = vec![item("Copy row", "copy"), item("Copy row with header", "copy-h"), item("Copy as CSV", "copy-csv"), item("Copy as JSON", "copy-json")];
+                if relational {
+                    v.push(item("Copy as SQL INSERT", "copy-sql"));
+                }
+                if editable {
+                    v.push(sep());
+                    if relational {
+                        v.push(item("Edit row…", "edit-row"));
+                    }
+                    v.push(danger("Delete row…", "delete"));
+                }
+                (CtxTarget::Row(i), v)
+            }
+            "dbmenu" => (
+                CtxTarget::DbMenu,
+                vec![item("Users & access…", "users"), sep(), item("Export database…", "export-db"), item("Import database…", "import-db"), item("Import rows into open table…", "import-rows"), sep(), item("Refresh metadata", "refresh")],
+            ),
             _ => return,
         };
         self.ctx_target = Some(target);
@@ -2260,22 +3297,62 @@ impl Worker {
         });
     }
 
-    async fn ctx_pick(&mut self, action: &str) {
+    async fn ctx_pick(&mut self, action: &str, rect: [i32; 4]) {
         ui(&self.w, |st| st.set_ctx_open(false));
         let Some(target) = self.ctx_target.take() else { return };
+        let [r0, c0, r1, c1] = rect.map(|v| v.max(0) as usize);
         match target {
             CtxTarget::Tree(i) => self.tree_action(i, action).await,
             CtxTarget::Tab(i) => match action {
                 "close" => self.close_tab(i as i32),
                 other => self.tab_action(i, other).await,
             },
+            CtxTarget::DbMenu => match action {
+                "users" => self.open_users().await,
+                "export-db" => self.open_transfer(0),
+                "import-db" => self.open_transfer(1),
+                "import-rows" => self.open_transfer(2),
+                "refresh" => self.refresh().await,
+                _ => {}
+            },
             CtxTarget::Cell(r, c) => match action {
-                "copy" => {
-                    let text = self.cell_text(r, c).flatten().unwrap_or_default();
-                    self.copy_to_clipboard(&text);
-                }
+                "copy" => self.copy_selection(r0, c0, r1, c1, 0),
+                "copy-h" => self.copy_selection(r0, c0, r1, c1, 1),
+                "paste" => self.paste_selection(r0, c0, r1, c1),
+                "sel-row" => ui(&self.w, move |st| st.invoke_select_row(r as i32, false)),
+                "sel-col" => ui(&self.w, move |st| st.invoke_select_column(c as i32, false)),
+                "edit-row" => self.open_edit_row(r),
                 "null" => self.edit_cell(r, c, String::new(), true).await,
                 "json" => self.open_json_cell(r, c),
+                "delete" => self.ask_delete_row(r),
+                _ => {}
+            },
+            CtxTarget::Header(c) => match action {
+                "copy" => self.copy_selection(r0, c0, r1, c1, 0),
+                "copy-h" => self.copy_selection(r0, c0, r1, c1, 1),
+                "copy-names" => self.copy_selection(r0, c0, r1, c1, 5),
+                "copy-csv" => self.copy_selection(r0, c0, r1, c1, 2),
+                "copy-json" => self.copy_selection(r0, c0, r1, c1, 3),
+                "paste" => self.paste_selection(r0, c0, r1, c1),
+                "sort-asc" | "sort-desc" => {
+                    let asc = action == "sort-asc";
+                    let name = self.active_tab().and_then(|t| t.cols.get(c)).map(|c| c.name.clone());
+                    if let (Some(name), Some(t)) = (name, self.active_mut().filter(|t| t.kind == Kind::Table)) {
+                        t.page.sort_column = Some(name);
+                        t.page.sort_ascending = asc;
+                        t.page.offset = 0;
+                        self.load_active().await;
+                    }
+                }
+                _ => {}
+            },
+            CtxTarget::Row(r) => match action {
+                "copy" => self.copy_selection(r0, c0, r1, c1, 0),
+                "copy-h" => self.copy_selection(r0, c0, r1, c1, 1),
+                "copy-csv" => self.copy_selection(r0, c0, r1, c1, 2),
+                "copy-json" => self.copy_selection(r0, c0, r1, c1, 3),
+                "copy-sql" => self.copy_selection(r0, c0, r1, c1, 4),
+                "edit-row" => self.open_edit_row(r),
                 "delete" => self.ask_delete_row(r),
                 _ => {}
             },

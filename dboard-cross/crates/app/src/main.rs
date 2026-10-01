@@ -37,6 +37,33 @@ fn main() {
     wire!(on_disconnect, | | Cmd::Disconnect);
     wire!(on_refresh, | | Cmd::Refresh);
     wire!(on_undo, | | Cmd::Undo);
+    wire!(on_undo_entry, |i| Cmd::UndoEntry(i as usize));
+    wire!(on_inspector_changed, |o, p| Cmd::InspectorChanged(o, p));
+    wire!(on_switch_database, |i| Cmd::SwitchDatabase(i as usize));
+    wire!(on_cycle_tab, |d| Cmd::CycleTab(d));
+    wire!(on_copy_selection, |a, b, c, d, m| Cmd::CopySelection { r0: a.max(0) as usize, c0: b.max(0) as usize, r1: c.max(0) as usize, c1: d.max(0) as usize, mode: m });
+    wire!(on_paste_selection, |a, b, c, d| Cmd::PasteSelection { r0: a.max(0) as usize, c0: b.max(0) as usize, r1: c.max(0) as usize, c1: d.max(0) as usize });
+    wire!(on_edit_next, |r, c, d| Cmd::EditNext(r.max(0) as usize, c.max(0) as usize, d));
+    wire!(on_open_edit_row, |r| Cmd::OpenEditRow(r.max(0) as usize));
+    wire!(on_editrow_field_edited, |i, v| Cmd::EditRowFieldEdited(i as usize, v.to_string()));
+    wire!(on_editrow_set_null, |i, n| Cmd::EditRowSetNull(i as usize, n));
+    wire!(on_editrow_submit, | | Cmd::EditRowSubmit);
+    wire!(on_editrow_cancel, | | Cmd::EditRowCancel);
+    wire!(on_open_users, | | Cmd::OpenUsers);
+    wire!(on_user_select, |i| Cmd::UserSelect(i.max(0) as usize));
+    wire!(on_user_create, |n, h, p, l, a| Cmd::UserCreate { name: n.to_string(), host: h.to_string(), password: p.to_string(), level: l, admin: a });
+    wire!(on_user_set_level, |i, l| Cmd::UserSetLevel(i.max(0) as usize, l));
+    wire!(on_user_password, |i, p| Cmd::UserPassword(i.max(0) as usize, p.to_string()));
+    wire!(on_user_drop, |i| Cmd::UserDrop(i.max(0) as usize));
+    wire!(on_users_close, | | Cmd::UsersClose);
+    wire!(on_open_transfer, |m| Cmd::OpenTransfer(m));
+    wire!(on_xfer_browse, | | Cmd::XferBrowse);
+    wire!(on_xfer_run, |p, a, b| Cmd::XferRun { path: p.to_string(), a, b });
+    wire!(on_xfer_cancel, | | Cmd::XferCancel);
+    st.on_quit(|| {
+        let _ = slint::quit_event_loop();
+    });
+    app.global::<Theme>().set_mod(if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" }.into());
     wire!(on_filter_tree, |f| Cmd::FilterTree(f.to_string()));
     wire!(on_tree_click, |i| Cmd::TreeClick(i as usize));
     wire!(on_tree_action, |i, a| Cmd::TreeAction(i as usize, a.to_string()));
@@ -93,7 +120,7 @@ fn main() {
     wire!(on_settings_close, | | Cmd::SettingsClose);
     wire!(on_clear_credentials, | | Cmd::ClearCredentials);
     wire!(on_ctx, |k, i, j, x, y| Cmd::Ctx(k.to_string(), i as usize, j as usize, x, y));
-    wire!(on_ctx_pick, |a| Cmd::CtxPick(a.to_string()));
+    wire!(on_ctx_pick, |a, r0, c0, r1, c1| Cmd::CtxPick(a.to_string(), [r0, c0, r1, c1]));
     wire!(on_ctx_close, | | Cmd::CtxClose);
 
     // Switching the engine in the form keeps the port in sync unless the user typed their own.

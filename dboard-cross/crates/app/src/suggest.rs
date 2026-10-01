@@ -103,6 +103,7 @@ mod tests {
             estimated_rows: None,
             size_bytes: None,
             indexes: vec![],
+            keyless_edit: false,
         }
     }
 
