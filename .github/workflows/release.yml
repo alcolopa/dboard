@@ -84,7 +84,7 @@ jobs:
         working-directory: dboard-cross
         run: cargo build --release -p dboard
 
-      - name: Package tar.gz (with install.sh) and .deb
+      - name: Package tar.gz (with install.sh), .deb and .rpm
         run: |
           name="dboard-${{ steps.tag.outputs.tag }}-linux-x86_64"
           mkdir "$name"
@@ -93,7 +93,8 @@ jobs:
           cp dboard-cross/packaging/linux/dboard.desktop dboard-cross/packaging/linux/install.sh "$name/"
           cp dboard-cross/README.md "$name/README.md"
           tar -czf "$name.tar.gz" "$name"
-          (cd dboard-cross && packaging/linux/build-deb.sh "${{ steps.tag.outputs.tag }}")
+          sudo apt-get install -y rpm
+          (cd dboard-cross && packaging/linux/build-deb.sh "${{ steps.tag.outputs.tag }}" && packaging/rpm/build-rpm.sh "${{ steps.tag.outputs.tag }}")
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -103,6 +104,41 @@ jobs:
           files: |
             dboard-${{ steps.tag.outputs.tag }}-linux-x86_64.tar.gz
             dboard-cross/dist/dboard-*-linux-amd64.deb
+            dboard-cross/dist/dboard-*.x86_64.rpm
+
+  # ---- Arch Linux (.pkg.tar.zst built from packaging/arch/PKGBUILD) ----
+  build-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install tools
+        run: pacman -Syu --noconfirm git rust
+
+      - uses: actions/checkout@v4
+
+      - name: makepkg
+        run: |
+          useradd -m builder
+          chown -R builder .
+          tag="${{ steps.tag.outputs.tag }}"
+          # makepkg refuses to run as root; the tag source tarball is fetched by the PKGBUILD itself.
+          su builder -c "cd $PWD/dboard-cross/packaging/arch && pkgver=${tag#v} makepkg -f --noconfirm"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: dboard ${{ steps.tag.outputs.tag }}
+          files: dboard-cross/packaging/arch/dboard-*.pkg.tar.zst
 
   build-windows:
     runs-on: windows-latest
