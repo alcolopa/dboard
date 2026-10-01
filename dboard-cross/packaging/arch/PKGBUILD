@@ -1,0 +1,27 @@
+# Maintainer: alcolopa
+# Builds from the tagged source. Build/install: `makepkg -si` in this directory.
+# CI overrides pkgver with the release tag (pkgver=1.2.3 makepkg ...).
+pkgname=dboard
+pkgver=${pkgver:-1.0.0}
+pkgrel=1
+pkgdesc='Native database client for PostgreSQL, MySQL and MongoDB'
+arch=('x86_64' 'aarch64')
+url='https://github.com/alcolopa/dboard'
+license=('MIT')
+depends=('fontconfig' 'libxkbcommon' 'libx11' 'libxcb' 'wayland' 'libxkbcommon-x11')
+optdepends=('gnome-keyring: store passwords in the Secret Service' 'kwallet: store passwords in the Secret Service')
+makedepends=('cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver/dboard-cross"
+  cargo build --release --locked -p dboard
+}
+
+package() {
+  cd "$pkgname-$pkgver/dboard-cross"
+  install -Dm755 target/release/dboard "$pkgdir/usr/bin/dboard"
+  install -Dm644 packaging/linux/dboard.desktop "$pkgdir/usr/share/applications/dboard.desktop"
+  install -Dm644 assets/icon.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/dboard.png"
+}

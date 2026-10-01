@@ -1,8 +1,8 @@
-# dboard-cross: Linux & Windows client
+# dboard (macOS, Linux, Windows)
 
-The native macOS app lives in `../dboard` (Swift/SwiftUI). This folder is a separate, small and fast
-**Rust + [Slint](https://slint.dev)** client for Linux and Windows. It shares no code with the Mac app;
-it follows the same feature spec (see the root README). No web view, no runtime: one native binary.
+dboard is a single Rust + [Slint](https://slint.dev) codebase that runs on macOS, Linux and Windows.
+No web view, no runtime: one native binary per platform.
+
 
 ## Layout
 

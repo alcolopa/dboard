@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=dboard
+Comment=Database client for PostgreSQL, MySQL and MongoDB
+Exec=dboard
+Icon=dboard
+Terminal=false
+Categories=Development;Database;
+StartupWMClass=dboard

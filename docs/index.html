@@ -99,6 +99,9 @@
   .section-head h2{font-size:30px;letter-spacing:-0.01em;margin:0 0 10px;}
   .section-head p{color:var(--text-dim);margin:0;}
 
+  #download .card.detected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+  .dl-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .dl-row .btn{font-size:13px;padding:8px 12px;}
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
   @media (max-width:820px){.grid{grid-template-columns:1fr;}}
   .card{
@@ -156,7 +159,7 @@
       <a href="#shortcuts">Shortcuts</a>
       <a href="#download">Download</a>
       <a href="https://github.com/alcolopa/dboard" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
+      <a class="btn btn-primary" id="dl-nav" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -171,10 +174,10 @@
       destructive statement against production by accident. Now available on Windows and Linux as well as macOS.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="#download">Download</a>
+      <a class="btn btn-primary" id="dl-hero" href="#download">Download</a>
       <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">View Source</a>
     </div>
-    <p class="subnote">macOS 14+ · Windows x86_64 · Linux x86_64</p>
+    <p class="subnote">macOS 11+ · Windows · Linux · x64 and ARM64</p>
   </section>
 
   <div class="wrap">
@@ -279,26 +282,34 @@
       <div class="grid">
         <div class="card">
           <h3>macOS</h3>
-          <p>Swift and SwiftUI app, macOS 14 or later. Unzip it and drag it to Applications.</p>
+          <p>Separate builds for Apple Silicon and Intel Macs. Unzip it and drag it to Applications.</p>
           <p class="note">The build is unsigned. Run <code>xattr -cr dboard.app</code> once to get past Gatekeeper.</p>
-          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
+          <p id="dl-mac" class="dl-row"><a class="btn btn-primary" data-arch="arm" data-re="macos-arm64\.zip$" href="https://github.com/alcolopa/dboard/releases/latest">Apple Silicon</a><a class="btn btn-primary" data-arch="x64" data-re="macos-x86_64\.zip$" href="https://github.com/alcolopa/dboard/releases/latest">Intel</a></p>
         </div>
         <div class="card">
           <h3>Windows</h3>
-          <p>Single <code>dboard.exe</code>, x86_64, in a zip. No installer and no runtime to install.</p>
+<p>Setup installer for x64 and ARM64: Start menu entry, optional desktop shortcut, uninstaller. No runtime to install.</p>
           <p class="note">CI builds this, but it hasn't been tested by hand on Windows yet. Bug reports welcome.</p>
-          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .zip</a></p>
+          <p id="dl-win" class="dl-row"><a class="btn btn-primary" data-arch="x64" data-re="windows-x86_64-setup\.exe$" href="https://github.com/alcolopa/dboard/releases/latest">x64 installer</a><a class="btn btn-primary" data-arch="arm" data-re="windows-arm64-setup\.exe$" href="https://github.com/alcolopa/dboard/releases/latest">ARM64 installer</a></p>
         </div>
         <div class="card">
           <h3>Linux</h3>
-          <p>Single binary, x86_64, in a tar.gz. Built with Rust and Slint, so it runs on X11 and Wayland.</p>
+          <p>Packages for Debian/Ubuntu (.deb), Fedora (.rpm) and Arch (.pkg.tar.zst, x64), plus a tar.gz with an installer script for other distros. x64 and ARM64. Built with Rust and Slint, so it runs on X11 and Wayland.</p>
           <p class="note">Extract it and run <code>./dboard</code>. Saved passwords need a Secret Service keyring.</p>
-          <p><a class="btn btn-primary" href="https://github.com/alcolopa/dboard/releases/latest">Get the .tar.gz</a></p>
+          <p id="dl-linux" class="dl-row">
+            <a class="btn btn-primary" data-arch="x64" data-re="linux-amd64\.deb$" href="https://github.com/alcolopa/dboard/releases/latest">.deb x64</a>
+            <a class="btn btn-primary" data-arch="x64" data-re="\.x86_64\.rpm$" href="https://github.com/alcolopa/dboard/releases/latest">.rpm x64</a>
+            <a class="btn btn-primary" data-arch="x64" data-re="\.pkg\.tar\.zst$" href="https://github.com/alcolopa/dboard/releases/latest">Arch x64</a>
+            <a class="btn btn-primary" data-arch="x64" data-re="linux-x86_64\.tar\.gz$" href="https://github.com/alcolopa/dboard/releases/latest">.tar.gz x64</a>
+            <a class="btn btn-primary" data-arch="arm" data-re="linux-arm64\.deb$" href="https://github.com/alcolopa/dboard/releases/latest">.deb ARM64</a>
+            <a class="btn btn-primary" data-arch="arm" data-re="\.aarch64\.rpm$" href="https://github.com/alcolopa/dboard/releases/latest">.rpm ARM64</a>
+            <a class="btn btn-primary" data-arch="arm" data-re="linux-aarch64\.tar\.gz$" href="https://github.com/alcolopa/dboard/releases/latest">.tar.gz ARM64</a>
+          </p>
         </div>
       </div>
       <p class="subnote" style="text-align:center;margin-top:24px;">
-        The Windows and Linux client is a separate Rust codebase in <a href="https://github.com/alcolopa/dboard/tree/main/dboard-cross">dboard-cross</a>.
-        It covers the same core features; SSH tunnels, SQL syntax highlighting and data import are not there yet.
+        One Rust + Slint codebase serves every platform, in <a href="https://github.com/alcolopa/dboard/tree/main/dboard-cross">dboard-cross</a>.
+        SSH tunnels, SQL syntax highlighting and data import are not there yet.
         Or <a href="https://github.com/alcolopa/dboard#-building--running">build from source</a>.
       </p>
     </div>
@@ -316,5 +327,53 @@
   </div>
 </footer>
 
+<script>
+(function () {
+  var ua = navigator.userAgent || "", plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  var os = /Win/i.test(plat + ua) ? "win" : /Mac/i.test(plat) && !/iPhone|iPad/i.test(ua) ? "mac" : /Linux|X11|CrOS/i.test(plat + ua) && !/Android/i.test(ua) ? "linux" : null;
+  var names = { win: "Windows", mac: "macOS", linux: "Linux" };
+  var arch = /aarch64|arm64|\barm\b/i.test(ua) ? "arm" : null; // null = unknown (Safari/Firefox on Mac hide it)
+  var assets = null, ready = false;
+
+  function find(rx) { var r = new RegExp(rx); for (var i = 0; assets && i < assets.length; i++) if (r.test(assets[i].name)) return assets[i].browser_download_url; return null; }
+
+  function render() {
+    var buttons = document.querySelectorAll("#download a[data-re]");
+    for (var i = 0; i < buttons.length; i++) {
+      var el = buttons[i], u = find(el.getAttribute("data-re"));
+      if (assets) { if (u) el.href = u; else el.style.display = "none"; }
+      // known arch: the matching buttons stay primary, the others turn secondary
+      var match = !arch || el.getAttribute("data-arch") === arch;
+      el.className = "btn " + (match ? "btn-primary" : "btn-ghost");
+    }
+    if (!os) return;
+    var mine = document.querySelectorAll("#dl-" + os + " a[data-re]"), direct = null;
+    for (var j = 0; j < mine.length; j++) if (os !== "linux" && arch && mine[j].getAttribute("data-arch") === arch && mine[j].style.display !== "none" && /^https:\/\/github.com\/.*\/download\//.test(mine[j].href)) direct = mine[j].href;
+    ["dl-hero", "dl-nav"].forEach(function (id) {
+      var el = document.getElementById(id);
+      el.textContent = "Download for " + names[os] + (arch ? (arch === "arm" ? " (ARM64)" : " (x64)") : "");
+      el.setAttribute("href", direct || "#download");
+    });
+  }
+
+  if (os) {
+    var card = document.getElementById("dl-" + os).closest(".card");
+    card.classList.add("detected");
+    card.parentNode.insertBefore(card, card.parentNode.firstChild); // detected platform first
+  }
+  render();
+
+  var uad = navigator.userAgentData;
+  if (uad && uad.getHighEntropyValues) {
+    uad.getHighEntropyValues(["architecture"]).then(function (v) {
+      if (v.architecture === "arm") arch = "arm"; else if (v.architecture === "x86") arch = "x64";
+      render();
+    }).catch(function () {});
+  } else if (os === "win" || os === "linux") { if (!arch) arch = "x64"; render(); } // UA without "arm" on Win/Linux is almost always x64
+
+  fetch("https://api.github.com/repos/alcolopa/dboard/releases/latest").then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (rel) { assets = rel.assets || []; render(); }).catch(function () {});
+})();
+</script>
 </body>
 </html>

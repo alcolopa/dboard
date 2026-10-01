@@ -1,8 +1,8 @@
-# dboard: Modern Native macOS Database Client
+# dboard: Fast Native Database Client for macOS, Linux and Windows
 
-A production-quality, high-performance native macOS database management application inspired by **Sequel Pro**, reimagined from the ground up for modern developers with the visual polish and ergonomics of **TablePlus**, **DataGrip**, and **Linear**.
+A production-quality, high-performance native database management application inspired by **Sequel Pro**, reimagined from the ground up for modern developers with the visual polish and ergonomics of **TablePlus**, **DataGrip**, and **Linear**.
 
-Built with **Swift & SwiftUI** targeting macOS 14.0+, utilizing native macOS AppKit split views, macOS Keychain Services for secure credential storage, and an extensible driver architecture.
+Built with **Rust & [Slint](https://slint.dev)**: one codebase and one UI for macOS, Linux and Windows, no web view. Passwords are kept in the OS keyring (macOS Keychain, Windows Credential Manager, Secret Service).
 
 ---
 
@@ -111,11 +111,9 @@ Built with **Swift & SwiftUI** targeting macOS 14.0+, utilizing native macOS App
 
 ---
 
-## 🐧🪟 Linux & Windows
+## 🧩 Codebase
 
-The Swift/SwiftUI app above is macOS-only. A separate, small native client for **Linux and Windows** (Rust + Slint,
-no web view) lives in [`dboard-cross/`](dboard-cross/README.md). It supports PostgreSQL, MySQL/MariaDB and MongoDB,
-stores connections and settings persistently (passwords in the OS keyring) and mirrors the workspace described here.
+Everything lives in [`dboard-cross/`](dboard-cross/README.md) (Rust workspace: `core` drivers + `app` Slint UI). It supports PostgreSQL, MySQL/MariaDB and MongoDB. On Linux and Windows use Ctrl where the table above shows ⌘.
 
 ## 🌐 Website
 
@@ -124,22 +122,24 @@ A landing page lives in [`docs/`](docs/index.html) and deploys automatically to 
 ## 📦 Building & Running
 
 ### Option 0: Download a Release
-Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases): `dboard-<tag>-macos.zip` (drag `dboard.app` to `/Applications`), `dboard-<tag>-windows-x86_64.zip` (unzip, run `dboard.exe`) and `dboard-<tag>-linux-x86_64.tar.gz` (extract, run `./dboard`). The Windows exe is unsigned, so SmartScreen may warn on first launch (More info → Run anyway).
+Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases):
+Every platform ships for both x86_64 and ARM64 (built natively on GitHub runners):
+- **macOS**: `dboard-<tag>-macos-arm64.zip` (Apple Silicon) or `-macos-x86_64.zip` (Intel); drag `dboard.app` to `/Applications`.
+- **Windows**: `dboard-<version>-windows-x86_64-setup.exe` or `-windows-arm64-setup.exe`, a per-user installer (Start menu entry, optional desktop shortcut, uninstaller). Unsigned, so SmartScreen may warn (More info → Run anyway).
+- **Debian / Ubuntu**: `dboard-<version>-linux-amd64.deb` / `-linux-arm64.deb` (`sudo apt install ./dboard-*.deb`).
+- **Fedora / RHEL / openSUSE**: `dboard-<version>-1.x86_64.rpm` / `.aarch64.rpm` (`sudo dnf install ./dboard-*.rpm`).
+- **Arch / Manjaro**: `dboard-<version>-1-x86_64.pkg.tar.zst` (`sudo pacman -U dboard-*.pkg.tar.zst`). Arch on ARM: run `makepkg -si` in `dboard-cross/packaging/arch` (the PKGBUILD supports aarch64).
+- **Any other Linux**: `dboard-<tag>-linux-x86_64.tar.gz` or `-linux-aarch64.tar.gz`, then run `./install.sh` (user-level, adds a launcher and icon; `--uninstall` removes it).
 
 Since the app isn't notarized/signed, macOS Gatekeeper will block the first launch. Either right-click → **Open** and confirm, or run:
 ```bash
 xattr -cr /Applications/dboard.app
 ```
 
-### Option 1: Standalone Build Script
-Run the automated build script to compile the native `dboard.app` bundle:
+### Option 1: Build from source
 ```bash
-./build.sh run
+cd dboard-cross
+cargo run -p dboard                 # run
+cargo build --release -p dboard     # optimised binary
+packaging/macos/bundle.sh           # macOS only: wrap the binary into dboard.app
 ```
-
-### Option 2: Xcode Project
-Open `dboard.xcodeproj` directly in Xcode:
-```bash
-open dboard.xcodeproj
-```
-All Swift files in `dboard/` are automatically synchronized via Xcode's synchronized groups. Select **My Mac** and click **Run (⌘R)**.

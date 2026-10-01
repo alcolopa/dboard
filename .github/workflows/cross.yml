@@ -1,4 +1,4 @@
-name: Cross-platform (Linux / Windows)
+name: CI (Linux / Windows / macOS)
 
 on:
   push:
@@ -46,14 +46,15 @@ jobs:
   build:
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            name: dboard-linux-x86_64
-            bin: dboard
-          - os: windows-latest
-            name: dboard-windows-x86_64
-            bin: dboard.exe
+          - { os: ubuntu-latest,     name: dboard-linux-x86_64,   bin: dboard }
+          - { os: ubuntu-22.04-arm,  name: dboard-linux-aarch64,  bin: dboard }
+          - { os: windows-latest,    name: dboard-windows-x86_64, bin: dboard.exe }
+          - { os: windows-11-arm,    name: dboard-windows-arm64,  bin: dboard.exe }
+          - { os: macos-15,          name: dboard-macos-arm64,    bin: dboard }
+          - { os: macos-15-intel,    name: dboard-macos-x86_64,   bin: dboard }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

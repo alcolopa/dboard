@@ -1,6 +1,3 @@
 .DS_Store
-build-cache/
 *.app
-xcuserdata/
-DerivedData/
-*.xcuserstate
+target/

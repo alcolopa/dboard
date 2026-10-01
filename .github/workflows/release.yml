@@ -13,115 +13,130 @@ on:
 permissions:
   contents: write
 
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
 jobs:
-  build:
-    runs-on: macos-15
+  # ---- macOS: one app bundle per architecture ----
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15,       arch: arm64 }
+          - { runner: macos-15-intel, arch: x86_64 }
+    runs-on: ${{ matrix.runner }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Resolve tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build dboard.app
-        run: |
-          chmod +x build.sh
-          ./build.sh
-
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: dboard-cross, key: "${{ matrix.arch }}" }
+      - name: Build
+        working-directory: dboard-cross
+        run: cargo build --release -p dboard
+      - name: Bundle dboard.app
+        working-directory: dboard-cross
+        run: packaging/macos/bundle.sh ../dboard.app "$TAG"
       - name: Zip app bundle
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent dboard.app "dboard-${{ steps.tag.outputs.tag }}-macos.zip"
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+        run: ditto -c -k --sequesterRsrc --keepParent dboard.app "dboard-${TAG}-macos-${{ matrix.arch }}.zip"
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: dboard ${{ steps.tag.outputs.tag }}
-          files: dboard-${{ steps.tag.outputs.tag }}-macos.zip
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: dboard ${{ env.TAG }}
+          files: dboard-${{ env.TAG }}-macos-${{ matrix.arch }}.zip
           generate_release_notes: true
 
-  # ---- Linux & Windows (Rust + Slint client in dboard-cross/) ----
+  # ---- Linux: tar.gz + .deb + .rpm per architecture (built natively) ----
   build-linux:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-22.04,     arch: x86_64,  deb: amd64, rpm: x86_64 }
+          - { runner: ubuntu-22.04-arm, arch: aarch64, deb: arm64, rpm: aarch64 }
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: dboard-cross }
-
-      - name: Install GUI build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev
-
+        with: { workspaces: dboard-cross, key: "${{ matrix.arch }}" }
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev rpm
       - name: Build
         working-directory: dboard-cross
         run: cargo build --release -p dboard
-
-      - name: Package tar.gz
+      - name: Package tar.gz (with install.sh), .deb and .rpm
         run: |
-          name="dboard-${{ steps.tag.outputs.tag }}-linux-x86_64"
+          name="dboard-${TAG}-linux-${{ matrix.arch }}"
           mkdir "$name"
           cp dboard-cross/target/release/dboard "$name/"
+          cp dboard-cross/assets/icon.png "$name/dboard.png"
+          cp dboard-cross/packaging/linux/dboard.desktop dboard-cross/packaging/linux/install.sh "$name/"
           cp dboard-cross/README.md "$name/README.md"
           tar -czf "$name.tar.gz" "$name"
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+          cd dboard-cross
+          packaging/linux/build-deb.sh "$TAG" ${{ matrix.deb }}
+          packaging/rpm/build-rpm.sh "$TAG" ${{ matrix.rpm }}
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: dboard ${{ steps.tag.outputs.tag }}
-          files: dboard-${{ steps.tag.outputs.tag }}-linux-x86_64.tar.gz
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: dboard ${{ env.TAG }}
+          files: |
+            dboard-${{ env.TAG }}-linux-${{ matrix.arch }}.tar.gz
+            dboard-cross/dist/dboard-*-linux-${{ matrix.deb }}.deb
+            dboard-cross/dist/dboard-*.${{ matrix.rpm }}.rpm
 
+  # ---- Arch Linux (x86_64 only: there is no official aarch64 Arch container; the PKGBUILD also builds on aarch64) ----
+  build-arch:
+    needs: build-linux # the release/tag must exist: the PKGBUILD downloads the tag tarball
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm git rust
+      - uses: actions/checkout@v4
+      - name: makepkg
+        run: |
+          useradd -m builder
+          chown -R builder .
+          # makepkg refuses to run as root; the PKGBUILD fetches the tag's source tarball itself.
+          su builder -c "cd $PWD/dboard-cross/packaging/arch && pkgver=${TAG#v} makepkg -f --noconfirm"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: dboard ${{ env.TAG }}
+          files: dboard-cross/packaging/arch/dboard-*.pkg.tar.zst
+
+  # ---- Windows: setup.exe per architecture ----
   build-windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest,   arch: x86_64 }
+          - { runner: windows-11-arm,   arch: arm64 }
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve tag
-        id: tag
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: dboard-cross }
-
+        with: { workspaces: dboard-cross, key: "${{ matrix.arch }}" }
       - name: Build
         working-directory: dboard-cross
         run: cargo build --release -p dboard
-
-      - name: Package zip
+      - name: Build installer (Inno Setup)
+        working-directory: dboard-cross
         shell: pwsh
         run: |
-          $name = "dboard-${{ steps.tag.outputs.tag }}-windows-x86_64"
-          New-Item -ItemType Directory -Path $name | Out-Null
-          Copy-Item dboard-cross/target/release/dboard.exe $name/
-          Copy-Item dboard-cross/README.md $name/README.md
-          Compress-Archive -Path $name -DestinationPath "$name.zip"
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+          choco install innosetup -y --no-progress
+          $v = "${env:TAG}".TrimStart('v')
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" "/DArch=${{ matrix.arch }}" packaging\windows\dboard.iss
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: dboard ${{ steps.tag.outputs.tag }}
-          files: dboard-${{ steps.tag.outputs.tag }}-windows-x86_64.zip
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: dboard ${{ env.TAG }}
+          files: dboard-cross/dist/dboard-*-windows-${{ matrix.arch }}-setup.exe
