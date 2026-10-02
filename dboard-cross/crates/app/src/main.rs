@@ -40,6 +40,11 @@ fn main() {
     wire!(on_undo_entry, |i| Cmd::UndoEntry(i as usize));
     wire!(on_inspector_changed, |o, p| Cmd::InspectorChanged(o, p));
     wire!(on_switch_database, |i| Cmd::SwitchDatabase(i as usize));
+    wire!(on_switch_session, |i| Cmd::SwitchSession(i.max(0) as usize));
+    wire!(on_close_session, |i| Cmd::CloseSession(i));
+    wire!(on_first_page, | | Cmd::FirstPage);
+    wire!(on_last_page, | | Cmd::LastPage);
+    wire!(on_draft_submit, |v| Cmd::DraftSubmit(slint::Model::iter(&v).map(|s| s.to_string()).collect()));
     wire!(on_cycle_tab, |d| Cmd::CycleTab(d));
     wire!(on_copy_selection, |a, b, c, d, m| Cmd::CopySelection { r0: a.max(0) as usize, c0: b.max(0) as usize, r1: c.max(0) as usize, c1: d.max(0) as usize, mode: m });
     wire!(on_paste_selection, |a, b, c, d| Cmd::PasteSelection { r0: a.max(0) as usize, c0: b.max(0) as usize, r1: c.max(0) as usize, c1: d.max(0) as usize });

@@ -3,7 +3,7 @@
 
 use crate::export::{self, ExportCol};
 use crate::suggest;
-use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, EditItem, FieldItem, GridCell, HistoryItem, PaletteItem, SavedItem, TabInfo, TreeItem, UserRow};
+use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, EditItem, FieldItem, GridCell, HistoryItem, MetaRow, PaletteItem, SavedItem, SessionTab, TabInfo, TreeItem, UserRow};
 use dboard_core::config::{self, secrets, HistoryEntry, SavedQuery, Settings, Store, Theme as ThemePref, FOLDERS};
 use dboard_core::model::*;
 use dboard_core::sql::Dialect;
@@ -34,6 +34,8 @@ pub enum Cmd {
     UndoEntry(usize),
     InspectorChanged(bool, bool),
     SwitchDatabase(usize),
+    SwitchSession(usize),
+    CloseSession(i32),
     // sidebar
     FilterTree(String),
     TreeClick(usize),
@@ -54,6 +56,9 @@ pub enum Cmd {
     ApplyFilter(String),
     NextPage,
     PrevPage,
+    FirstPage,
+    LastPage,
+    DraftSubmit(Vec<String>),
     SetPageSize(usize),
     CopyText(String),
     CopySelection { r0: usize, c0: usize, r1: usize, c1: usize, mode: i32 },
@@ -209,6 +214,29 @@ impl Tab {
     }
 }
 
+fn group_digits(n: i64) -> String {
+    let s = n.abs().to_string();
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    if n < 0 { format!("-{out}") } else { out }
+}
+
+fn human_size(bytes: i64) -> String {
+    let b = bytes as f64;
+    if b >= 1_073_741_824.0 {
+        format!("{:.1} GB", b / 1_073_741_824.0)
+    } else if b >= 1_048_576.0 {
+        format!("{:.1} MB", b / 1_048_576.0)
+    } else {
+        format!("{:.1} KB", b / 1024.0)
+    }
+}
+
 fn auto_widths(cols: &[ColMeta], rows: &[Vec<Cell>]) -> Vec<f32> {
     cols.iter()
         .enumerate()
@@ -332,6 +360,27 @@ struct TreeEntry {
     key: String,
 }
 
+/// Everything that belongs to one open connection. The active one lives directly in `Worker`;
+/// the others are parked here and swapped in when their tab is picked.
+struct Session {
+    conn: Option<Conn>,
+    env: Environment,
+    tabs: Vec<Tab>,
+    active: Option<usize>,
+    closed: Vec<Tab>,
+    query_counter: usize,
+    tree_filter: String,
+    collapsed: HashSet<String>,
+    tree: Vec<TreeEntry>,
+    activity: Vec<String>,
+    session_pw: String,
+    databases: Vec<String>,
+    db_all_entry: bool,
+    db_entries: Vec<String>,
+    db_idx: i32,
+    users: Vec<UserInfo>,
+}
+
 pub struct Worker {
     w: Weak<App>,
     tx: UnboundedSender<Cmd>,
@@ -369,6 +418,13 @@ pub struct Worker {
     xfer_mode: i32,
     /// The cell whose "saved ✓" / "!" marker is cleared by the next `ClearFlash`.
     flashed: Vec<(usize, usize)>,
+    /// Entries of the database drop-down and the selected one.
+    db_entries: Vec<String>,
+    db_idx: i32,
+    /// Open connections: (name, colour) per tab, and the parked state of every inactive one.
+    sess_meta: Vec<(String, u32)>,
+    parked: Vec<Option<Session>>,
+    cur: usize,
 }
 
 impl Worker {
@@ -411,6 +467,11 @@ impl Worker {
             edit_row: None,
             xfer_mode: 0,
             flashed: Vec::new(),
+            db_entries: Vec::new(),
+            db_idx: -1,
+            sess_meta: Vec::new(),
+            parked: Vec::new(),
+            cur: 0,
         }
     }
 
@@ -666,13 +727,23 @@ impl Worker {
     }
 
     async fn on_connected(&mut self, cfg: ConnectionConfig, conn: Conn, pw: String) {
+        // Park the connection we were using, if any; the new one gets its own tab.
+        if self.conn.is_some() {
+            let old = self.take_session();
+            if self.cur < self.parked.len() {
+                self.parked[self.cur] = Some(old);
+            }
+            self.cur = self.sess_meta.len();
+        } else {
+            self.sess_meta.clear();
+            self.parked.clear();
+            self.cur = 0;
+        }
+        self.sess_meta.push((cfg.display_name(), cfg.environment.color()));
+        self.parked.push(None);
         self.env = cfg.environment;
-        self.tabs.clear();
-        self.active = None;
-        self.closed.clear();
-        self.tree_filter.clear();
-        self.collapsed.clear();
-        self.activity.clear();
+        self.pending = None;
+        self.edit_row = None;
         if let Some(c) = self.connections.iter_mut().find(|c| c.id == cfg.id) {
             c.last_used = config::now_secs();
         }
@@ -680,11 +751,98 @@ impl Worker {
         self.settings.last_connection_id = cfg.id.clone();
         self.persist_settings();
         self.session_pw = pw;
-        self.users.clear();
-        let (name, env, protected, db) = (cfg.display_name(), cfg.environment, self.protected(), cfg.db_type.index() as i32);
         self.conn = Some(conn);
         self.load_databases().await;
+        self.show_session();
+    }
+
+    fn take_session(&mut self) -> Session {
+        Session {
+            conn: self.conn.take(),
+            env: self.env,
+            tabs: std::mem::take(&mut self.tabs),
+            active: self.active.take(),
+            closed: std::mem::take(&mut self.closed),
+            query_counter: std::mem::take(&mut self.query_counter),
+            tree_filter: std::mem::take(&mut self.tree_filter),
+            collapsed: std::mem::take(&mut self.collapsed),
+            tree: std::mem::take(&mut self.tree),
+            activity: std::mem::take(&mut self.activity),
+            session_pw: std::mem::take(&mut self.session_pw),
+            databases: std::mem::take(&mut self.databases),
+            db_all_entry: std::mem::take(&mut self.db_all_entry),
+            db_entries: std::mem::take(&mut self.db_entries),
+            db_idx: std::mem::replace(&mut self.db_idx, -1),
+            users: std::mem::take(&mut self.users),
+        }
+    }
+
+    fn put_session(&mut self, s: Session) {
+        self.conn = s.conn;
+        self.env = s.env;
+        self.tabs = s.tabs;
+        self.active = s.active;
+        self.closed = s.closed;
+        self.query_counter = s.query_counter;
+        self.tree_filter = s.tree_filter;
+        self.collapsed = s.collapsed;
+        self.tree = s.tree;
+        self.activity = s.activity;
+        self.session_pw = s.session_pw;
+        self.databases = s.databases;
+        self.db_all_entry = s.db_all_entry;
+        self.db_entries = s.db_entries;
+        self.db_idx = s.db_idx;
+        self.users = s.users;
+        self.pending = None;
+        self.edit_row = None;
+    }
+
+    fn push_sessions(&self) {
+        let v: Vec<(String, u32, bool)> = self.sess_meta.iter().enumerate().map(|(i, (n, c))| (n.clone(), *c, i == self.cur)).collect();
+        ui(&self.w, move |st| {
+            let items: Vec<SessionTab> = v
+                .into_iter()
+                .map(|(n, c, active)| SessionTab { name: n.into(), color: slint::Color::from_rgb_u8((c >> 16) as u8, (c >> 8) as u8, c as u8), active })
+                .collect();
+            st.set_sessions(ModelRc::new(VecModel::from(items)));
+        });
+    }
+
+    fn push_databases(&self) {
+        let (entries, idx) = (self.db_entries.clone(), self.db_idx);
+        ui(&self.w, move |st| {
+            st.set_databases(strs(entries));
+            st.set_database_index(idx);
+        });
+    }
+
+    fn close_dialogs(&self) {
+        ui(&self.w, |st| {
+            st.set_busy(false);
+            st.set_confirm_open(false);
+            st.set_insert_open(false);
+            st.set_json_open(false);
+            st.set_palette_open(false);
+            st.set_export_open(false);
+            st.set_editrow_open(false);
+            st.set_users_open(false);
+            st.set_xfer_open(false);
+            st.set_ctx_open(false);
+            st.set_draft_open(false);
+        });
+    }
+
+    /// Show the active session: header, databases, tree, tabs, grid and inspector.
+    fn show_session(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        let (name, color) = self.sess_meta.get(self.cur).cloned().unwrap_or_default();
+        let _ = color;
+        let (env, protected, db) = (self.env, self.protected(), conn.db_type().index() as i32);
         let status = self.status_line();
+        let act = self.activity.clone();
+        self.push_sessions();
+        self.push_databases();
         self.rebuild_tree();
         self.push_saved_and_history();
         self.show_active();
@@ -697,9 +855,66 @@ impl Worker {
             st.set_status(status.into());
             st.set_db_type(db);
             st.set_is_protected(protected);
+            st.set_tree_filter("".into());
+            st.set_activity(strs(act));
             st.set_busy(false);
             st.set_connected(true);
         });
+    }
+
+    fn switch_session(&mut self, i: usize) {
+        if i >= self.sess_meta.len() {
+            return;
+        }
+        if i == self.cur && self.conn.is_some() {
+            ui(&self.w, |st| st.set_connected(true));
+            return;
+        }
+        let old = self.take_session();
+        if self.cur < self.parked.len() {
+            self.parked[self.cur] = Some(old);
+        }
+        if let Some(s) = self.parked[i].take() {
+            self.put_session(s);
+        }
+        self.cur = i;
+        self.close_dialogs();
+        self.show_session();
+    }
+
+    /// Close one open connection (`-1` = the current one). The last one returns to the connection list.
+    fn close_session(&mut self, idx: i32) {
+        let i = if idx < 0 { self.cur } else { idx as usize };
+        if i >= self.sess_meta.len() {
+            return;
+        }
+        self.sess_meta.remove(i);
+        if i == self.cur {
+            drop(self.take_session());
+            self.parked.remove(i);
+            self.close_dialogs();
+            if self.sess_meta.is_empty() {
+                self.cur = 0;
+                self.push_sessions();
+                self.push_connections();
+                ui(&self.w, |st| {
+                    st.set_connected(false);
+                    st.set_databases(strs(Vec::new()));
+                });
+            } else {
+                self.cur = i.min(self.sess_meta.len() - 1);
+                if let Some(s) = self.parked[self.cur].take() {
+                    self.put_session(s);
+                }
+                self.show_session();
+            }
+        } else {
+            self.parked.remove(i);
+            if i < self.cur {
+                self.cur -= 1;
+            }
+            self.push_sessions();
+        }
     }
 
     /// "PostgreSQL 16.4 · user@host:5432 / database", for the top bar.
@@ -736,11 +951,9 @@ impl Worker {
             None => 0,
         };
         self.databases = list;
-        let show = !entries.is_empty();
-        ui(&self.w, move |st| {
-            st.set_databases(strs(if show { entries } else { Vec::new() }));
-            st.set_database_index(idx as i32);
-        });
+        self.db_entries = entries;
+        self.db_idx = idx as i32;
+        self.push_databases();
     }
 
     async fn switch_database(&mut self, i: usize) {
@@ -783,27 +996,7 @@ impl Worker {
     }
 
     fn disconnect(&mut self) {
-        self.conn = None;
-        self.session_pw.clear();
-        self.users.clear();
-        self.edit_row = None;
-        self.tabs.clear();
-        self.active = None;
-        self.pending = None;
-        self.push_connections();
-        ui(&self.w, |st| {
-            st.set_connected(false);
-            st.set_busy(false);
-            st.set_confirm_open(false);
-            st.set_insert_open(false);
-            st.set_json_open(false);
-            st.set_palette_open(false);
-            st.set_export_open(false);
-            st.set_editrow_open(false);
-            st.set_users_open(false);
-            st.set_xfer_open(false);
-            st.set_databases(strs(Vec::new()));
-        });
+        self.close_session(-1);
     }
 
     fn delete_conn(&mut self, id: &str) {
@@ -991,6 +1184,8 @@ impl Worker {
         let tab = self.active_tab().cloned();
         ui(&self.w, move |st| match tab {
             None => {
+                st.set_draft_open(false);
+                st.set_has_next(false);
                 st.set_tab_kind(-1);
                 st.set_cols(ModelRc::new(VecModel::from(Vec::<ColInfo>::new())));
                 st.set_rows(grid_model(Vec::new()));
@@ -1008,6 +1203,8 @@ impl Worker {
                     .iter()
                     .map(|c| ColInfo { name: c.name.clone().into(), type_name: c.type_name.clone().into(), pk: c.pk, fk: c.fk.clone().into(), is_bool: c.is_bool, is_json: c.is_json })
                     .collect();
+                st.set_draft_open(false);
+                st.set_has_next(t.rows.len() as i64 >= t.page.limit);
                 st.set_tab_kind(t.kind as i32);
                 st.set_cols(ModelRc::new(VecModel::from(cols)));
                 st.set_col_widths(ModelRc::new(VecModel::from(t.widths.clone())));
@@ -1635,26 +1832,52 @@ impl Worker {
             return self.toast("Rows can only be inserted into tables");
         }
         self.insert_vals = vec![String::new(); table.columns.len()];
-        let fields: Vec<(String, String, String)> = table
+        // The new row is typed straight into the grid: a hint per column says what an empty cell becomes.
+        let hints: Vec<String> = table
             .columns
             .iter()
-            .map(|c| {
-                let hint = match (&c.default, c.nullable) {
-                    (Some(d), _) => format!("default: {d}"),
-                    (None, true) => "NULL if left empty".to_string(),
-                    (None, false) => "required".to_string(),
-                };
-                (c.name.clone(), format!("{}{}", c.type_name, if c.is_primary_key { " · PK" } else { "" }), hint)
+            .map(|c| match (&c.default, c.nullable) {
+                (Some(d), _) => format!("default: {d}"),
+                (None, true) => "NULL".to_string(),
+                (None, false) => "required".to_string(),
             })
             .collect();
-        let title = format!("Insert row · {}", table.full_name());
+        let blank = vec![String::new(); hints.len()];
         ui(&self.w, move |st| {
-            let v: Vec<FieldItem> = fields.into_iter().map(|(n, t, h)| FieldItem { name: n.into(), type_name: t.into(), hint: h.into(), value: "".into(), is_null: false }).collect();
-            st.set_insert_fields(ModelRc::new(VecModel::from(v)));
-            st.set_insert_title(title.into());
-            st.set_insert_error("".into());
-            st.set_insert_open(true);
+            st.set_draft_open(false);
+            st.set_draft_hints(strs(hints));
+            st.set_draft(strs(blank));
+            st.set_draft_open(true);
         });
+    }
+
+    /// Jump to the last page. SQL engines count the rows exactly; MongoDB uses its estimate.
+    async fn last_page(&mut self) {
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
+        let dialect = self.dialect();
+        let limit = tab.page.limit.max(1);
+        let total: Option<i64> = if self.is_mongo() {
+            self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).and_then(|t| t.estimated_rows)
+        } else {
+            let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
+            let mut sql = format!("SELECT COUNT(*) FROM {}", dialect.qualified(&table));
+            if let Some(f) = tab.page.filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+                sql.push_str(&format!(" WHERE {f}"));
+            }
+            match self.conn.as_mut() {
+                Some(c) => match c.execute_query(&sql).await {
+                    Ok(r) => r.rows.first().and_then(|row| row.first()).and_then(|v| v.as_deref()).and_then(|v| v.trim().parse().ok()),
+                    Err(e) => return self.toast(format!("Could not count rows: {e}")),
+                },
+                None => return,
+            }
+        };
+        let Some(total) = total.filter(|n| *n > 0) else { return };
+        let offset = ((total - 1) / limit) * limit;
+        if let Some(t) = self.active_mut() {
+            t.page.offset = offset;
+        }
+        self.load_active().await;
     }
 
     async fn insert_submit(&mut self) {
@@ -1680,6 +1903,7 @@ impl Worker {
             }
             Err(e) => {
                 let m = e.to_string();
+                self.set_banner(&m, true);
                 ui(&self.w, move |st| st.set_insert_error(m.into()));
             }
         }
@@ -2106,7 +2330,6 @@ impl Worker {
     async fn switch_connection(&mut self, id: &str) {
         let Some(cfg) = self.connections.iter().find(|c| c.id == id).cloned() else { return };
         let pw = if cfg.remember_password { secrets::get(&cfg).unwrap_or_default() } else { String::new() };
-        self.disconnect();
         self.select_conn(id);
         ui(&self.w, |st| st.set_busy(true));
         match Conn::connect(cfg.clone(), &pw).await {
@@ -2160,37 +2383,36 @@ impl Worker {
         let c = &conn.config;
         let indexes: usize = conn.metadata.tables.iter().map(|t| t.indexes.len()).sum();
         let views = conn.metadata.tables.iter().filter(|t| matches!(t.kind, TableKind::View | TableKind::MaterializedView)).count();
+        let row = |l: &str, v: String| (l.to_string(), v);
         let mut meta = vec![
-            format!("Connection: {}", if c.mongo_uri.is_empty() { format!("{}@{}:{}/{}", c.username, c.host, c.port, c.database) } else { c.mongo_uri.clone() }),
-            format!("Engine: {} {}", c.db_type.label(), conn.server_version),
-            format!("Environment: {}{}", c.environment.label(), if self.protected() { " (destructive statements need confirmation)" } else { "" }),
-            format!(
-                "Tables: {} · Views: {} · Routines & sequences: {} · Indexes: {}",
-                conn.metadata.tables.len() - views,
-                views,
-                conn.metadata.objects.len(),
-                indexes
-            ),
+            row("Connection", if c.mongo_uri.is_empty() { format!("{}@{}:{}/{}", c.username, c.host, c.port, c.database) } else { c.mongo_uri.clone() }),
+            row("Engine", format!("{} {}", c.db_type.label(), conn.server_version)),
+            row("Environment", format!("{}{}", c.environment.label(), if self.protected() { " · destructive statements need confirmation" } else { "" })),
+            row("Tables", (conn.metadata.tables.len() - views).to_string()),
+            row("Views", views.to_string()),
+            row("Routines & sequences", conn.metadata.objects.len().to_string()),
+            row("Indexes", indexes.to_string()),
         ];
         if let Some(t) = self.active_tab().filter(|t| t.kind == Kind::Table) {
             if let Some(tab) = conn.table(&t.schema, &t.name) {
-                meta.push(String::new());
-                meta.push(format!("Selected: {}", tab.full_name()));
-                meta.push(format!(
-                    "{} columns{}{}",
-                    tab.columns.len(),
-                    tab.estimated_rows.map(|n| format!(" · ~{n} rows")).unwrap_or_default(),
-                    tab.size_bytes.map(|b| format!(" · {:.1} KB", b as f64 / 1024.0)).unwrap_or_default()
-                ));
+                meta.push(row("", String::new()));
+                meta.push(row(&format!("Selected: {}", tab.full_name()), String::new()));
+                meta.push(row("Columns", tab.columns.len().to_string()));
+                if let Some(n) = tab.estimated_rows {
+                    meta.push(row("Rows (estimate)", group_digits(n)));
+                }
+                if let Some(b) = tab.size_bytes {
+                    meta.push(row("Size", human_size(b)));
+                }
                 let pk: Vec<&str> = tab.primary_keys().iter().map(|c| c.name.as_str()).collect();
-                meta.push(format!("Primary key: {}", if pk.is_empty() { "none".to_string() } else { pk.join(", ") }));
+                meta.push(row("Primary key", if pk.is_empty() { "none".to_string() } else { pk.join(", ") }));
             }
         }
         ui(&self.w, move |st| {
             let items: Vec<EditItem> = log.into_iter().map(|(t, d, u)| EditItem { text: t.into(), detail: d.into(), can_undo: u }).collect();
             st.set_edit_items(ModelRc::new(VecModel::from(items)));
             st.set_undo_count(n_undo);
-            st.set_meta_lines(strs(meta));
+            st.set_meta_rows(ModelRc::new(VecModel::from(meta.into_iter().map(|(l, v)| MetaRow { label: l.into(), value: v.into() }).collect::<Vec<_>>())));
         });
     }
 
@@ -2967,6 +3189,8 @@ impl Worker {
             Cmd::UndoEntry(i) => self.undo_entry(i).await,
             Cmd::InspectorChanged(open, pinned) => self.inspector_changed(open, pinned),
             Cmd::SwitchDatabase(i) => self.switch_database(i).await,
+            Cmd::SwitchSession(i) => self.switch_session(i),
+            Cmd::CloseSession(i) => self.close_session(i),
 
             Cmd::FilterTree(f) => {
                 self.tree_filter = f;
@@ -3033,6 +3257,17 @@ impl Worker {
                     t.page.offset += t.page.limit;
                     self.load_active().await;
                 }
+            }
+            Cmd::FirstPage => {
+                if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table && t.page.offset > 0) {
+                    t.page.offset = 0;
+                    self.load_active().await;
+                }
+            }
+            Cmd::LastPage => self.last_page().await,
+            Cmd::DraftSubmit(v) => {
+                self.insert_vals = v;
+                self.insert_submit().await;
             }
             Cmd::PrevPage => {
                 if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table && t.page.offset > 0) {

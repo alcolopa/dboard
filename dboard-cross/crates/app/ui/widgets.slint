@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
 
 export component Btn inherits Rectangle {
     in property <string> text;
@@ -68,4 +69,94 @@ export component Modal inherits Rectangle {
             @children
         }
     }
+}
+
+// Stroke icons (24x24 grid) drawn as vector paths, so they follow the theme and need no image files.
+export global Icons {
+    out property <string> undo: "M1 4v6h6 M3.51 15a9 9 0 1 0 2.13-9.36L1 10";
+    out property <string> history: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z M12 7v5l3 2";
+    out property <string> database: "M3 5c0-1.66 4.03-3 9-3s9 1.34 9 3-4.03 3-9 3-9-1.34-9-3Z M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3 M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5";
+    out property <string> refresh: "M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0 1 14.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0 0 20.49 15";
+    out property <string> inspector: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M15 3v18";
+    out property <string> settings: "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6";
+    out property <string> power: "M18.36 6.64a9 9 0 1 1-12.73 0 M12 2v10";
+    out property <string> pin: "M12 17v5 M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z";
+    out property <string> plus: "M12 5v14 M5 12h14";
+    out property <string> close: "M18 6 6 18 M6 6l12 12";
+    out property <string> first: "M17 18l-6-6 6-6 M7 6v12";
+    out property <string> prev: "M15 18l-6-6 6-6";
+    out property <string> next: "M9 18l6-6-6-6";
+    out property <string> last: "M7 18l6-6-6-6 M17 6v12";
+    out property <string> edit: "M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z";
+    out property <string> trash: "M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6 M10 11v6 M14 11v6";
+    out property <string> download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3";
+    out property <string> upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12";
+    out property <string> copy: "M11 9h9v11h-9Z M5 15H4V4h11v1";
+    out property <string> check: "M20 6 9 17l-5-5";
+    out property <string> search: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M21 21l-4.35-4.35";
+}
+
+export component Icon inherits Rectangle {
+    in property <string> d;
+    in property <color> tint: Theme.text;
+    in property <length> size: 16px;
+    in property <bool> filled: false;
+    width: size; height: size;
+    Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: root.d;
+        stroke: root.tint;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        fill: root.filled ? root.tint : transparent;
+    }
+}
+
+/// Icon-only button. Its `hint` shows in the status area while hovered (there are no native tooltips).
+export component IconBtn inherits Rectangle {
+    in property <string> d;
+    in property <string> hint;
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    in property <bool> danger: false;
+    in property <bool> primary: false;
+    in property <bool> filled: false;
+    in property <int> badge: 0;
+    in property <length> size: 30px;
+    callback clicked();
+    width: size; height: size;
+    border-radius: 6px;
+    background: !enabled ? transparent
+        : primary ? (ta.has-hover ? #4a6af0 : Theme.accent)
+        : danger && ta.has-hover ? Theme.err-bg
+        : active ? Theme.sel
+        : ta.has-hover ? Theme.hover : transparent;
+    opacity: enabled ? 1.0 : 0.35;
+    Icon {
+        d: root.d; filled: root.filled;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        tint: primary ? white : (danger && ta.has-hover ? Theme.err : (active ? Theme.accent : Theme.text));
+    }
+    if badge > 0: Rectangle {
+        x: parent.width - bt.preferred-width - 8px; y: 1px;
+        width: bt.preferred-width + 6px; height: 13px; border-radius: 6.5px; background: Theme.accent;
+        bt := Text { text: root.badge; color: white; font-size: 9px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { AppState.hint = ""; root.clicked(); }
+        changed has-hover => { AppState.hint = self.has-hover ? root.hint : ""; }
+    }
+}
+
+/// Keeps a fixed-size child centred on the cross axis of a layout.
+export component Slot inherits VerticalLayout {
+    alignment: center;
+    @children
+}
+
+export component Sep inherits Rectangle {
+    width: 1px; height: 18px; background: Theme.line;
 }

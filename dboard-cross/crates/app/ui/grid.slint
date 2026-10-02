@@ -1,6 +1,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState, GridCell, ColInfo } from "state.slint";
+import { Icons, IconBtn } from "widgets.slint";
 
 component GridCellView inherits Rectangle {
     in property <GridCell> cell;
@@ -201,6 +202,35 @@ export component DataGrid inherits Rectangle {
                             pointer-event(e) => {
                                 if e.kind == PointerEventKind.up { AppState.col-resized(c, AppState.col-widths[c]); }
                             }
+                        }
+                    }
+                }
+            }
+            // ---- new row, typed straight into the table ----
+            if AppState.draft-open: HorizontalLayout {
+                height: Theme.row-h + 8px;
+                Rectangle {
+                    width: 48px; background: Theme.sel; border-width: 0.5px; border-color: Theme.accent;
+                    IconBtn { x: 2px; y: 4px; size: 20px; d: Icons.check; primary: true; hint: "Insert row (Enter)"; clicked => { AppState.draft-submit(AppState.draft); } }
+                    IconBtn { x: 24px; y: 4px; size: 20px; d: Icons.close; hint: "Discard (Esc)"; clicked => { AppState.draft-open = false; } }
+                }
+                for hint[c] in AppState.draft-hints: Rectangle {
+                    width: AppState.col-widths[c];
+                    background: Theme.panel2; border-width: 0.5px; border-color: Theme.accent;
+                    clip: true;
+                    Text {
+                        x: 8px; width: parent.width - 12px; visible: dti.text == "";
+                        text: hint; color: Theme.dim; font-italic: true; font-size: 11px; overflow: elide; vertical-alignment: center;
+                    }
+                    dti := TextInput {
+                        x: 8px; width: parent.width - 12px;
+                        color: Theme.text; single-line: true; vertical-alignment: center;
+                        init => { if c == 0 { self.focus(); } }
+                        edited => { AppState.draft[c] = self.text; }
+                        accepted => { AppState.draft-submit(AppState.draft); }
+                        key-pressed(e) => {
+                            if e.text == Key.Escape { AppState.draft-open = false; return accept; }
+                            reject
                         }
                     }
                 }

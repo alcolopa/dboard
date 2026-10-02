@@ -1,7 +1,8 @@
 import { Palette, ComboBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge } from "widgets.slint";
+import { Btn, Badge, Icons, IconBtn, Slot, Sep } from "widgets.slint";
+import { SessionBar } from "sessions.slint";
 import { ConnectionManager } from "connections.slint";
 import { Sidebar } from "sidebar.slint";
 import { TabBar } from "tabs.slint";
@@ -51,23 +52,34 @@ component Workspace inherits VerticalLayout {
     }
     // footer
     if AppState.tab-kind >= 0: Rectangle {
-        height: 36px; background: Theme.panel;
+        height: 42px; background: Theme.panel;
+        Rectangle { height: 1px; background: Theme.line; }
         HorizontalLayout {
-            padding-left: 10px; padding-right: 10px; spacing: 6px;
-            if AppState.tab-kind == 0: Btn { text: "‹"; pad: 10px; clicked => { AppState.prev-page(); } }
-            if AppState.tab-kind == 0: Btn { text: "›"; pad: 10px; clicked => { AppState.next-page(); } }
-            if AppState.tab-kind == 0: ComboBox {
-                width: 84px; model: AppState.page-sizes; current-index: AppState.page-size-index;
-                selected => { AppState.set-page-size(self.current-index); }
+            padding-left: 10px; padding-right: 10px; spacing: 4px;
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.first; hint: "First page"; enabled: AppState.row-offset > 0; clicked => { AppState.first-page(); } } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.prev; hint: "Previous page"; enabled: AppState.row-offset > 0; clicked => { AppState.prev-page(); } } }
+            if AppState.tab-kind == 0: Slot {
+                ComboBox {
+                    width: 84px; height: 28px; model: AppState.page-sizes; current-index: AppState.page-size-index;
+                    selected => { AppState.set-page-size(self.current-index); }
+                }
             }
-            Text { text: AppState.page-info + (AppState.tab-kind == 0 && AppState.timing != "" ? "  ·  " + AppState.timing : ""); color: Theme.dim; vertical-alignment: center; font-size: 12px; overflow: elide; horizontal-stretch: 1; min-width: 40px; }
-            if AppState.tab-kind == 3: Btn { text: "Copy definition"; pad: 9px; clicked => { AppState.copy-text(AppState.ddl-text); } }
-            if AppState.tab-kind == 0 && AppState.db-type == 2: Btn { text: "Edit document"; pad: 9px; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } }
-            if AppState.tab-kind == 0 && AppState.db-type != 2: Btn { text: "Edit row"; pad: 9px; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } }
-            if AppState.tab-kind == 0: Btn { text: "+ Row"; pad: 9px; clicked => { AppState.open-insert(); } }
-            if AppState.tab-kind == 0: Btn { text: "Delete row"; pad: 9px; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } }
-            if AppState.tab-kind == 0: Btn { text: "Import…"; pad: 9px; clicked => { AppState.open-transfer(2); } }
-            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Btn { text: "Export"; pad: 9px; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.next; hint: "Next page"; enabled: AppState.has-next; clicked => { AppState.next-page(); } } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.last; hint: "Last page"; clicked => { AppState.last-page(); } } }
+            Rectangle { width: 6px; }
+            Text {
+                text: AppState.hint != "" ? AppState.hint : AppState.page-info + (AppState.tab-kind == 0 && AppState.timing != "" ? "  ·  " + AppState.timing : "");
+                color: AppState.hint != "" ? Theme.text : Theme.dim;
+                vertical-alignment: center; font-size: 12px; overflow: elide; horizontal-stretch: 1; min-width: 40px;
+            }
+            if AppState.tab-kind == 3: Slot { IconBtn { d: Icons.copy; hint: "Copy definition"; clicked => { AppState.copy-text(AppState.ddl-text); } } }
+            if AppState.tab-kind == 0 && AppState.db-type == 2: Slot { IconBtn { d: Icons.edit; hint: "Edit document"; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } } }
+            if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.plus; hint: "Add row"; primary: true; clicked => { AppState.open-insert(); } } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.trash; hint: "Delete selected row"; danger: true; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } } }
+            if AppState.tab-kind == 0: Slot { Sep { } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }
         }
     }
 }
@@ -160,33 +172,42 @@ export component App inherits Window {
         if !AppState.connected: ConnectionManager { }
 
         if AppState.connected: VerticalLayout {
+            SessionBar { }
             // ---- top bar ----
             Rectangle {
-                height: 42px; background: Theme.panel;
+                height: 44px; background: Theme.panel;
                 HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    Rectangle {
-                        width: envl.preferred-width + 18px; height: 22px; y: 10px; border-radius: 11px; background: AppState.env-color;
-                        envl := Text { text: AppState.env-label; color: white; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                    padding-left: 12px; padding-right: 12px; spacing: 8px;
+                    Slot {
+                        Rectangle {
+                            width: envl.preferred-width + 18px; height: 22px; border-radius: 11px; background: AppState.env-color;
+                            envl := Text { text: AppState.env-label; color: white; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
                     }
-                    Text { text: AppState.conn-name; color: Theme.text; font-weight: 700; vertical-alignment: center; }
-                    if AppState.databases.length > 0: ComboBox {
-                        width: 190px; y: 7px; height: 28px;
-                        model: AppState.databases;
-                        current-index: AppState.database-index;
-                        selected => { AppState.switch-database(self.current-index); }
+                    if AppState.databases.length > 0: Slot {
+                        ComboBox {
+                            width: 190px; height: 28px;
+                            model: AppState.databases;
+                            current-index: AppState.database-index;
+                            selected => { AppState.switch-database(self.current-index); }
+                        }
                     }
-                    Text { text: AppState.status; color: Theme.dim; vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; }
-                    Btn { text: "Undo (" + AppState.undo-count + ")"; enabled: AppState.undo-count > 0; y: 7px; clicked => { AppState.undo(); } }
-                    Btn { text: "History"; y: 7px; clicked => { AppState.drawer-open = !AppState.drawer-open; } }
-                    dbbtn := Btn {
-                        text: "Database ▾"; y: 7px;
-                        clicked => { AppState.ctx("dbmenu", 0, 0, self.absolute-position.x, self.absolute-position.y + self.height); }
+                    Text {
+                        text: AppState.hint != "" ? AppState.hint : AppState.status;
+                        color: AppState.hint != "" ? Theme.text : Theme.dim;
+                        vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; min-width: 40px;
                     }
-                    Btn { text: "Refresh"; y: 7px; clicked => { AppState.refresh(); } }
-                    Btn { text: AppState.inspector-open ? "Inspector ✓" : "Inspector"; y: 7px; clicked => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
-                    Btn { text: "Settings"; y: 7px; clicked => { AppState.open-settings(); } }
-                    Btn { text: "Disconnect"; y: 7px; clicked => { AppState.disconnect(); } }
+                    Slot { IconBtn { d: Icons.undo; hint: "Undo last change (" + Theme.mod + "+Z)"; badge: AppState.undo-count; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } } }
+                    Slot { IconBtn { d: Icons.history; hint: "Query history & saved queries"; active: AppState.drawer-open; clicked => { AppState.drawer-open = !AppState.drawer-open; } } }
+                    Slot {
+                        dbbtn := IconBtn {
+                            d: Icons.database; hint: "Database tools: users, export, import";
+                            clicked => { AppState.ctx("dbmenu", 0, 0, self.absolute-position.x, self.absolute-position.y + self.height); }
+                        }
+                    }
+                    Slot { IconBtn { d: Icons.inspector; hint: "Inspector"; active: AppState.inspector-open; clicked => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } } }
+                    Slot { IconBtn { d: Icons.settings; hint: "Settings (" + Theme.mod + "+,)"; clicked => { AppState.open-settings(); } } }
+                    Slot { IconBtn { d: Icons.power; hint: "Disconnect"; danger: true; clicked => { AppState.close-session(-1); } } }
                 }
             }
             Rectangle {
