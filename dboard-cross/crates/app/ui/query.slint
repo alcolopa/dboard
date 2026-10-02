@@ -12,6 +12,7 @@ export component QueryEditor inherits VerticalLayout {
         TextEdit {
             width: parent.width; height: parent.height;
             text <=> AppState.query-text;
+            font-family: "JetBrains Mono";
             font-size: AppState.set-font-size * 1px;
             edited(t) => { AppState.query-edited(t); }
         }
