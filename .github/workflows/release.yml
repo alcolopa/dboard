@@ -95,7 +95,8 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install tools
-        run: pacman -Syu --noconfirm git rust
+        # makepkg checks the PKGBUILD's runtime depends=() too, so they must be installed in the container.
+        run: pacman -Syu --noconfirm git rust fontconfig libxkbcommon libx11 libxcb wayland libxkbcommon-x11
       - uses: actions/checkout@v4
       - name: makepkg
         run: |
