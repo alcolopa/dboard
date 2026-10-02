@@ -1,6 +1,7 @@
 import { LineEdit, ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState, TreeItem } from "state.slint";
+import { Icons, IconBtn, Slot } from "widgets.slint";
 
 component KindBadge inherits Rectangle {
     in property <int> kind;
@@ -17,10 +18,16 @@ export component Sidebar inherits Rectangle {
     background: Theme.panel;
     VerticalLayout {
         padding: 8px; spacing: 8px;
-        LineEdit {
-            placeholder-text: "Filter objects";
-            text <=> AppState.tree-filter;
-            edited(t) => { AppState.filter-tree(t); }
+        // Outside the ListView, so it stays put while the object list scrolls.
+        HorizontalLayout {
+            spacing: 6px;
+            LineEdit {
+                placeholder-text: "Filter objects";
+                text <=> AppState.tree-filter;
+                edited(t) => { AppState.filter-tree(t); }
+                horizontal-stretch: 1;
+            }
+            Slot { IconBtn { d: Icons.refresh; hint: "Refresh tables & metadata (" + Theme.mod + "+R)"; clicked => { AppState.refresh(); } } }
         }
         if AppState.tree.length == 0: Text {
             text: AppState.tree-filter == "" ? "No tables found." : "No matches.";

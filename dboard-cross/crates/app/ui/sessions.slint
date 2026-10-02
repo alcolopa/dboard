@@ -1,0 +1,48 @@
+import { Theme } from "theme.slint";
+import { AppState } from "state.slint";
+import { Icons, Icon, IconBtn } from "widgets.slint";
+
+// One tab per open connection, above everything else.
+export component SessionBar inherits Rectangle {
+    height: 36px;
+    background: Theme.bg;
+    property <length> tab-w: max(120px, min(200px, (root.width - 60px) / max(AppState.sessions.length, 1) - 4px));
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+    Flickable {
+        x: 0px; width: parent.width - 44px; height: parent.height;
+        content-width: AppState.sessions.length * (root.tab-w + 4px) + 8px;
+        content-height: self.height;
+        for s[i] in AppState.sessions: Rectangle {
+            x: 8px + i * (root.tab-w + 4px); y: 5px;
+            width: root.tab-w; height: 28px;
+            border-radius: 6px;
+            background: s.active ? Theme.panel : (ta.has-hover ? Theme.hover : transparent);
+            border-width: s.active ? 1px : 0px;
+            border-color: Theme.line;
+            Rectangle { x: 10px; y: 10px; width: 8px; height: 8px; border-radius: 4px; background: s.color; }
+            Text {
+                x: 26px; width: parent.width - 26px - 26px;
+                text: s.name; overflow: elide; vertical-alignment: center; font-size: 12px;
+                font-weight: s.active ? 700 : 400;
+                color: s.active ? Theme.text : Theme.dim;
+            }
+            ta := TouchArea {
+                clicked => { AppState.switch-session(i); }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.middle { AppState.close-session(i); }
+                }
+            }
+            Rectangle {
+                x: parent.width - 24px; y: 6px; width: 16px; height: 16px; border-radius: 8px;
+                background: xa.has-hover ? Theme.panel2 : transparent;
+                Icon { d: Icons.close; size: 10px; tint: Theme.dim; x: 3px; y: 3px; }
+                xa := TouchArea { clicked => { AppState.close-session(i); } }
+            }
+        }
+    }
+    IconBtn {
+        x: parent.width - 38px; y: 3px; size: 30px;
+        d: Icons.plus; hint: "Open another connection";
+        clicked => { AppState.connected = false; }
+    }
+}

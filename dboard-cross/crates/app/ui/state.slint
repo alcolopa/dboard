@@ -2,6 +2,8 @@ export struct GridCell { text: string, is-null: bool, state: int }
 export struct ColInfo { name: string, type-name: string, pk: bool, fk: string, is-bool: bool, is-json: bool }
 export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string }
 export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
+export struct SessionTab { name: string, color: color, active: bool }
+export struct MetaRow { label: string, value: string }
 export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool }
 export struct HistoryItem { sql: string, meta: string, ok: bool }
 export struct SavedItem { id: string, name: string, folder: string, sql: string }
@@ -92,6 +94,13 @@ export global AppState {
     in-out property <bool> connected;
     in property <bool> busy;
     in property <string> toast;
+    // Text shown in place of the status while an icon button is hovered.
+    in-out property <string> hint;
+
+    // ---- open connections (one tab each) ----
+    in property <[SessionTab]> sessions;
+    callback switch-session(int);
+    callback close-session(int);
 
     // ---- connection manager ----
     in property <[ConnItem]> connections;
@@ -166,6 +175,15 @@ export global AppState {
     in property <string> sort-column;
     in property <bool> sort-asc: true;
     in property <bool> editable;
+    in property <bool> has-next;
+    callback first-page();
+    callback last-page();
+
+    // Inline "new row" at the top of the grid.
+    in-out property <bool> draft-open;
+    in property <[string]> draft-hints;
+    in-out property <[string]> draft;
+    callback draft-submit([string]);
     in property <string> banner;
     in property <bool> banner-error;
     in-out property <string> filter-text;
@@ -214,7 +232,7 @@ export global AppState {
     in property <int> undo-count;
     callback inspector-changed(bool, bool);
     callback undo-entry(int);
-    in property <[string]> meta-lines;
+    in property <[MetaRow]> meta-rows;
     callback clear-activity();
 
     // ---- history & saved queries ----
