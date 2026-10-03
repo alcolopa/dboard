@@ -191,3 +191,41 @@ fn main() {
 
     app.run().expect("run event loop");
 }
+
+#[cfg(test)]
+mod ui_tests {
+    use super::*;
+
+    /// The whole window builds headlessly and the state bindings the worker relies on behave.
+    #[test]
+    fn window_builds_and_state_defaults_are_sane() {
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().expect("window builds");
+        let st = app.global::<AppState>();
+        assert!(!st.get_connected());
+        assert!(!st.get_in_tx());
+        assert_eq!(slint::Model::row_count(&st.get_sessions()), 0);
+
+        // Callbacks the Rust side wires must exist and be invocable without a worker attached.
+        st.invoke_new_conn();
+        st.invoke_conn_filter("x".into());
+    }
+
+    #[test]
+    fn edit_menu_targets_grid_when_no_text_field_is_focused() {
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().unwrap();
+        let st = app.global::<AppState>();
+        let copied = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = copied.clone();
+        st.on_copy_selection(move |_, _, _, _, _| flag.set(true));
+        st.set_sel_kind(1);
+        st.invoke_edit(1); // Copy
+        assert!(copied.get());
+        // With a text field focused the grid is left alone.
+        copied.set(false);
+        st.set_text_focus(1);
+        st.invoke_edit(1);
+        assert!(!copied.get());
+    }
+}

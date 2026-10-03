@@ -1085,6 +1085,7 @@ dependencies = [
  "arboard",
  "chrono",
  "dboard-core",
+ "i-slint-backend-testing",
  "rfd",
  "serde_json",
  "slint",
