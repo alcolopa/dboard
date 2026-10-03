@@ -37,6 +37,10 @@ impl Worker {
                     return;
                 }
                 let mut v = vec![item("Close", "close"), item("Close other connections", "close-others"), sep()];
+                if i != self.cur {
+                    v.push(item("Schema diff: make this match the current connection", "schema-diff"));
+                    v.push(sep());
+                }
                 if i > 0 {
                     v.push(item("Move left", "left"));
                 }
@@ -129,6 +133,7 @@ impl Worker {
             CtxTarget::Tree(i) => self.tree_action(i, action).await,
             CtxTarget::Session(i) => match action {
                 "close" => self.close_session(i as i32),
+                "schema-diff" => self.schema_diff(i).await,
                 "close-others" => {
                     self.switch_session(i);
                     for j in (0..self.sess_meta.len()).rev() {

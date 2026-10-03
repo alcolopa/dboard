@@ -105,3 +105,37 @@ mod tests {
         assert_eq!((added, removed, same), (0, 1, 1));
     }
 }
+
+impl Worker {
+    /// Open a script that makes connection `target` match the current one (tables and columns).
+    pub(crate) async fn schema_diff(&mut self, target: usize) {
+        if target == self.cur {
+            return;
+        }
+        let Some(Some(other)) = self.parked.get(target) else { return };
+        let Some(dst) = other.conn.as_ref() else { return };
+        let Some(src) = self.conn.as_ref() else { return };
+        if src.db_type() != dst.db_type() {
+            return self.toast("Schema diff needs two connections of the same database type.");
+        }
+        if src.db_type() == DbType::Mongo {
+            return self.toast("Schema diff is for SQL databases.");
+        }
+        let target_name = self.sess_meta.get(target).map(|m| m.0.clone()).unwrap_or_default();
+        let diff = dboard_core::schemadiff::diff(&src.metadata.tables, &dst.metadata.tables);
+        let mut ddls: HashMap<String, String> = HashMap::new();
+        for t in &diff.create {
+            let text = match self.conn.as_mut() {
+                Some(c) => c.ddl(&t.schema, &t.name).await.unwrap_or_else(|e| format!("-- could not read the definition of {}: {e}", t.name)),
+                None => String::new(),
+            };
+            ddls.insert(t.name.clone(), text);
+        }
+        let sql = dboard_core::schemadiff::render(&diff, self.dialect(), &|t| ddls.get(&t.name).cloned().unwrap_or_default());
+        let mut tab = Tab::new(Kind::Routine, format!("Schema diff → {target_name}"), self.default_page_size());
+        tab.ddl = sql;
+        self.add_tab(tab);
+        self.show_active();
+        self.toast(if diff.is_empty() { "The schemas already match.".to_string() } else { format!("Script ready: run it on “{target_name}”.") });
+    }
+}

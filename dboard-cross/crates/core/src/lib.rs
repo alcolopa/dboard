@@ -12,6 +12,7 @@ pub mod mysql;
 pub mod pg;
 pub mod split;
 pub mod safety;
+pub mod schemadiff;
 pub mod sql;
 pub mod tunnel;
 pub mod url;
