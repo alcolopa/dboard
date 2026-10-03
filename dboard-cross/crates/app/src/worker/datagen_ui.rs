@@ -22,6 +22,9 @@ impl Worker {
         if !matches!(table.kind, TableKind::Table) {
             return self.toast("Rows can only be generated into tables.");
         }
+        if !self.hook_gate(&format!("GENERATE {count} rows into {}.{}", tab.schema, tab.name)) {
+            return;
+        }
         let d = self.dialect();
         // Pools of real parent keys for foreign-key columns.
         let mut pools: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();

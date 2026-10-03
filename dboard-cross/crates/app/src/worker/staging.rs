@@ -109,6 +109,11 @@ impl Worker {
         let Some(i) = self.active else { return };
         let tab = self.tabs[i].clone();
         let sql = !self.is_mongo();
+        if !self.hook_gate(&format!("UPDATE {}.{} ({} staged change(s))", tab.schema, tab.name, tab.staged.len())) {
+            let msg = self.tabs.get(i).map(|t| t.banner.clone()).unwrap_or_default();
+            ui(&self.w, move |st| st.set_review_error(msg.into()));
+            return;
+        }
         let Some(conn) = self.conn.as_mut() else { return };
         let own_tx = !conn.in_transaction() && sql;
         let fail = |w: &Weak<App>, msg: String| ui(w, move |st| st.set_review_error(msg.into()));

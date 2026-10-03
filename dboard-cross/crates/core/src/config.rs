@@ -240,6 +240,26 @@ pub struct AuditEntry {
     pub text: String,
 }
 
+impl Store {
+    /// Hooks from `hooks.json` (missing file = none). A broken file is reported, not ignored.
+    pub fn load_hooks(&self) -> Result<Vec<crate::hooks::Hook>, String> {
+        match std::fs::read_to_string(self.dir.join("hooks.json")) {
+            Ok(text) => crate::hooks::parse(&text),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    /// Path of `hooks.json`, creating a commented sample the first time.
+    pub fn hooks_path(&self) -> std::path::PathBuf {
+        let p = self.dir.join("hooks.json");
+        if !p.exists() {
+            let _ = std::fs::create_dir_all(&self.dir);
+            let _ = std::fs::write(&p, crate::hooks::SAMPLE);
+        }
+        p
+    }
+}
+
 const AUDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 impl Store {

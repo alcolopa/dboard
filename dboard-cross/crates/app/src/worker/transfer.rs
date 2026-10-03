@@ -302,6 +302,10 @@ impl Worker {
         let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
         let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
         let all_cols: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
+        if !self.hook_gate(&format!("IMPORT rows into {}.{} from {path}", tab.schema, tab.name)) {
+            let why = self.tabs.get(self.active.unwrap_or(0)).map(|t| t.banner.clone()).unwrap_or_default();
+            return self.xfer_done(String::new(), why);
+        }
         let stop_first = self.xfer_stop_first;
         ui(&self.w, |st| {
             st.set_xfer_busy(true);

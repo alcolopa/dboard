@@ -7,6 +7,7 @@ pub mod creds;
 pub mod driver;
 pub mod edit;
 pub mod error;
+pub mod hooks;
 pub mod model;
 pub mod mongo;
 pub mod mysql;

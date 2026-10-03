@@ -122,6 +122,16 @@ impl Worker {
                 self.push_settings();
                 self.toast(if h == 0 { "Automatic backups off.".to_string() } else { format!("Backing up every {h} h while dboard is open, keeping the last {k}.") });
             }
+            Cmd::OpenHooks => {
+                let path = self.store.hooks_path();
+                #[cfg(target_os = "macos")]
+                let _ = std::process::Command::new("open").arg(&path).spawn();
+                #[cfg(target_os = "windows")]
+                let _ = std::process::Command::new("cmd").args(["/C", "start", ""]).arg(&path).spawn();
+                #[cfg(all(unix, not(target_os = "macos")))]
+                let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                self.toast(format!("Hooks file: {}", path.display()));
+            }
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

@@ -143,6 +143,9 @@ impl Worker {
         if self.read_only() && !self.is_read_only_text(&text) {
             return self.set_banner("This connection is read-only: only queries that read data can run.", true);
         }
+        if !self.is_read_only_text(&text) && !self.hook_gate(&text) {
+            return;
+        }
         if !self.is_mongo() && self.protected() && safety::is_destructive(&text) {
             let preview = one_line(&text);
             return self.ask(Pending::Query(text), "Destructive statement".into(), preview);

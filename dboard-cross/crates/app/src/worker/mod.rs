@@ -22,6 +22,7 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    OpenHooks,
     BackupNow,
     BackupTick,
     SetBackup(u32, u32),
@@ -603,6 +604,45 @@ impl Worker {
         });
     }
 
+    fn hook_payload(&self, event: &str, statement: &str) -> serde_json::Value {
+        let (connection, database) = self.conn.as_ref().map(|c| (c.config.display_name(), c.config.database.clone())).unwrap_or_default();
+        serde_json::json!({ "event": event, "connection": connection, "environment": self.env.label(), "database": database, "statement": statement })
+    }
+
+    /// Run `before_write` hooks. `false` means a hook vetoed the write (the reason is shown) or the
+    /// hooks file is broken, which is treated as a veto so a typo cannot silently disable a policy.
+    pub(crate) fn hook_gate(&mut self, statement: &str) -> bool {
+        let hooks = match self.store.load_hooks() {
+            Ok(h) => h,
+            Err(e) => {
+                self.set_banner(&e, true);
+                return false;
+            }
+        };
+        let payload = self.hook_payload("before_write", statement);
+        for h in hooks.iter().filter(|h| h.event == "before_write") {
+            let out = dboard_core::hooks::run(h, &payload);
+            if !out.ok {
+                let why = if out.output.is_empty() { "no reason given".to_string() } else { out.output };
+                self.set_banner(&format!("Blocked by a hook: {why}"), true);
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Fire-and-forget hooks for an event (they cannot block or veto).
+    fn hooks_background(&self, event: &str, statement: &str) {
+        let Ok(hooks) = self.store.load_hooks() else { return };
+        let payload = self.hook_payload(event, statement);
+        for h in hooks.into_iter().filter(|h| h.event == event) {
+            let payload = payload.clone();
+            std::thread::spawn(move || {
+                let _ = dboard_core::hooks::run(&h, &payload);
+            });
+        }
+    }
+
     /// Record statements that change data or structure in the local audit trail.
     fn audit(&self, what: &str) {
         let first = what.trim_start().split_whitespace().next().unwrap_or("").to_uppercase();
@@ -613,6 +653,7 @@ impl Worker {
         }
         let connection = self.sess_meta.get(self.cur).map(|m| m.0.clone()).unwrap_or_default();
         self.store.append_audit(&dboard_core::config::AuditEntry { at: config::now_secs(), connection, environment: self.env.label().to_string(), text: what.trim().to_string() });
+        self.hooks_background("after_write", what.trim());
     }
 
     fn log_activity(&mut self, ms: Option<f64>, what: &str) {

@@ -218,6 +218,7 @@ impl Worker {
             let _ = conn.set_statement_timeout(secs as u64 * 1000).await;
         }
         self.conn = Some(conn);
+        self.hooks_background("on_connect", "");
         self.load_databases().await;
         self.show_session();
     }
@@ -358,6 +359,9 @@ impl Worker {
         let i = if idx < 0 { self.cur } else { idx as usize };
         if i >= self.sess_meta.len() {
             return;
+        }
+        if i == self.cur {
+            self.hooks_background("on_disconnect", "");
         }
         self.sess_meta.remove(i);
         self.sess_ids.remove(i);

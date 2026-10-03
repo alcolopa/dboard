@@ -170,6 +170,7 @@ export component App inherits Window {
         Menu {
             title: "Help";
             MenuItem { title: "Check for Updates…"; activated => { AppState.check-updates(); } }
+            MenuItem { title: "Edit Hooks File…"; activated => { AppState.open-hooks(); } }
             MenuItem { title: "Release Notes"; activated => { AppState.open-link("https://github.com/alcolopa/dboard/releases"); } }
         }
         Menu {

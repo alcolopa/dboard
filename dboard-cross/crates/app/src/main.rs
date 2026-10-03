@@ -67,6 +67,7 @@ fn main() {
     wire!(on_open_audit, | | Cmd::OpenAudit);
     wire!(on_backup_now, | | Cmd::BackupNow);
     wire!(on_set_backup, |h, k| Cmd::SetBackup(h.max(0) as u32, k.max(1) as u32));
+    wire!(on_open_hooks, | | Cmd::OpenHooks);
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));

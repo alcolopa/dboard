@@ -24,6 +24,9 @@ impl Worker {
         if tab.kind != Kind::Table || !tab.editable {
             return Err("This table cannot be edited.".into());
         }
+        if !(tab.stage && !self.is_mongo()) && !self.hook_gate(&format!("UPDATE {}.{} SET {}", tab.schema, tab.name, tab.cols.get(c).map(|c| c.name.as_str()).unwrap_or(""))) {
+            return Ok(false);
+        }
         let (Some(col), Some(row)) = (tab.cols.get(c).cloned(), tab.rows.get(r).cloned()) else { return Ok(false) };
         let new: Cell = if null { None } else { Some(text) };
         if row.get(c) == Some(&new) {
@@ -366,6 +369,9 @@ impl Worker {
             Some(Pending::Explain(sql, a)) => self.run_explain(sql, a).await,
             Some(Pending::DeleteRow(r)) => {
                 let (Some(tab), Some(row)) = (self.active_tab().cloned(), self.active_tab().and_then(|t| t.rows.get(r).cloned())) else { return };
+                if !self.hook_gate(&format!("DELETE FROM {}.{}", tab.schema, tab.name)) {
+                    return;
+                }
                 let res = match self.conn.as_mut() {
                     Some(conn) => conn.delete_row(&tab.schema, &tab.name, &row).await,
                     None => return,
