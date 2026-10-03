@@ -34,9 +34,38 @@ jobs:
       - name: Build
         working-directory: dboard-cross
         run: cargo build --release -p dboard
+      # Optional Developer ID signing + notarization. Skipped (ad-hoc signing) unless these secrets exist:
+      # MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD, MACOS_SIGN_IDENTITY ("Developer ID Application: …"),
+      # APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD (app-specific password).
+      - name: Import signing certificate
+        if: ${{ env.MACOS_CERT_P12 != '' }}
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          echo "$MACOS_CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm cert.p12
       - name: Bundle dboard.app
         working-directory: dboard-cross
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: packaging/macos/bundle.sh ../dboard.app "$TAG"
+      - name: Notarize
+        if: ${{ env.APPLE_ID != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent dboard.app notarize.zip
+          xcrun notarytool submit notarize.zip --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple dboard.app
+          rm notarize.zip
       - name: Zip app bundle
         run: ditto -c -k --sequesterRsrc --keepParent dboard.app "dboard-${TAG}-macos-${{ matrix.arch }}.zip"
       - uses: softprops/action-gh-release@v2

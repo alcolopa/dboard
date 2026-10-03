@@ -26,5 +26,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 # Ad-hoc sign the whole bundle (no Developer ID needed). Without a sealed signature, Apple Silicon
 # Macs report a downloaded app as "damaged and can't be opened". Gatekeeper still warns (not notarized).
-codesign --force --deep --sign - "$APP"
+if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
+  # Developer ID signing with the hardened runtime (required for notarization).
+  codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+fi
 echo "Built $APP"
