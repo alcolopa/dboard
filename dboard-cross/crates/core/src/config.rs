@@ -222,6 +222,51 @@ pub struct HistoryEntry {
     pub ok: bool,
 }
 
+/// One line of the local audit trail of write statements.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct AuditEntry {
+    pub at: u64,
+    pub connection: String,
+    pub environment: String,
+    pub text: String,
+}
+
+const AUDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+impl Store {
+    /// Append to `audit.log` (one JSON object per line). Never fails the caller; the file is
+    /// rotated to `audit.log.1` past 5 MB so it cannot grow without bound.
+    pub fn append_audit(&self, e: &AuditEntry) {
+        use std::io::Write;
+        let _ = std::fs::create_dir_all(&self.dir);
+        let path = self.dir.join("audit.log");
+        if std::fs::metadata(&path).map(|m| m.len() > AUDIT_MAX_BYTES).unwrap_or(false) {
+            let _ = std::fs::rename(&path, self.dir.join("audit.log.1"));
+        }
+        let Ok(line) = serde_json::to_string(e) else { return };
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+
+    /// Newest first, at most `limit` entries, across the current and the rotated file.
+    pub fn read_audit(&self, limit: usize) -> Vec<AuditEntry> {
+        let mut out: Vec<AuditEntry> = Vec::new();
+        for name in ["audit.log", "audit.log.1"] {
+            let Ok(text) = std::fs::read_to_string(self.dir.join(name)) else { continue };
+            let mut part: Vec<AuditEntry> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            part.reverse();
+            out.extend(part);
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out.truncate(limit);
+        out
+    }
+}
+
 pub const FOLDERS: [&str; 5] = ["General", "Users", "Analytics", "Production", "Debugging"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -274,6 +319,25 @@ pub mod secrets {
                 let _ = e.delete_credential();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn audit_entries_round_trip_newest_first() {
+        let dir = std::env::temp_dir().join(format!("dboard-audit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::at(&dir);
+        for (i, text) in ["INSERT a", "UPDATE b", "DROP c"].iter().enumerate() {
+            s.append_audit(&AuditEntry { at: i as u64, connection: "prod".into(), environment: "Production".into(), text: text.to_string() });
+        }
+        let got = s.read_audit(10);
+        assert_eq!(got.iter().map(|e| e.text.as_str()).collect::<Vec<_>>(), ["DROP c", "UPDATE b", "INSERT a"]);
+        assert_eq!(s.read_audit(2).len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

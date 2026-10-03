@@ -22,6 +22,7 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    OpenAudit,
     GenerateRows(usize),
     XferPreview(String, bool),
     XferMapPick(usize, usize),
@@ -226,6 +227,8 @@ pub(crate) struct Tab {
     col_filters: Vec<String>,
     /// Edit staging: queued cell edits waiting for review, the rows as loaded they apply to.
     stage: bool,
+    /// Unfiltered rows of a static result tab (pinned results, audit log), for in-memory filtering.
+    src_rows: Vec<Vec<Cell>>,
     staged: Vec<Staged>,
     orig_rows: std::collections::HashMap<usize, Vec<Cell>>,
 }
@@ -282,6 +285,7 @@ impl Tab {
             er: ErLayout::default(),
             col_filters: Vec::new(),
             stage: false,
+            src_rows: Vec::new(),
             staged: Vec::new(),
             orig_rows: std::collections::HashMap::new(),
         }
@@ -594,11 +598,24 @@ impl Worker {
         });
     }
 
+    /// Record statements that change data or structure in the local audit trail.
+    fn audit(&self, what: &str) {
+        let first = what.trim_start().split_whitespace().next().unwrap_or("").to_uppercase();
+        let sql_write = matches!(first.as_str(), "INSERT" | "UPDATE" | "DELETE" | "DROP" | "TRUNCATE" | "CREATE" | "ALTER" | "GRANT" | "REVOKE" | "REPLACE" | "MERGE" | "CALL" | "IMPORT" | "GENERATE");
+        let mongo_write = [".insert", ".update", ".delete", ".drop", ".remove", ".replace", ".bulkWrite", ".createIndex", "$out", "$merge"].iter().any(|w| what.contains(w));
+        if !(sql_write || mongo_write) {
+            return;
+        }
+        let connection = self.sess_meta.get(self.cur).map(|m| m.0.clone()).unwrap_or_default();
+        self.store.append_audit(&dboard_core::config::AuditEntry { at: config::now_secs(), connection, environment: self.env.label().to_string(), text: what.trim().to_string() });
+    }
+
     fn log_activity(&mut self, ms: Option<f64>, what: &str) {
         let line = match ms {
             Some(ms) => format!("{}  {:.1} ms  {}", hms(), ms, one_line(what)),
             None => format!("{}  {}", hms(), one_line(what)),
         };
+        self.audit(what);
         self.activity.insert(0, line);
         self.activity.truncate(500);
         let a = self.activity.clone();

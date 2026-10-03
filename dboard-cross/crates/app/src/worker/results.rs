@@ -14,6 +14,7 @@ impl Worker {
         p.cols = t.cols.clone();
         p.widths = t.widths.clone();
         p.rows = t.rows.clone();
+        p.src_rows = t.rows.clone();
         p.editable = false;
         p.page_info = format!("{} row(s) pinned {}", t.rows.len(), hms());
         self.add_tab(p);
@@ -37,6 +38,7 @@ impl Worker {
         let mut d = Tab::new(Kind::Pinned, format!("Diff: {} vs pinned", active.title), self.default_page_size());
         d.widths = auto_widths(&cols, &rows);
         d.cols = cols;
+        d.src_rows = rows.clone();
         d.rows = rows;
         d.page_info = format!("{added} added (+), {removed} removed (−), {same} unchanged");
         self.add_tab(d);
@@ -137,5 +139,31 @@ impl Worker {
         self.add_tab(tab);
         self.show_active();
         self.toast(if diff.is_empty() { "The schemas already match.".to_string() } else { format!("Script ready: run it on “{target_name}”.") });
+    }
+}
+
+impl Worker {
+    /// Show the local audit trail of write statements as a searchable, exportable grid.
+    pub(crate) fn open_audit(&mut self) {
+        let entries = self.store.read_audit(5000);
+        let when = |ts: u64| chrono::DateTime::from_timestamp(ts as i64, 0).map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_default();
+        let rows: Vec<Vec<Cell>> = entries.iter().map(|e| vec![Some(when(e.at)), Some(e.connection.clone()), Some(e.environment.clone()), Some(one_line(&e.text))]).collect();
+        let cols: Vec<ColMeta> = ["Time", "Connection", "Environment", "Statement"].iter().map(|n| ColMeta::plain(n)).collect();
+        let idx = match self.tabs.iter().position(|t| t.kind == Kind::Pinned && t.title == "Audit log") {
+            Some(i) => i,
+            None => {
+                self.add_tab(Tab::new(Kind::Pinned, "Audit log", self.default_page_size()));
+                self.tabs.len() - 1
+            }
+        };
+        let t = &mut self.tabs[idx];
+        t.widths = auto_widths(&cols, &rows).into_iter().enumerate().map(|(i, w)| if i == 3 { w.clamp(300.0, 900.0) } else { w }).collect();
+        t.cols = cols;
+        t.page_info = format!("{} write statement(s) recorded on this computer (newest first). Use the filter row to search.", rows.len());
+        t.src_rows = rows.clone();
+        t.rows = rows;
+        t.col_filters.clear();
+        self.active = Some(idx);
+        self.show_active();
     }
 }

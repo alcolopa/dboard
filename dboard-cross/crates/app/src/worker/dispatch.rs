@@ -39,6 +39,18 @@ impl Worker {
             }
             Cmd::OpenEr => self.open_er().await,
             Cmd::ErOpen(s, n) => self.open_table(&s, &n).await,
+            Cmd::ColFilter(c, text) if self.active_tab().is_some_and(|t| t.kind == Kind::Pinned) => {
+                if let Some(t) = self.active_mut() {
+                    if t.col_filters.len() <= c {
+                        t.col_filters.resize(c + 1, String::new());
+                    }
+                    t.col_filters[c] = text;
+                    let needles: Vec<String> = t.col_filters.iter().map(|f| f.trim().to_lowercase()).collect();
+                    t.rows = t.src_rows.iter().filter(|r| needles.iter().enumerate().all(|(i, n)| n.is_empty() || r.get(i).and_then(|c| c.as_deref()).is_some_and(|v| v.to_lowercase().contains(n)))).cloned().collect();
+                    t.page_info = format!("{} of {} row(s)", t.rows.len(), t.src_rows.len());
+                }
+                self.show_active();
+            }
             Cmd::ColFilter(c, text) => {
                 if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) {
                     if t.col_filters.len() <= c {
@@ -72,6 +84,7 @@ impl Worker {
             Cmd::XferPreview(p, h) => self.xfer_preview(p, h),
             Cmd::XferMapPick(i, j) => self.xfer_map_pick(i, j),
             Cmd::GenerateRows(n) => self.generate_rows(n, false).await,
+            Cmd::OpenAudit => self.open_audit(),
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

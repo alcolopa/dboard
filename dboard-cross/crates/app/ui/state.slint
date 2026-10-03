@@ -158,6 +158,7 @@ export global AppState {
     callback compare-result();
     callback generate-rows(int);
     in property <bool> read-only;
+    callback open-audit();
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

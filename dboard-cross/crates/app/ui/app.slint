@@ -86,7 +86,7 @@ component Workspace inherits VerticalLayout {
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.trash; hint: "Delete selected row"; danger: true; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } } }
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { Btn { text: AppState.stage-on ? "Staging: on" : "Staging: off"; clicked => { AppState.stage-toggle(); } } }
             if AppState.tab-kind == 0 && AppState.pending-count > 0: Slot { Btn { text: "Review " + AppState.pending-count + " change(s)"; primary: true; clicked => { AppState.review-open-request(); } } }
-            if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
+            if (AppState.tab-kind == 0 && AppState.db-type != 2) || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
             if AppState.tab-kind == 0: Slot { Sep { } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
             if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.pin; hint: "Pin this result so you can compare against it later"; enabled: AppState.rows.length > 0; clicked => { AppState.pin-result(); } } }
@@ -149,6 +149,7 @@ export component App inherits Window {
                 MenuItem { title: (AppState.timeout-secs == 120 ? "✓ " : "") + "2 minutes"; activated => { AppState.set-timeout(120); } }
                 MenuItem { title: (AppState.timeout-secs == 600 ? "✓ " : "") + "10 minutes"; activated => { AppState.set-timeout(600); } }
             }
+            MenuItem { title: "Audit Log"; enabled: AppState.connected; activated => { AppState.open-audit(); } }
             MenuItem { title: "ER Diagram"; enabled: AppState.connected && AppState.db-type != 2; activated => { AppState.open-er(); } }
             MenuItem { title: "Refresh"; activated => { AppState.refresh(); } }
             MenuItem { title: "Toggle Inspector"; activated => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }

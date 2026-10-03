@@ -63,6 +63,7 @@ fn main() {
     wire!(on_xfer_preview_request, |p, h| Cmd::XferPreview(p.to_string(), h));
     wire!(on_xfer_map_pick, |i, j| Cmd::XferMapPick(i.max(0) as usize, j.max(0) as usize));
     wire!(on_generate_rows, |n| Cmd::GenerateRows(n.max(0) as usize));
+    wire!(on_open_audit, | | Cmd::OpenAudit);
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));

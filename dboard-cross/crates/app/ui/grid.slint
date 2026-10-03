@@ -211,7 +211,7 @@ export component DataGrid inherits Rectangle {
                 }
             }
             // ---- per-column filter row (type, press Enter) ----
-            if AppState.filter-row-open && AppState.db-type != 2 && AppState.tab-kind == 0: HorizontalLayout {
+            if AppState.filter-row-open && ((AppState.db-type != 2 && AppState.tab-kind == 0) || AppState.tab-kind == 5): HorizontalLayout {
                 height: 28px;
                 Rectangle {
                     width: 48px; background: Theme.panel; border-width: 0.5px; border-color: Theme.line;
