@@ -81,43 +81,99 @@ impl Worker {
 
     pub(crate) async fn run_sql(&mut self, sql: String) {
         let Some(i) = self.active else { return };
-        let res = match self.conn.as_mut() {
-            Some(c) => c.execute_query(&sql).await,
-            None => return,
+        // SQL scripts with several statements get one result set per statement.
+        let stmts: Vec<String> = if self.is_mongo() {
+            vec![sql.clone()]
+        } else {
+            use dboard_core::split::{split_all, Stmt};
+            let parts: Vec<String> = split_all(self.dialect(), &sql)
+                .into_iter()
+                .filter_map(|s| match s {
+                    Stmt::Sql(t) if !t.trim().is_empty() => Some(t),
+                    _ => None,
+                })
+                .collect();
+            if parts.len() > 1 { parts } else { vec![sql.clone()] }
         };
-        match res {
-            Ok(r) => {
-                let total = r.rows.len();
-                let mut rows = r.rows;
-                rows.truncate(RESULT_CAP);
-                let cols: Vec<ColMeta> = r.columns.iter().map(|n| ColMeta::plain(n)).collect();
-                let t = &mut self.tabs[i];
-                t.widths = auto_widths(&cols, &rows);
-                t.cols = cols;
-                t.rows = rows;
-                t.editable = false;
-                t.banner = String::new();
-                t.banner_err = false;
-                t.page.offset = 0;
-                t.timing = format!("{:.1} ms", r.duration_ms);
-                t.page_info = if total > RESULT_CAP { format!("{total} rows (showing the first {RESULT_CAP})") } else { format!("{total} row(s)") };
-                self.record_history(&sql, r.duration_ms, true);
-                self.log_activity(Some(r.duration_ms), &sql);
-                if changes_schema(&sql) {
-                    if let Some(c) = self.conn.as_mut() {
-                        let _ = c.refresh_metadata().await;
-                    }
-                    self.rebuild_tree();
+        let multi = stmts.len() > 1;
+        let mut sets: Vec<ResultSet> = Vec::new();
+        let mut failure: Option<String> = None;
+        let mut total_ms = 0.0;
+        let mut schema_changed = false;
+        for (n, stmt) in stmts.iter().enumerate() {
+            let res = match self.conn.as_mut() {
+                Some(c) => c.execute_query(stmt).await,
+                None => return,
+            };
+            match res {
+                Ok(r) => {
+                    total_ms += r.duration_ms;
+                    let count = r.rows.len();
+                    let mut rows = r.rows;
+                    rows.truncate(RESULT_CAP);
+                    let cols: Vec<ColMeta> = r.columns.iter().map(|n| ColMeta::plain(n)).collect();
+                    let info = if count > RESULT_CAP { format!("{count} rows (showing the first {RESULT_CAP})") } else { format!("{count} row(s)") };
+                    let what = if cols.is_empty() { stmt.trim_start().split_whitespace().next().unwrap_or("OK").to_uppercase() } else { format!("{count} row(s)") };
+                    sets.push(ResultSet { label: format!("{}: {what}", n + 1), widths: auto_widths(&cols, &rows), cols, rows, info, timing: format!("{:.1} ms", r.duration_ms) });
+                    schema_changed |= changes_schema(stmt);
+                }
+                Err(e) => {
+                    failure = Some(if multi { format!("Statement {} failed: {e}", n + 1) } else { e.to_string() });
+                    break;
                 }
             }
-            Err(e) => {
+        }
+        match failure {
+            Some(msg) => {
                 let t = &mut self.tabs[i];
-                t.banner = e.to_string();
+                t.banner = msg.clone();
                 t.banner_err = true;
                 self.record_history(&sql, 0.0, false);
-                self.log_activity(None, &format!("ERROR {e}"));
+                self.log_activity(None, &format!("ERROR {msg}"));
+            }
+            None => {
+                // Show the last statement that returned columns (usually the final SELECT).
+                let idx = sets.iter().rposition(|s| !s.cols.is_empty()).unwrap_or(sets.len().saturating_sub(1));
+                let t = &mut self.tabs[i];
+                t.banner = String::new();
+                t.banner_err = false;
+                t.editable = false;
+                t.page.offset = 0;
+                if let Some(s) = sets.get(idx) {
+                    Self::apply_set(t, s);
+                }
+                if multi {
+                    t.timing = format!("{total_ms:.1} ms total");
+                }
+                t.results = if multi { sets } else { Vec::new() };
+                t.result_idx = idx;
+                self.record_history(&sql, total_ms, true);
+                self.log_activity(Some(total_ms), &sql);
             }
         }
+        if schema_changed {
+            if let Some(c) = self.conn.as_mut() {
+                let _ = c.refresh_metadata().await;
+            }
+            self.rebuild_tree();
+        }
+        self.show_active();
+    }
+
+    fn apply_set(t: &mut Tab, s: &ResultSet) {
+        t.cols = s.cols.clone();
+        t.widths = s.widths.clone();
+        t.rows = s.rows.clone();
+        t.page_info = s.info.clone();
+        t.timing = s.timing.clone();
+    }
+
+    pub(crate) fn pick_result(&mut self, idx: usize) {
+        let Some(i) = self.active else { return };
+        let t = &mut self.tabs[i];
+        let Some(s) = t.results.get(idx).cloned() else { return };
+        Self::apply_set(t, &s);
+        t.result_idx = idx;
         self.show_active();
     }
 

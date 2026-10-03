@@ -10,6 +10,7 @@ impl Worker {
     pub(crate) async fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::NewConn => self.new_conn(),
+            Cmd::PickResult(i) => self.pick_result(i),
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

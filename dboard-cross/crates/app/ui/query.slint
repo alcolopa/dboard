@@ -27,6 +27,15 @@ export component QueryEditor inherits VerticalLayout {
         Rectangle { horizontal-stretch: 1; }
         Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
     }
+    if AppState.result-labels.length > 1: HorizontalLayout {
+        spacing: 6px; alignment: start;
+        Text { text: "Results:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+        for l[i] in AppState.result-labels: Chip {
+            text: l;
+            fill: AppState.result-index == i ? Theme.accent : Theme.panel2;
+            clicked => { AppState.pick-result(i); }
+        }
+    }
     if AppState.db-type == 2: HorizontalLayout {
         spacing: 6px; alignment: start;
         Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }

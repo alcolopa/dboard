@@ -56,6 +56,7 @@ impl Worker {
                 st.set_ddl_text("".into());
                 st.set_selected_row(-1);
                 st.set_sel_kind(0);
+                st.set_result_labels(strs(Vec::new()));
             }
             Some(t) => {
                 let cols: Vec<ColInfo> = t
@@ -86,6 +87,8 @@ impl Worker {
                 st.set_ddl_text(t.ddl.into());
                 st.set_page_size_index(PAGE_SIZES.iter().position(|p| *p == t.page.limit).unwrap_or(2) as i32);
                 st.set_suggestions(strs(Vec::new()));
+                st.set_result_labels(strs(t.results.iter().map(|r| r.label.clone()).collect()));
+                st.set_result_index(t.result_idx as i32);
             }
         });
     }

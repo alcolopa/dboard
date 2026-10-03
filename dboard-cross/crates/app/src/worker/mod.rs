@@ -22,6 +22,7 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    PickResult(usize),
     TxCommit,
     TxRollback,
     ParseConnUrl(String),
@@ -192,6 +193,19 @@ pub(crate) struct Tab {
     page_info: String,
     timing: String,
     ddl: String,
+    /// One entry per statement when a query tab ran a multi-statement script.
+    results: Vec<ResultSet>,
+    result_idx: usize,
+}
+
+#[derive(Clone)]
+pub(crate) struct ResultSet {
+    label: String,
+    cols: Vec<ColMeta>,
+    widths: Vec<f32>,
+    rows: Vec<Vec<Cell>>,
+    info: String,
+    timing: String,
 }
 
 impl Tab {
@@ -215,6 +229,8 @@ impl Tab {
             page_info: String::new(),
             timing: String::new(),
             ddl: String::new(),
+            results: Vec::new(),
+            result_idx: 0,
         }
     }
 }
