@@ -118,7 +118,7 @@ export component ConnectionManager inherits Rectangle {
                 HorizontalLayout {
                     spacing: 12px;
                     Field { label: "Username"; horizontal-stretch: 1; EditLine { text <=> AppState.form.user; } }
-                    Field { label: "Password"; horizontal-stretch: 1; EditLine { input-type: password; text <=> AppState.form.password; } }
+                    Field { label: "Password  (or a reference: env:NAME · op://vault/item/field · aws-rds-iam · gcloud-sql-iam)"; horizontal-stretch: 1; EditLine { input-type: password; text <=> AppState.form.password; } }
                 }
                 if AppState.form.ssl-index > 0: HorizontalLayout {
                     spacing: 12px;

@@ -69,6 +69,8 @@ pub struct Conn {
 
 impl Conn {
     pub async fn connect(config: ConnectionConfig, password: &str) -> Result<Self> {
+        let password = crate::creds::resolve(&config, password).await?;
+        let password = password.as_str();
         let tunnel = Self::open_tunnel(&config).await?;
         let effective = Self::through(&config, tunnel.as_ref());
         let inner = match config.db_type {
@@ -398,6 +400,8 @@ impl Conn {
                 let name = db.ok_or_else(|| Error::Db("Pick a database.".into()))?;
                 let mut cfg = Self::through(&self.config, self.tunnel.as_ref());
                 cfg.database = name.to_string();
+                let password = crate::creds::resolve(&self.config, password).await?;
+                let password = password.as_str();
                 self.inner = Inner::Pg(Pg::connect(&cfg, password).await?);
                 if self.timeout_ms > 0 {
                     let ms = self.timeout_ms;

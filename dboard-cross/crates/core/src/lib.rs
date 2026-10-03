@@ -3,6 +3,7 @@
 
 pub mod admin;
 pub mod config;
+pub mod creds;
 pub mod driver;
 pub mod edit;
 pub mod error;
