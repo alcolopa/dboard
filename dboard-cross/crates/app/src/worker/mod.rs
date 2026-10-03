@@ -22,6 +22,9 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    CheckUpdates,
+    OpenLink(String),
+    UpdateResult(Result<(String, String), String>),
     PickResult(usize),
     TxCommit,
     TxRollback,

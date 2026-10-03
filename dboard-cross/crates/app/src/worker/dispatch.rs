@@ -11,6 +11,32 @@ impl Worker {
         match cmd {
             Cmd::NewConn => self.new_conn(),
             Cmd::PickResult(i) => self.pick_result(i),
+            Cmd::CheckUpdates => {
+                self.toast("Checking for updates…");
+                let tx = self.tx.clone();
+                std::thread::spawn(move || {
+                    let r = crate::update::latest_release().map(|r| (r.tag, r.url));
+                    let _ = tx.send(Cmd::UpdateResult(r));
+                });
+            }
+            Cmd::UpdateResult(r) => match r {
+                Ok((tag, url)) if crate::update::is_newer(&tag, env!("CARGO_PKG_VERSION")) => {
+                    let _ = crate::clipboard::set(&url);
+                    self.toast(format!("dboard {tag} is available. The download link was copied to your clipboard."));
+                }
+                Ok(_) => self.toast(format!("You are up to date (v{}).", env!("CARGO_PKG_VERSION"))),
+                Err(e) => self.toast(format!("Could not check for updates: {e}")),
+            },
+            Cmd::OpenLink(url) => {
+                if url.starts_with("https://") {
+                    #[cfg(target_os = "macos")]
+                    let _ = std::process::Command::new("open").arg(&url).spawn();
+                    #[cfg(target_os = "windows")]
+                    let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+                    #[cfg(all(unix, not(target_os = "macos")))]
+                    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                }
+            }
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

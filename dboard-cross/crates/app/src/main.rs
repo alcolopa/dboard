@@ -6,6 +6,7 @@ slint::include_modules!();
 mod clipboard;
 mod export;
 mod suggest;
+mod update;
 mod worker;
 
 use dboard_core::config::Store;
@@ -28,6 +29,8 @@ fn main() {
     }
 
     wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_check_updates, | | Cmd::CheckUpdates);
+    wire!(on_open_link, |u| Cmd::OpenLink(u.to_string()));
     wire!(on_pick_result, |i| Cmd::PickResult(i.max(0) as usize));
     wire!(on_tx_begin, | | Cmd::TxBegin);
     wire!(on_tx_commit, | | Cmd::TxCommit);

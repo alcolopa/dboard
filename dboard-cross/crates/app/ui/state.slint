@@ -121,6 +121,8 @@ export global AppState {
     callback tx-begin();
     callback tx-commit();
     callback tx-rollback();
+    callback check-updates();
+    callback open-link(string);
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

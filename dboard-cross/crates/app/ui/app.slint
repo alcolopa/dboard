@@ -141,6 +141,11 @@ export component App inherits Window {
             MenuItem { title: "Search Objects"; activated => { AppState.open-palette(true); } }
         }
         Menu {
+            title: "Help";
+            MenuItem { title: "Check for Updates…"; activated => { AppState.check-updates(); } }
+            MenuItem { title: "Release Notes"; activated => { AppState.open-link("https://github.com/alcolopa/dboard/releases"); } }
+        }
+        Menu {
             title: "Tab";
             MenuItem { title: "Next Tab"; activated => { AppState.cycle-tab(1); } }
             MenuItem { title: "Previous Tab"; activated => { AppState.cycle-tab(-1); } }
