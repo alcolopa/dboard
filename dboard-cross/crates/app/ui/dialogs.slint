@@ -1,7 +1,7 @@
 import { LineEdit, ComboBox, CheckBox, TextEdit, ListView, SpinBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Modal } from "widgets.slint";
+import { Btn, Modal, EditLine, EditArea } from "widgets.slint";
 
 component Title inherits Text { font-size: 15px; font-weight: 700; color: Theme.text; wrap: word-wrap; }
 component Note inherits Text { color: Theme.dim; font-size: 12px; wrap: word-wrap; }
@@ -51,11 +51,11 @@ component UsersDialog inherits Modal {
             horizontal-stretch: 1; spacing: 8px; alignment: start;
             Text { text: "New user"; font-weight: 700; color: Theme.text; font-size: 14px; }
             Text { text: "User name"; color: Theme.dim; font-size: 11px; }
-            LineEdit { text <=> root.nu-name; placeholder-text: "e.g. report_reader"; }
+            EditLine { text <=> root.nu-name; placeholder-text: "e.g. report_reader"; }
             if AppState.user-is-mysql: Text { text: "Allowed from host (% = anywhere)"; color: Theme.dim; font-size: 11px; }
-            if AppState.user-is-mysql: LineEdit { text <=> root.nu-host; }
+            if AppState.user-is-mysql: EditLine { text <=> root.nu-host; }
             Text { text: "Password"; color: Theme.dim; font-size: 11px; }
-            LineEdit { text <=> root.nu-pw; input-type: InputType.password; }
+            EditLine { text <=> root.nu-pw; input-type: InputType.password; }
             Text { text: "Access to the current database"; color: Theme.dim; font-size: 11px; }
             ComboBox { model: AppState.access-levels; current-index <=> root.nu-level; enabled: !root.nu-admin; }
             CheckBox { text: AppState.user-is-pg ? "Superuser (can do everything on the server)" : (AppState.user-is-mysql ? "Administrator (all privileges on every database)" : "Root (administrator of the whole server)"); checked <=> root.nu-admin; }
@@ -85,7 +85,7 @@ component UsersDialog inherits Modal {
             }
             HorizontalLayout {
                 spacing: 8px;
-                LineEdit { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; horizontal-stretch: 1; }
+                EditLine { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; horizontal-stretch: 1; }
                 Btn { text: "Change password"; enabled: root.pw-new != "" && !AppState.user-busy; clicked => { AppState.user-password(AppState.user-sel, root.pw-new); root.pw-new = ""; } }
                 Btn { text: "Drop user"; danger: true; enabled: !AppState.user-busy; clicked => { AppState.user-drop(AppState.user-sel); } }
             }
@@ -106,7 +106,7 @@ component TransferDialog inherits Modal {
     Note { text: AppState.xfer-note; }
     HorizontalLayout {
         spacing: 8px;
-        LineEdit {
+        EditLine {
             text <=> AppState.xfer-path; horizontal-stretch: 1;
             placeholder-text: AppState.xfer-mode == 0 ? "Where to save the export" : "Path of the file to import";
             enabled: !AppState.xfer-busy;
@@ -171,7 +171,7 @@ export component Dialogs inherits Rectangle {
             for f[i] in AppState.insert-fields: VerticalLayout {
                 height: 54px; spacing: 3px;
                 Text { text: f.name + "   " + f.type-name; color: Theme.dim; font-size: 11px; overflow: elide; }
-                LineEdit { placeholder-text: f.hint; edited(t) => { AppState.insert-field-edited(i, t); } }
+                EditLine { placeholder-text: f.hint; edited(t) => { AppState.insert-field-edited(i, t); } }
             }
         }
         if AppState.insert-error != "": Text { text: AppState.insert-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
@@ -189,7 +189,7 @@ export component Dialogs inherits Rectangle {
         Title { text: AppState.json-title; }
         Rectangle {
             height: 320px; border-width: 1px; border-color: Theme.line; border-radius: 6px;
-            TextEdit { width: parent.width; height: parent.height; text <=> AppState.json-text; font-size: 12px; }
+            EditArea { width: parent.width; height: parent.height; text <=> AppState.json-text; font-size: 12px; }
         }
         if AppState.json-error != "": Text { text: AppState.json-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
         HorizontalLayout {
@@ -206,7 +206,7 @@ export component Dialogs inherits Rectangle {
         box-width: 420px;
         dismissed => { AppState.saveq-cancel(); }
         Title { text: "Save query"; }
-        LineEdit { placeholder-text: "Name"; text <=> AppState.saveq-name; }
+        EditLine { placeholder-text: "Name"; text <=> AppState.saveq-name; }
         ComboBox { model: AppState.folders; current-index <=> AppState.saveq-folder; }
         HorizontalLayout {
             spacing: 8px; alignment: end;
@@ -278,7 +278,7 @@ export component Dialogs inherits Rectangle {
                 Text { text: f.name + "   " + f.type-name; color: Theme.dim; font-size: 11px; overflow: elide; }
                 HorizontalLayout {
                     spacing: 6px;
-                    LineEdit {
+                    EditLine {
                         text: f.value; enabled: !f.is-null; placeholder-text: f.is-null ? "NULL" : f.hint;
                         horizontal-stretch: 1;
                         edited(t) => { AppState.editrow-field-edited(i, t); }
@@ -313,7 +313,7 @@ export component Dialogs inherits Rectangle {
         Title { text: AppState.confirm-title; color: Theme.err; }
         Text { text: AppState.confirm-text; color: Theme.text; wrap: word-wrap; font-size: 12px; }
         if AppState.confirm-typing: Note { text: "Type CONFIRM to proceed."; }
-        if AppState.confirm-typing: LineEdit { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(); } } }
+        if AppState.confirm-typing: EditLine { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(); } } }
         HorizontalLayout {
             spacing: 8px; alignment: end;
             Btn { text: "Cancel"; clicked => { AppState.confirm-cancel(); } }
@@ -338,7 +338,7 @@ export component Dialogs inherits Rectangle {
                 TouchArea { }
                 VerticalLayout {
                     padding: 12px; spacing: 8px;
-                    pq := LineEdit {
+                    pq := EditLine {
                         placeholder-text: AppState.palette-search-mode ? "Search tables, columns, routines, collections…" : "Type a command, table, saved query or connection…";
                         text <=> AppState.palette-query;
                         edited(t) => { AppState.palette-changed(t); }

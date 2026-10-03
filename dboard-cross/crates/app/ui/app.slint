@@ -1,7 +1,7 @@
 import { Palette, ComboBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge, Icons, IconBtn, Slot, Sep } from "widgets.slint";
+import { Btn, Badge, Icons, IconBtn, Slot, Sep, EditLine, EditArea } from "widgets.slint";
 import { SessionBar } from "sessions.slint";
 import { ConnectionManager } from "connections.slint";
 import { Sidebar } from "sidebar.slint";
@@ -25,7 +25,7 @@ component Workspace inherits VerticalLayout {
         HorizontalLayout {
             height: 44px; padding: 8px; spacing: 8px;
             Text { text: AppState.table-title; font-weight: 700; color: Theme.text; vertical-alignment: center; }
-            LineEdit {
+            EditLine {
                 placeholder-text: AppState.db-type == 2 ? "Filter as JSON, e.g. {\"age\": {\"$gt\": 30}}" : "WHERE clause, e.g. id > 10";
                 text <=> AppState.filter-text;
                 accepted => { AppState.apply-filter(self.text); }
@@ -53,7 +53,7 @@ component Workspace inherits VerticalLayout {
         min-height: 100px;
         preferred-height: AppState.tab-kind == 3 ? 400px : 220px;
         background: Theme.panel; border-width: 1px; border-color: Theme.line;
-        TextEdit { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-family: "JetBrains Mono"; font-size: AppState.set-font-size * 1px; }
+        EditArea { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-family: "JetBrains Mono"; font-size: AppState.set-font-size * 1px; }
     }
     // footer
     if AppState.tab-kind >= 0: Rectangle {
@@ -105,18 +105,19 @@ export component App inherits Window {
     property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
         || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open
         || AppState.editrow-open || AppState.users-open || AppState.xfer-open;
-    changed any-modal => { if !self.any-modal { fs.focus(); } }
+    changed any-modal => { AppState.text-focus = 0; if !self.any-modal { fs.focus(); } }
     // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
     property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
-    changed focus-key => { fs.focus(); }
+    changed focus-key => { AppState.text-focus = 0; fs.focus(); }
     // Clicking a cell must pull focus out of whatever text box had it so Copy / Paste act on the grid.
     property <int> focus-token: AppState.focus-token;
-    changed focus-token => { fs.focus(); }
+    changed focus-token => { AppState.text-focus = 0; fs.focus(); }
 
     // Native menu bar on macOS (global top bar); other platforms get the same entries in-window.
     MenuBar {
         Menu {
             title: "File";
+            MenuItem { title: "New Connection"; activated => { AppState.connected = false; AppState.new-conn(); } }
             MenuItem { title: "New Query"; activated => { AppState.new-query-tab(); } }
             MenuItem { title: "Close Tab"; activated => { AppState.close-tab(-1); } }
             MenuItem { title: "Reopen Closed Tab"; activated => { AppState.reopen-tab(); } }
@@ -126,7 +127,10 @@ export component App inherits Window {
         Menu {
             title: "Edit";
             MenuItem { title: "Undo Last Change"; activated => { AppState.undo(); } }
-            MenuItem { title: "Select All"; activated => { AppState.select-all(); } }
+            MenuItem { title: "Cut"; activated => { AppState.edit(0); } }
+            MenuItem { title: "Copy"; activated => { AppState.edit(1); } }
+            MenuItem { title: "Paste"; activated => { AppState.edit(2); } }
+            MenuItem { title: "Select All"; activated => { AppState.edit(3); } }
             MenuItem { title: "Settings…"; activated => { AppState.open-settings(); } }
         }
         Menu {
@@ -205,7 +209,10 @@ export component App inherits Window {
             reject
         }
 
-        if !AppState.connected: ConnectionManager { }
+        if !AppState.connected: VerticalLayout {
+            if AppState.sessions.length > 0: SessionBar { }
+            ConnectionManager { vertical-stretch: 1; }
+        }
 
         if AppState.connected: VerticalLayout {
             SessionBar { }

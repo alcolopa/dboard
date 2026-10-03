@@ -1,5 +1,6 @@
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
+import { LineEdit, TextEdit } from "std-widgets.slint";
 
 export component Btn inherits Rectangle {
     in property <string> text;
@@ -159,4 +160,23 @@ export component Slot inherits VerticalLayout {
 
 export component Sep inherits Rectangle {
     width: 1px; height: 18px; background: Theme.line;
+}
+
+// Text inputs that respond to the native Edit menu (Cut / Copy / Paste / Select All) while focused.
+export component EditLine inherits LineEdit {
+    changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
+    changed edit-seq => { if self.has-focus { self.run-edit(AppState.edit-kind); } }
+    property <int> edit-seq: AppState.edit-seq;
+    function run-edit(k: int) {
+        if k == 0 { self.cut(); } else if k == 1 { self.copy(); } else if k == 2 { self.paste(); } else { self.select-all(); }
+    }
+}
+
+export component EditArea inherits TextEdit {
+    changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
+    changed edit-seq => { if self.has-focus { self.run-edit(AppState.edit-kind); } }
+    property <int> edit-seq: AppState.edit-seq;
+    function run-edit(k: int) {
+        if k == 0 { self.cut(); } else if k == 1 { self.copy(); } else if k == 2 { self.paste(); } else { self.select-all(); }
+    }
 }

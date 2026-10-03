@@ -1,7 +1,7 @@
 import { LineEdit, ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState, TreeItem } from "state.slint";
-import { Icons, IconBtn, Slot } from "widgets.slint";
+import { Icons, IconBtn, Slot, EditLine, EditArea } from "widgets.slint";
 
 component KindBadge inherits Rectangle {
     in property <int> kind;
@@ -21,7 +21,7 @@ export component Sidebar inherits Rectangle {
         // Outside the ListView, so it stays put while the object list scrolls.
         HorizontalLayout {
             spacing: 6px;
-            LineEdit {
+            EditLine {
                 placeholder-text: "Filter objects";
                 text <=> AppState.tree-filter;
                 edited(t) => { AppState.filter-tree(t); }

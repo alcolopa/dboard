@@ -42,7 +42,7 @@ export component SessionBar inherits Rectangle {
     }
     IconBtn {
         x: parent.width - 38px; y: 3px; size: 30px;
-        d: Icons.plus; hint: "Open another connection";
-        clicked => { AppState.connected = false; }
+        d: Icons.plus; hint: "New connection (open another database)";
+        clicked => { AppState.connected = false; AppState.new-conn(); }
     }
 }

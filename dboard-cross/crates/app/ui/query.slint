@@ -1,7 +1,7 @@
 import { TextEdit, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Chip } from "widgets.slint";
+import { Btn, Chip, EditLine, EditArea } from "widgets.slint";
 
 export component QueryEditor inherits VerticalLayout {
     spacing: 6px;
@@ -9,7 +9,7 @@ export component QueryEditor inherits VerticalLayout {
     Rectangle {
         height: 150px;
         border-radius: 6px; border-width: 1px; border-color: Theme.line; background: Theme.panel;
-        TextEdit {
+        EditArea {
             width: parent.width; height: parent.height;
             text <=> AppState.query-text;
             font-family: "JetBrains Mono";

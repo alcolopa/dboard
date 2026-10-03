@@ -198,6 +198,22 @@ export global AppState {
     callback next-page();
     callback prev-page();
     callback set-page-size(int);
+    // Native Edit menu: text inputs report focus; the menu targets the focused input, else the grid.
+    in-out property <int> text-focus;
+    in-out property <int> edit-seq;
+    in-out property <int> edit-kind;
+    public function edit(kind: int) {
+        if (text-focus > 0) {
+            edit-kind = kind;
+            edit-seq += 1;
+        } else if (kind == 0 || kind == 1) {
+            if (sel-kind != 0) { copy-selection(sel-r0, sel-c0, sel-r1, sel-c1, 0); }
+        } else if (kind == 2) {
+            if (sel-kind != 0) { paste-selection(sel-r0, sel-c0, sel-r1, sel-c1); }
+        } else {
+            select-all();
+        }
+    }
     callback copy-text(string);
     callback copy-selection(int, int, int, int, int);
     callback paste-selection(int, int, int, int);

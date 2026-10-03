@@ -1,7 +1,7 @@
 import { LineEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge } from "widgets.slint";
+import { Btn, Badge, Icons, IconBtn, EditLine, EditArea } from "widgets.slint";
 
 component Field inherits VerticalLayout {
     in property <string> label;
@@ -22,7 +22,9 @@ export component ConnectionManager inherits Rectangle {
                 HorizontalLayout {
                     Text { text: "Connections"; font-size: 16px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
                     Rectangle { horizontal-stretch: 1; }
-                    Btn { text: "+ New"; primary: true; clicked => { AppState.new-conn(); } }
+                    IconBtn { d: Icons.plus; hint: "New connection"; primary: true; clicked => { AppState.new-conn(); } }
+                    Rectangle { width: 6px; }
+                    IconBtn { d: Icons.settings; hint: "Settings"; clicked => { AppState.open-settings(); } }
                 }
                 if AppState.connections.length == 0: Text {
                     text: "No saved connections yet.\nFill in the form to add one.";
@@ -68,7 +70,7 @@ export component ConnectionManager inherits Rectangle {
                 }
                 Field {
                     label: "Connection name";
-                    LineEdit { placeholder-text: "e.g. Production replica"; text <=> AppState.form.name; }
+                    EditLine { placeholder-text: "e.g. Production replica"; text <=> AppState.form.name; }
                 }
                 HorizontalLayout {
                     spacing: 12px;
@@ -91,18 +93,18 @@ export component ConnectionManager inherits Rectangle {
                 }
                 if AppState.form.type-index == 2: Field {
                     label: "MongoDB connection string (optional, overrides the fields below)";
-                    LineEdit { placeholder-text: "mongodb://user@host:27017/dbname  or  mongodb+srv://…"; text <=> AppState.form.uri; }
+                    EditLine { placeholder-text: "mongodb://user@host:27017/dbname  or  mongodb+srv://…"; text <=> AppState.form.uri; }
                 }
                 HorizontalLayout {
                     spacing: 12px;
-                    Field { label: "Host"; horizontal-stretch: 1; LineEdit { placeholder-text: "host or IP"; text <=> AppState.form.host; } }
-                    Field { label: "Port"; width: 170px; LineEdit { text <=> AppState.form.port; } }
+                    Field { label: "Host"; horizontal-stretch: 1; EditLine { placeholder-text: "host or IP"; text <=> AppState.form.host; } }
+                    Field { label: "Port"; width: 170px; EditLine { text <=> AppState.form.port; } }
                 }
-                Field { label: "Database"; LineEdit { placeholder-text: "database name (optional for MongoDB / MySQL)"; text <=> AppState.form.database; } }
+                Field { label: "Database"; EditLine { placeholder-text: "database name (optional for MongoDB / MySQL)"; text <=> AppState.form.database; } }
                 HorizontalLayout {
                     spacing: 12px;
-                    Field { label: "Username"; horizontal-stretch: 1; LineEdit { text <=> AppState.form.user; } }
-                    Field { label: "Password"; horizontal-stretch: 1; LineEdit { input-type: password; text <=> AppState.form.password; } }
+                    Field { label: "Username"; horizontal-stretch: 1; EditLine { text <=> AppState.form.user; } }
+                    Field { label: "Password"; horizontal-stretch: 1; EditLine { input-type: password; text <=> AppState.form.password; } }
                 }
                 CheckBox { text: "Remember password in the OS keyring"; checked <=> AppState.form.remember; }
                 if AppState.form.env-index <= 1: Rectangle {
@@ -126,10 +128,5 @@ export component ConnectionManager inherits Rectangle {
                 }
             }
         }
-    }
-    HorizontalLayout {
-        x: parent.width - self.width - 16px; y: 12px; spacing: 8px;
-        if AppState.sessions.length > 0: Btn { text: "← Back to open connections"; clicked => { AppState.connected = true; } }
-        Btn { text: "Settings"; clicked => { AppState.open-settings(); } }
     }
 }
