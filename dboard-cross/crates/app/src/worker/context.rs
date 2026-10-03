@@ -136,6 +136,7 @@ impl Worker {
                     let j = if action == "left" { i.wrapping_sub(1) } else { i + 1 };
                     if j < self.sess_meta.len() {
                         self.sess_meta.swap(i, j);
+                        self.sess_ids.swap(i, j);
                         self.parked.swap(i, j);
                         if self.cur == i {
                             self.cur = j;
@@ -143,6 +144,7 @@ impl Worker {
                             self.cur = i;
                         }
                         self.push_sessions();
+                        self.save_open_sessions();
                     }
                 }
                 _ => {}

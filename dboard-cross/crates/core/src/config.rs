@@ -187,6 +187,8 @@ pub struct Settings {
     /// Docked and kept open across restarts; otherwise the inspector floats over the workspace.
     pub inspector_pinned: bool,
     pub last_connection_id: String,
+    /// Ids of the connections that were open at last quit, in tab order.
+    pub open_connections: Vec<String>,
 }
 
 impl Default for Settings {
@@ -202,6 +204,7 @@ impl Default for Settings {
             inspector_open: false,
             inspector_pinned: false,
             last_connection_id: String::new(),
+            open_connections: Vec::new(),
         }
     }
 }

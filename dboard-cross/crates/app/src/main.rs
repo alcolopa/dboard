@@ -152,6 +152,7 @@ fn main() {
         rt.block_on(async move {
             let mut w = Worker::new(weak, worker_tx, Store::open_default());
             w.init();
+            w.restore_sessions().await;
             while let Some(cmd) = rx.recv().await {
                 w.handle(cmd).await;
             }

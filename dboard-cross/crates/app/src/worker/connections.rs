@@ -187,10 +187,12 @@ impl Worker {
             self.cur = self.sess_meta.len();
         } else {
             self.sess_meta.clear();
+            self.sess_ids.clear();
             self.parked.clear();
             self.cur = 0;
         }
         self.sess_meta.push((cfg.display_name(), cfg.environment.color()));
+        self.sess_ids.push(cfg.id.clone());
         self.parked.push(None);
         self.env = cfg.environment;
         self.pending = None;
@@ -293,6 +295,7 @@ impl Worker {
         let status = self.status_line();
         let act = self.activity.clone();
         self.push_sessions();
+        self.save_open_sessions();
         self.push_databases();
         self.rebuild_tree();
         self.push_saved_and_history();
@@ -340,6 +343,7 @@ impl Worker {
             return;
         }
         self.sess_meta.remove(i);
+        self.sess_ids.remove(i);
         if i == self.cur {
             drop(self.take_session());
             self.parked.remove(i);
@@ -347,6 +351,7 @@ impl Worker {
             if self.sess_meta.is_empty() {
                 self.cur = 0;
                 self.push_sessions();
+        self.save_open_sessions();
                 self.push_connections();
                 ui(&self.w, |st| {
                     st.set_connected(false);
@@ -365,6 +370,7 @@ impl Worker {
                 self.cur -= 1;
             }
             self.push_sessions();
+        self.save_open_sessions();
         }
     }
 
@@ -482,3 +488,37 @@ impl Worker {
     }
 }
 
+
+impl Worker {
+    /// Remember which connections are open so the next launch can reopen them.
+    pub(crate) fn save_open_sessions(&mut self) {
+        if self.settings.open_connections != self.sess_ids {
+            self.settings.open_connections = self.sess_ids.clone();
+            self.persist_settings();
+        }
+    }
+
+    /// Reopen the connections that were open when the app last quit (only those whose password is
+    /// in the keyring, or that need none). Failures are skipped quietly.
+    pub async fn restore_sessions(&mut self) {
+        let ids = self.settings.open_connections.clone();
+        let mut failed = Vec::new();
+        for id in ids {
+            let Some(cfg) = self.connections.iter().find(|c| c.id == id).cloned() else { continue };
+            let pw = if cfg.remember_password { secrets::get(&cfg).unwrap_or_default() } else { String::new() };
+            if cfg.remember_password && pw.is_empty() && cfg.db_type != DbType::Mongo {
+                failed.push(cfg.display_name());
+                continue;
+            }
+            ui(&self.w, |st| st.set_busy(true));
+            match Conn::connect(cfg.clone(), &pw).await {
+                Ok(conn) => self.on_connected(cfg, conn, pw).await,
+                Err(_) => failed.push(cfg.display_name()),
+            }
+            ui(&self.w, |st| st.set_busy(false));
+        }
+        if !failed.is_empty() {
+            self.toast(format!("Could not reopen: {}", failed.join(", ")));
+        }
+    }
+}

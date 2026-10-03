@@ -427,6 +427,7 @@ pub struct Worker {
     db_idx: i32,
     /// Open connections: (name, colour) per tab, and the parked state of every inactive one.
     sess_meta: Vec<(String, u32)>,
+    sess_ids: Vec<String>,
     parked: Vec<Option<Session>>,
     cur: usize,
 }
@@ -475,6 +476,7 @@ impl Worker {
             db_entries: Vec::new(),
             db_idx: -1,
             sess_meta: Vec::new(),
+            sess_ids: Vec::new(),
             parked: Vec::new(),
             cur: 0,
         }
