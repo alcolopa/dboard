@@ -89,7 +89,9 @@ component Workspace inherits VerticalLayout {
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
             if AppState.tab-kind == 0: Slot { Sep { } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
-            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.pin; hint: "Pin this result so you can compare against it later"; enabled: AppState.rows.length > 0; clicked => { AppState.pin-result(); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { Btn { text: "Compare with pinned"; clicked => { AppState.compare-result(); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }
         }
     }
 }

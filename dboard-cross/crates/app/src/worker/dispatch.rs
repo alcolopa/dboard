@@ -67,6 +67,8 @@ impl Worker {
             Cmd::ReviewApply => self.review_apply().await,
             Cmd::ReviewCancel => ui(&self.w, |st| st.set_review_open(false)),
             Cmd::ReviewDiscard => self.review_discard(),
+            Cmd::PinResult => self.pin_result(),
+            Cmd::CompareResult => self.compare_result(),
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

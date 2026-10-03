@@ -22,6 +22,8 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    PinResult,
+    CompareResult,
     StageToggle,
     ReviewOpen,
     ReviewApply,
@@ -190,6 +192,7 @@ pub(crate) enum Kind {
     Structure = 2,
     Routine = 3,
     Diagram = 4,
+    Pinned = 5,
 }
 
 #[derive(Clone)]
@@ -677,6 +680,7 @@ mod tree;
 mod tabs;
 mod editing;
 mod query;
+mod results;
 mod staging;
 pub(crate) use query::CANCEL;
 mod palette;

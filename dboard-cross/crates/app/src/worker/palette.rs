@@ -253,7 +253,14 @@ impl Worker {
     pub(crate) fn export_save(&mut self, format: usize, headers: bool) {
         let Some((text, name)) = self.export_payload(format, headers) else { return };
         let path = downloads_dir().join(name);
-        match std::fs::write(&path, text) {
+        let written = if format == 3 {
+            let Some(t) = self.active_tab() else { return };
+            let cols: Vec<ExportCol> = t.cols.iter().map(|c| ExportCol { name: c.name.clone(), type_name: c.type_name.clone() }).collect();
+            export::xlsx(&cols, &t.rows, headers, &path)
+        } else {
+            std::fs::write(&path, text).map_err(|e| e.to_string())
+        };
+        match written {
             Ok(()) => {
                 ui(&self.w, |st| st.set_export_open(false));
                 self.toast(format!("Saved {}", path.display()));

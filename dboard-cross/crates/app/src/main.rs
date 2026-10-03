@@ -56,6 +56,8 @@ fn main() {
     wire!(on_review_apply, | | Cmd::ReviewApply);
     wire!(on_review_cancel, | | Cmd::ReviewCancel);
     wire!(on_review_discard, | | Cmd::ReviewDiscard);
+    wire!(on_pin_result, | | Cmd::PinResult);
+    wire!(on_compare_result, | | Cmd::CompareResult);
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));

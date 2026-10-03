@@ -219,7 +219,7 @@ impl Worker {
             Kind::Query => {}
             Kind::Table => self.load_table(i, tab).await,
             Kind::Structure => self.load_structure(i, tab).await,
-            Kind::Diagram => {}
+            Kind::Diagram | Kind::Pinned => {}
             Kind::Routine => {
                 let text = match (&mut self.conn, &tab.obj) {
                     (Some(c), Some(o)) => c.object_def(o).await.unwrap_or_else(|e| format!("-- {e}")),

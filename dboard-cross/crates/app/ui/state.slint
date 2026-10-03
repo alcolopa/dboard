@@ -154,6 +154,8 @@ export global AppState {
     callback review-apply();
     callback review-cancel();
     callback review-discard();
+    callback pin-result();
+    callback compare-result();
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);
@@ -369,7 +371,7 @@ export global AppState {
     // ---- export ----
     in property <bool> export-open;
     in property <string> export-info;
-    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT"];
+    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT", "Excel (.xlsx)"];
     in-out property <int> export-format;
     in-out property <bool> export-headers: true;
     callback export-copy(int, bool);
