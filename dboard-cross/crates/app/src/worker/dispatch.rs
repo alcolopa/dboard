@@ -234,6 +234,24 @@ impl Worker {
                 self.pending = None;
                 ui(&self.w, |st| st.set_confirm_open(false));
             }
+            Cmd::VarsEdited(i, v) => {
+                if let Some((_, names)) = &self.var_pending {
+                    if let Some(name) = names.get(i) {
+                        self.var_values.insert(name.clone(), v);
+                    }
+                }
+            }
+            Cmd::VarsSubmit => {
+                if let Some((text, _)) = self.var_pending.take() {
+                    ui(&self.w, |st| st.set_vars_open(false));
+                    let resolved = crate::vars::substitute(&text, &self.var_values);
+                    self.run_guarded(resolved).await;
+                }
+            }
+            Cmd::VarsCancel => {
+                self.var_pending = None;
+                ui(&self.w, |st| st.set_vars_open(false));
+            }
             Cmd::InsertFieldEdited(i, v) => {
                 if let Some(slot) = self.insert_vals.get_mut(i) {
                     *slot = v;

@@ -160,6 +160,27 @@ export component Dialogs inherits Rectangle {
         }
     }
 
+    // ---- query variables ----
+    if AppState.vars-open: Modal {
+        box-width: 480px;
+        dismissed => { AppState.vars-cancel(); }
+        Title { text: "Query variables"; }
+        Note { text: "Values replace the {{placeholders}} in the query text. They are inserted as written, so add quotes in the query where needed."; }
+        ListView {
+            height: min(300px, AppState.vars-items.length * 54px);
+            for f[i] in AppState.vars-items: VerticalLayout {
+                height: 54px; spacing: 3px;
+                Text { text: f.name; color: Theme.dim; font-size: 11px; overflow: elide; }
+                EditLine { placeholder-text: f.hint; text: f.value; edited(t) => { AppState.vars-edited(i, t); } }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px; alignment: end;
+            Btn { text: "Cancel"; clicked => { AppState.vars-cancel(); } }
+            Btn { text: "Run"; primary: true; clicked => { AppState.vars-submit(); } }
+        }
+    }
+
     // ---- insert row ----
     if AppState.insert-open: Modal {
         box-width: 520px;

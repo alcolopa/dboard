@@ -135,6 +135,11 @@ export global AppState {
     in property <[string]> col-filters;
     callback col-filter(int, string);
     callback goto-fk(int, int);
+    in property <bool> vars-open;
+    in property <[FieldItem]> vars-items;
+    callback vars-edited(int, string);
+    callback vars-submit();
+    callback vars-cancel();
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

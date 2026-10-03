@@ -8,6 +8,7 @@ mod export;
 mod highlight;
 mod suggest;
 mod update;
+mod vars;
 mod worker;
 
 use dboard_core::config::Store;
@@ -45,6 +46,9 @@ fn main() {
     });
     st.on_count_lines(|t| t.as_str().split('\n').count() as i32);
     st.on_gutter(|n| (1..=n.max(1)).map(|i| i.to_string()).collect::<Vec<_>>().join("\n").into());
+    wire!(on_vars_edited, |i, v| Cmd::VarsEdited(i.max(0) as usize, v.to_string()));
+    wire!(on_vars_submit, | | Cmd::VarsSubmit);
+    wire!(on_vars_cancel, | | Cmd::VarsCancel);
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));

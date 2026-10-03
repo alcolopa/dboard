@@ -98,6 +98,9 @@ pub enum Cmd {
     // dialogs
     ConfirmRun,
     ConfirmCancel,
+    VarsEdited(usize, String),
+    VarsSubmit,
+    VarsCancel,
     InsertFieldEdited(usize, String),
     InsertSubmit,
     InsertCancel,
@@ -446,6 +449,9 @@ pub struct Worker {
     activity: Vec<String>,
     pending: Option<Pending>,
     insert_vals: Vec<String>,
+    /// Values typed for `{{variables}}`, remembered for the next run, and the run waiting on them.
+    var_values: std::collections::HashMap<String, String>,
+    var_pending: Option<(String, Vec<String>)>,
     json_target: Option<JsonTarget>,
     palette: Vec<PaletteAction>,
     palette_search: bool,
@@ -500,6 +506,8 @@ impl Worker {
             activity: Vec::new(),
             pending: None,
             insert_vals: Vec::new(),
+            var_values: std::collections::HashMap::new(),
+            var_pending: None,
             json_target: None,
             palette: Vec::new(),
             palette_search: false,

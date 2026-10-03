@@ -72,17 +72,39 @@ impl Worker {
         if let Some(t) = self.active_mut() {
             t.query_text = text.clone();
         }
-        if !self.is_mongo() && self.protected() && safety::is_destructive(&text) {
-            let preview = one_line(&text);
-            return self.ask(Pending::Query(text), "Destructive statement".into(), preview);
-        }
-        self.run_sql(text).await;
+        self.run_with_vars(text).await;
     }
 
     pub(crate) async fn run_snippet(&mut self, text: String) {
         if text.trim().is_empty() {
             return;
         }
+        self.run_with_vars(text).await;
+    }
+
+    /// Ask for `{{variable}}` values first when the text has any, then run.
+    async fn run_with_vars(&mut self, text: String) {
+        let vars = crate::vars::find(&text);
+        if vars.is_empty() {
+            return self.run_guarded(text).await;
+        }
+        let items: Vec<(String, String, String)> = vars
+            .iter()
+            .map(|v| (v.name.clone(), if v.default.is_empty() { String::new() } else { format!("default: {}", v.default) }, self.var_values.get(&v.name).cloned().unwrap_or_else(|| v.default.clone())))
+            .collect();
+        for (n, _, val) in &items {
+            self.var_values.insert(n.clone(), val.clone());
+        }
+        self.var_pending = Some((text, items.iter().map(|i| i.0.clone()).collect()));
+        ui(&self.w, move |st| {
+            let v: Vec<FieldItem> = items.into_iter().map(|(n, h, val)| FieldItem { name: n.into(), type_name: "".into(), hint: h.into(), value: val.into(), is_null: false }).collect();
+            st.set_vars_items(ModelRc::new(VecModel::from(v)));
+            st.set_vars_open(true);
+        });
+    }
+
+    /// Safety check for destructive statements, then execute.
+    pub(crate) async fn run_guarded(&mut self, text: String) {
         if !self.is_mongo() && self.protected() && safety::is_destructive(&text) {
             let preview = one_line(&text);
             return self.ask(Pending::Query(text), "Destructive statement".into(), preview);
