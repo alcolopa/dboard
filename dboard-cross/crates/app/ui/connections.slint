@@ -140,6 +140,7 @@ export component ConnectionManager inherits Rectangle {
                     Field { label: "SSH user"; horizontal-stretch: 1; EditLine { text <=> AppState.form.ssh-user; } }
                     Field { label: "Private key file (optional, else ssh-agent)"; horizontal-stretch: 1; EditLine { placeholder-text: "~/.ssh/id_ed25519"; text <=> AppState.form.ssh-key; } }
                 }
+                CheckBox { text: "Read-only connection (blocks every write; recommended for production)"; checked <=> AppState.form.read-only; }
                 CheckBox { text: "Remember password in the OS keyring"; checked <=> AppState.form.remember; }
                 if AppState.form.env-index <= 1: Rectangle {
                     height: 30px; background: Theme.warn-bg; border-radius: 5px;

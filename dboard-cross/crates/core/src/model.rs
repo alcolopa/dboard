@@ -128,6 +128,8 @@ pub struct ConnectionConfig {
     pub ssl_ca: String,
     pub ssl_cert: String,
     pub ssl_key: String,
+    /// Block every write: the session is put in read-only mode and the app refuses edits.
+    pub read_only: bool,
     /// Unix seconds; used to sort "recent" connections.
     pub last_used: u64,
 }
@@ -153,6 +155,7 @@ impl Default for ConnectionConfig {
             ssl_ca: String::new(),
             ssl_cert: String::new(),
             ssl_key: String::new(),
+            read_only: false,
             last_used: 0,
         }
     }

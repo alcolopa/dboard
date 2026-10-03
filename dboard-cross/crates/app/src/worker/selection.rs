@@ -147,6 +147,9 @@ impl Worker {
     }
 
     pub(crate) fn open_edit_row(&mut self, r: usize) {
+        if self.refuse_if_read_only() {
+            return;
+        }
         let Some(t) = self.active_tab() else { return };
         if t.kind != Kind::Table || !t.editable {
             return self.toast("This table is read-only");

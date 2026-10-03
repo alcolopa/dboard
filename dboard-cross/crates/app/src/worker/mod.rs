@@ -635,6 +635,21 @@ impl Worker {
         });
     }
 
+    /// True when the open connection was set to read-only; every write path checks this first.
+    pub(crate) fn read_only(&self) -> bool {
+        self.conn.as_ref().is_some_and(|c| c.config.read_only)
+    }
+
+    /// Toast and return true when writes are blocked.
+    pub(crate) fn refuse_if_read_only(&mut self) -> bool {
+        if self.read_only() {
+            self.toast("This connection is read-only. Edit the connection to allow writes.");
+            true
+        } else {
+            false
+        }
+    }
+
     fn protected(&self) -> bool {
         self.settings.confirm_destructive && self.env.requires_destructive_confirmation()
     }

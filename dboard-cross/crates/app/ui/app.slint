@@ -266,6 +266,12 @@ export component App inherits Window {
                         color: AppState.hint != "" ? Theme.text : Theme.dim;
                         vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; min-width: 40px;
                     }
+                    if AppState.read-only: Slot {
+                        Rectangle {
+                            width: rol.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.panel2; border-width: 1px; border-color: Theme.line;
+                            rol := Text { text: "READ-ONLY"; color: Theme.dim; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
                     if AppState.running: Slot { Btn { text: "Stop query"; danger: true; clicked => { AppState.stop-query(); } } }
                     if AppState.db-type != 2 && !AppState.in-tx: Slot { Btn { text: "Begin transaction"; clicked => { AppState.tx-begin(); } } }
                     if AppState.in-tx: Slot {

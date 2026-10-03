@@ -208,6 +208,21 @@ async fn postgres_explain_shows_where_time_goes() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn postgres_read_only_blocks_writes() {
+    let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
+    let _g = pg_lock();
+    let mut rw = Conn::connect(c.clone(), &pw).await.unwrap();
+    let _ = rw.execute_query("DROP TABLE IF EXISTS dboard_ro").await;
+    rw.execute_query("CREATE TABLE dboard_ro (id int primary key)").await.unwrap();
+    let mut ro = Conn::connect(ConnectionConfig { read_only: true, ..c }, &pw).await.unwrap();
+    assert!(ro.execute_query("SELECT * FROM dboard_ro").await.is_ok());
+    let err = ro.execute_query("INSERT INTO dboard_ro VALUES (1)").await.unwrap_err().to_string();
+    assert!(err.to_lowercase().contains("read-only"), "{err}");
+    assert!(ro.execute_query("CREATE TABLE dboard_ro2 (x int)").await.is_err());
+    rw.execute_query("DROP TABLE dboard_ro").await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn postgres_transactions() {
     let _g = pg_lock();
     if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {

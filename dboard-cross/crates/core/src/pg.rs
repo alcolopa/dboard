@@ -37,6 +37,9 @@ impl Pg {
             },
             _ => (Self::secure(&cfg, c).await?, true),
         };
+        if c.read_only {
+            client.simple_query("SET default_transaction_read_only = on").await?;
+        }
         Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()) })
     }
 

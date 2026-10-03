@@ -18,6 +18,9 @@ impl Worker {
     /// Write one cell. On success the grid shows the new value; on failure it is left unchanged.
     pub(crate) async fn try_edit_cell(&mut self, r: usize, c: usize, text: String, null: bool) -> Result<bool, String> {
         let Some(tab) = self.active_tab().cloned() else { return Ok(false) };
+        if self.read_only() {
+            return Err("This connection is read-only.".into());
+        }
         if tab.kind != Kind::Table || !tab.editable {
             return Err("This table cannot be edited.".into());
         }
@@ -240,6 +243,9 @@ impl Worker {
     }
 
     pub(crate) fn open_insert(&mut self) {
+        if self.refuse_if_read_only() {
+            return;
+        }
         let Some(tab) = self.active_tab().cloned() else { return };
         if tab.kind != Kind::Table {
             return;
@@ -309,6 +315,9 @@ impl Worker {
     }
 
     pub(crate) async fn insert_submit(&mut self) {
+        if self.refuse_if_read_only() {
+            return;
+        }
         let Some(tab) = self.active_tab().cloned() else { return };
         let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
         let vals: Vec<(String, String)> = table
@@ -338,6 +347,9 @@ impl Worker {
     }
 
     pub(crate) fn ask_delete_row(&mut self, r: usize) {
+        if self.refuse_if_read_only() {
+            return;
+        }
         let Some(tab) = self.active_tab() else { return };
         if tab.kind != Kind::Table || !tab.editable || r >= tab.rows.len() {
             return;

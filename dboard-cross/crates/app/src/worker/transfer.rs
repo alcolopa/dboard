@@ -109,6 +109,9 @@ impl Worker {
         if path.is_empty() {
             return;
         }
+        if self.xfer_mode != 0 && self.read_only() {
+            return self.xfer_done(String::new(), "This connection is read-only, so nothing can be imported.".into());
+        }
         match self.xfer_mode {
             0 => self.run_export(path, a, b).await,
             1 => {

@@ -40,6 +40,7 @@ impl Worker {
             ssh_port: f.ssh_port.trim().parse().unwrap_or(22),
             ssh_user: f.ssh_user.trim().to_string(),
             ssh_key: f.ssh_key.trim().to_string(),
+            read_only: f.read_only,
             ssl_ca: f.ssl_ca.trim().to_string(),
             ssl_cert: f.ssl_cert.trim().to_string(),
             ssl_key: f.ssl_key.trim().to_string(),
@@ -69,6 +70,7 @@ impl Worker {
                 ssh_host: c.ssh_host.into(),
                 ssh_user: c.ssh_user.into(),
                 ssh_key: c.ssh_key.into(),
+                read_only: c.read_only,
                 ssl_ca: c.ssl_ca.into(),
                 ssl_cert: c.ssl_cert.into(),
                 ssl_key: c.ssl_key.into(),
@@ -306,6 +308,7 @@ impl Worker {
         let status = self.status_line();
         let act = self.activity.clone();
         let in_tx = self.conn.as_ref().is_some_and(|c| c.in_transaction());
+        let read_only = self.read_only();
         self.push_sessions();
         self.save_open_sessions();
         self.push_databases();
@@ -322,6 +325,7 @@ impl Worker {
             st.set_db_type(db);
             st.set_is_protected(protected);
             st.set_in_tx(in_tx);
+            st.set_read_only(read_only);
             st.set_tree_filter("".into());
             st.set_activity(strs(act));
             st.set_busy(false);

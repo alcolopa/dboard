@@ -17,7 +17,7 @@ export struct CtxItem { label: string, action: string, sep: bool, danger: bool }
 export struct ConnForm {
     id: string, name: string, type-index: int, host: string, port: string, database: string,
     user: string, password: string, env-index: int, ssl-index: int, uri: string, remember: bool,
-    ssh-host: string, ssh-port: string, ssh-user: string, ssh-key: string,
+    ssh-host: string, ssh-port: string, ssh-user: string, ssh-key: string, read-only: bool,
     ssl-ca: string, ssl-cert: string, ssl-key: string,
 }
 
@@ -157,6 +157,7 @@ export global AppState {
     callback pin-result();
     callback compare-result();
     callback generate-rows(int);
+    in property <bool> read-only;
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

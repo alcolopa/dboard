@@ -8,6 +8,9 @@ impl Worker {
         if self.is_mongo() {
             return self.toast("Sample data is for SQL tables.");
         }
+        if self.refuse_if_read_only() {
+            return;
+        }
         let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else {
             return self.toast("Open a table first, then generate rows into it.");
         };

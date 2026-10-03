@@ -95,6 +95,10 @@ impl My {
             },
             _ => connect(with_ssl(base)).await?,
         };
+        let mut conn = conn;
+        if c.read_only {
+            conn.query_drop("SET SESSION TRANSACTION READ ONLY").await?;
+        }
         Ok(Self { opts: conn.opts().clone(), conn, is_mariadb: false, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
     }
 

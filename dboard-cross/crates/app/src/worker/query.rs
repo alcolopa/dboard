@@ -96,6 +96,20 @@ impl Worker {
         self.run_with_vars(text).await;
     }
 
+    /// Whether `text` only reads data. SQL is judged by its statements, MongoDB by the command.
+    fn is_read_only_text(&self, text: &str) -> bool {
+        if self.is_mongo() {
+            let t: String = text.split_whitespace().collect::<Vec<_>>().join("");
+            let writes = [".insert", ".update", ".delete", ".drop", ".remove", ".replace", ".bulkWrite", ".createIndex", ".rename", "$out", "$merge"];
+            return !writes.iter().any(|w| t.contains(w));
+        }
+        use dboard_core::split::{split_all, Stmt};
+        split_all(self.dialect(), text).into_iter().all(|s| match s {
+            Stmt::Sql(t) => t.trim().is_empty() || is_read_only(&t),
+            Stmt::Copy { .. } => false,
+        })
+    }
+
     pub(crate) async fn run_snippet(&mut self, text: String) {
         if text.trim().is_empty() {
             return;
@@ -126,6 +140,9 @@ impl Worker {
 
     /// Safety check for destructive statements, then execute.
     pub(crate) async fn run_guarded(&mut self, text: String) {
+        if self.read_only() && !self.is_read_only_text(&text) {
+            return self.set_banner("This connection is read-only: only queries that read data can run.", true);
+        }
         if !self.is_mongo() && self.protected() && safety::is_destructive(&text) {
             let preview = one_line(&text);
             return self.ask(Pending::Query(text), "Destructive statement".into(), preview);
