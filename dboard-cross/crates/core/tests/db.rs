@@ -197,6 +197,17 @@ async fn postgres_cancel_and_timeout() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn postgres_explain_shows_where_time_goes() {
+    let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
+    let _g = pg_lock();
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    let plan = d.explain("SELECT g, count(*) FROM generate_series(1, 20000) g GROUP BY g ORDER BY 2 DESC", true).await.unwrap();
+    assert_eq!(plan.columns.len(), 6);
+    assert!(plan.rows.iter().any(|r| r[5].as_deref().is_some_and(|s| s.contains("slowest"))));
+    assert!(plan.rows.iter().any(|r| r[0].as_deref() == Some("Execution ms")));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn postgres_transactions() {
     let _g = pg_lock();
     if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
