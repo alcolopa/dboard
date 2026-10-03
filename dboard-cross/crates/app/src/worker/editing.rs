@@ -129,13 +129,9 @@ impl Worker {
             _ => format!("{q} IS {}NULL", if equal { "" } else { "NOT " }),
         };
         if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) {
-            let combined = match t.page.filter.as_deref().filter(|f| !f.trim().is_empty()) {
-                Some(existing) => format!("({existing}) AND {clause}"),
-                None => clause,
-            };
-            t.page.filter = Some(combined.clone());
-            t.filter_text = combined;
+            t.filter_text = if t.filter_text.trim().is_empty() { clause } else { format!("({}) AND {clause}", t.filter_text.trim()) };
             t.page.offset = 0;
+            self.apply_effective_filter();
             self.load_active().await;
         }
     }

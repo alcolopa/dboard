@@ -29,6 +29,8 @@ fn main() {
     }
 
     wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
+    wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));
     wire!(on_open_er, | | Cmd::OpenEr);
     wire!(on_er_open, |s, n| Cmd::ErOpen(s.to_string(), n.to_string()));
     wire!(on_check_updates, | | Cmd::CheckUpdates);

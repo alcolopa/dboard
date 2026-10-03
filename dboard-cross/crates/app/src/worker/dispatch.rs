@@ -39,6 +39,18 @@ impl Worker {
             }
             Cmd::OpenEr => self.open_er().await,
             Cmd::ErOpen(s, n) => self.open_table(&s, &n).await,
+            Cmd::ColFilter(c, text) => {
+                if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) {
+                    if t.col_filters.len() <= c {
+                        t.col_filters.resize(c + 1, String::new());
+                    }
+                    t.col_filters[c] = text;
+                    t.page.offset = 0;
+                    self.apply_effective_filter();
+                    self.load_active().await;
+                }
+            }
+            Cmd::GotoFk(r, c) => self.goto_fk(r, c).await,
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,
@@ -119,9 +131,9 @@ impl Worker {
             }
             Cmd::ApplyFilter(f) => {
                 if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) {
-                    t.filter_text = f.clone();
-                    t.page.filter = Some(f).filter(|f| !f.trim().is_empty());
+                    t.filter_text = f;
                     t.page.offset = 0;
+                    self.apply_effective_filter();
                     self.load_active().await;
                 }
             }

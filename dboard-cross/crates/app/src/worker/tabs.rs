@@ -96,6 +96,7 @@ impl Worker {
                     .collect();
                 st.set_er_boxes(ModelRc::new(VecModel::from(boxes)));
                 st.set_er_lines(strs(t.er.lines.clone()));
+                st.set_col_filters(strs((0..t.cols.len()).map(|i| t.col_filters.get(i).cloned().unwrap_or_default()).collect()));
                 st.set_er_width(t.er.size.0);
                 st.set_er_height(t.er.size.1);
                 st.set_result_index(t.result_idx as i32);
@@ -591,5 +592,30 @@ mod er_tests {
     fn ignores_foreign_keys_to_unlisted_tables() {
         let t = table("a", vec![col("x", false, Some("other.b(id)"))]);
         assert!(er_layout(&[t]).lines.is_empty());
+    }
+}
+
+impl Worker {
+    /// Rebuild the active table's WHERE from the filter box plus the per-column filters.
+    pub(crate) fn apply_effective_filter(&mut self) {
+        let d = self.dialect();
+        let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) else { return };
+        let mut parts: Vec<String> = Vec::new();
+        if !t.filter_text.trim().is_empty() {
+            parts.push(format!("({})", t.filter_text.trim()));
+        }
+        for (i, text) in t.col_filters.iter().enumerate() {
+            let (text, Some(col)) = (text.trim(), t.cols.get(i)) else { continue };
+            if text.is_empty() {
+                continue;
+            }
+            let q = d.quote(&col.name);
+            let like = dboard_core::sql::literal(d, &format!("%{text}%"));
+            parts.push(match d {
+                Dialect::My => format!("CAST({q} AS CHAR) LIKE {like}"),
+                _ => format!("CAST({q} AS TEXT) ILIKE {like}"),
+            });
+        }
+        t.page.filter = if parts.is_empty() { None } else { Some(parts.join(" AND ")) };
     }
 }

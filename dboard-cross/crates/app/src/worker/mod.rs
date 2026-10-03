@@ -22,6 +22,8 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    ColFilter(usize, String),
+    GotoFk(usize, usize),
     OpenEr,
     ErOpen(String, String),
     CheckUpdates,
@@ -205,6 +207,8 @@ pub(crate) struct Tab {
     results: Vec<ResultSet>,
     result_idx: usize,
     er: ErLayout,
+    /// Per-column "contains" filters from the filter row, by column index.
+    col_filters: Vec<String>,
 }
 
 /// Pre-computed ER diagram geometry (boxes, FK lines, canvas size).
@@ -249,6 +253,7 @@ impl Tab {
             results: Vec::new(),
             result_idx: 0,
             er: ErLayout::default(),
+            col_filters: Vec::new(),
         }
     }
 }

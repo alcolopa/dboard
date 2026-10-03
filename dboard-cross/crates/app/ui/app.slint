@@ -84,6 +84,7 @@ component Workspace inherits VerticalLayout {
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.plus; hint: "Add row"; primary: true; clicked => { AppState.open-insert(); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.trash; hint: "Delete selected row"; danger: true; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } } }
+            if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
             if AppState.tab-kind == 0: Slot { Sep { } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
             if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }

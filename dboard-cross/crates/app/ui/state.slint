@@ -130,6 +130,10 @@ export global AppState {
     in property <length> er-height;
     callback open-er();
     callback er-open(string, string);
+    in-out property <bool> filter-row-open;
+    in property <[string]> col-filters;
+    callback col-filter(int, string);
+    callback goto-fk(int, int);
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);
