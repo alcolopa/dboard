@@ -4,7 +4,7 @@ export struct TreeItem { label: string, level: int, kind: int, expanded: bool, k
 export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
 export struct SessionTab { name: string, color: color, active: bool }
 export struct MetaRow { label: string, value: string }
-export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool }
+export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool, header: bool }
 export struct HistoryItem { sql: string, meta: string, ok: bool }
 export struct SavedItem { id: string, name: string, folder: string, sql: string }
 export struct PaletteItem { title: string, subtitle: string, kind: string }

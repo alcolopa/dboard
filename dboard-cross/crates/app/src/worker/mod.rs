@@ -562,23 +562,30 @@ impl Worker {
         if !q.is_empty() {
             list.retain(|c| format!("{} {} {}", c.display_name(), c.host, c.environment.label()).to_lowercase().contains(&q));
         }
-        list.sort_by(|a, b| b.last_used.cmp(&a.last_used).then(a.display_name().to_lowercase().cmp(&b.display_name().to_lowercase())));
-        let items: Vec<(String, String, String, u32, bool)> = list
-            .iter()
-            .map(|c| {
-                let who = if c.username.is_empty() { c.host.clone() } else { format!("{}@{}", c.username, c.host) };
-                (c.id.clone(), c.display_name(), format!("{} • {} • {}", c.db_type.label(), c.environment.label(), who), c.environment.color(), c.id == sel)
-            })
-            .collect();
+        // Grouped by environment (Production first), most recently used first within a group.
+        list.sort_by(|a, b| {
+            a.environment.index().cmp(&b.environment.index()).then(b.last_used.cmp(&a.last_used)).then(a.display_name().to_lowercase().cmp(&b.display_name().to_lowercase()))
+        });
+        let mut items: Vec<(String, String, String, u32, bool, bool)> = Vec::new();
+        let mut last_env = None;
+        for c in &list {
+            if last_env != Some(c.environment) {
+                last_env = Some(c.environment);
+                items.push((String::new(), c.environment.label().to_string(), String::new(), c.environment.color(), false, true));
+            }
+            let who = if c.username.is_empty() { c.host.clone() } else { format!("{}@{}", c.username, c.host) };
+            items.push((c.id.clone(), c.display_name(), format!("{} • {}", c.db_type.label(), who), c.environment.color(), c.id == sel, false));
+        }
         ui(&self.w, move |st| {
             let v: Vec<ConnItem> = items
                 .into_iter()
-                .map(|(id, name, sub, col, active)| ConnItem {
+                .map(|(id, name, sub, col, active, header)| ConnItem {
                     id: id.into(),
                     name: name.into(),
                     subtitle: sub.into(),
                     color: slint::Color::from_rgb_u8((col >> 16) as u8, (col >> 8) as u8, col as u8),
                     active,
+                    header,
                 })
                 .collect();
             st.set_connections(ModelRc::new(VecModel::from(v)));

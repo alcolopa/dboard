@@ -35,18 +35,24 @@ export component ConnectionManager inherits Rectangle {
                     VerticalLayout {
                         spacing: 4px;
                         for c in AppState.connections: Rectangle {
-                            height: 52px;
+                            height: c.header ? 26px : 52px;
                             border-radius: 6px;
-                            background: c.active ? Theme.panel2 : (ta.has-hover ? Theme.hover : transparent);
-                            border-width: c.active ? 1px : 0px;
+                            background: c.header ? transparent : (c.active ? Theme.panel2 : (ta.has-hover ? Theme.hover : transparent));
+                            border-width: c.active && !c.header ? 1px : 0px;
                             border-color: Theme.accent;
-                            Rectangle { x: 10px; y: 19px; width: 10px; height: 10px; border-radius: 5px; background: c.color; }
-                            VerticalLayout {
+                            if c.header: HorizontalLayout {
+                                padding-left: 4px; spacing: 6px; alignment: start;
+                                Rectangle { width: 8px; height: 8px; y: 9px; border-radius: 4px; background: c.color; }
+                                Text { text: c.name; color: Theme.dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                            }
+                            if !c.header: Rectangle { x: 10px; y: 19px; width: 10px; height: 10px; border-radius: 5px; background: c.color; }
+                            if !c.header: VerticalLayout {
                                 x: 30px; width: parent.width - 40px; alignment: center; spacing: 2px;
                                 Text { text: c.name; color: Theme.text; font-weight: 600; overflow: elide; }
                                 Text { text: c.subtitle; color: Theme.dim; font-size: 11px; overflow: elide; }
                             }
                             ta := TouchArea {
+                                enabled: !c.header;
                                 clicked => { AppState.select-conn(c.id); }
                                 double-clicked => { AppState.select-conn(c.id); AppState.connect-conn(AppState.form); }
                             }
