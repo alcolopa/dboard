@@ -83,6 +83,7 @@ pub fn extension(format: usize) -> &'static str {
     match format {
         0 => "csv",
         1 => "json",
+        3 => "xlsx",
         _ => "sql",
     }
 }
@@ -91,6 +92,7 @@ pub fn format(format: usize, cols: &[ExportCol], rows: &[Vec<Cell>], headers: bo
     match format {
         0 => csv(cols, rows, headers),
         1 => json(cols, rows),
+        3 => tsv(cols, rows, headers), // clipboard form of the Excel export
         _ => sql_inserts(cols, rows, table, d),
     }
 }
@@ -101,6 +103,39 @@ fn csv_field(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Write an Excel workbook: numbers stay numbers, everything else is text, NULL is an empty cell.
+pub fn xlsx(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool, path: &std::path::Path) -> Result<(), String> {
+    use rust_xlsxwriter::{Format, Workbook};
+    let mut wb = Workbook::new();
+    let ws = wb.add_worksheet();
+    let bold = Format::new().set_bold();
+    let mut r0 = 0u32;
+    if headers {
+        for (c, col) in cols.iter().enumerate() {
+            ws.write_string_with_format(0, c as u16, &col.name, &bold).map_err(|e| e.to_string())?;
+        }
+        r0 = 1;
+    }
+    for (r, row) in rows.iter().enumerate() {
+        for (c, cell) in row.iter().enumerate() {
+            let Some(v) = cell else { continue };
+            let numeric = cols.get(c).is_some_and(|col| is_numeric_type(&col.type_name));
+            match v.parse::<f64>() {
+                Ok(n) if numeric && n.is_finite() => ws.write_number(r0 + r as u32, c as u16, n),
+                _ => ws.write_string(r0 + r as u32, c as u16, v),
+            }
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    ws.autofit();
+    wb.save(path).map_err(|e| e.to_string())
+}
+
+fn is_numeric_type(t: &str) -> bool {
+    let t = t.to_lowercase();
+    ["int", "numeric", "decimal", "float", "double", "real", "serial", "money"].iter().any(|k| t.contains(k)) && !t.contains("interval")
 }
 
 pub fn csv(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool) -> String {
@@ -186,6 +221,17 @@ pub fn sql_inserts(cols: &[ExportCol], rows: &[Vec<Cell>], table: &str, d: Diale
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn writes_a_readable_xlsx() {
+        let cols = vec![ExportCol { name: "id".into(), type_name: "integer".into() }, ExportCol { name: "name".into(), type_name: "text".into() }];
+        let rows = vec![vec![Some("1".into()), Some("a".into())], vec![Some("2".into()), None]];
+        let path = std::env::temp_dir().join(format!("dboard-test-{}.xlsx", std::process::id()));
+        xlsx(&cols, &rows, true, &path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..2], b"PK", "an xlsx is a zip archive");
+        let _ = std::fs::remove_file(&path);
+    }
+
     use super::*;
 
     fn cols() -> Vec<ExportCol> {

@@ -6,6 +6,7 @@ use crate::model::*;
 use crate::mongo::Mongo;
 use crate::mysql::My;
 use crate::pg::Pg;
+use crate::sqlite::Sqlite;
 use crate::{Error, Result};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
@@ -14,6 +15,7 @@ enum Inner {
     Pg(Pg),
     My(My),
     Mongo(Mongo),
+    Sqlite(Sqlite),
 }
 
 macro_rules! dispatch {
@@ -22,29 +24,94 @@ macro_rules! dispatch {
             Inner::Pg($d) => $body,
             Inner::My($d) => $body,
             Inner::Mongo($d) => $body,
+            Inner::Sqlite($d) => $body,
         }
     };
 }
 
+/// Cancels the statement a connection is running. Cheap to clone and usable from any task.
+pub enum Canceller {
+    Pg { token: tokio_postgres::CancelToken, tls: Option<ConnectionConfig> },
+    My { opts: mysql_async::Opts, id: u32 },
+    Unsupported,
+}
+
+impl Canceller {
+    /// Ask the server to stop the running statement. `false` when that is not possible.
+    pub async fn cancel(&self) -> bool {
+        match self {
+            Canceller::Pg { token, tls } => match tls {
+                Some(cfg) => match crate::tls::client_config(cfg) {
+                    Ok(c) => token.cancel_query(tokio_postgres_rustls::MakeRustlsConnect::new(c)).await.is_ok(),
+                    Err(_) => false,
+                },
+                None => token.cancel_query(tokio_postgres::NoTls).await.is_ok(),
+            },
+            Canceller::My { opts, id } => {
+                use mysql_async::prelude::Queryable;
+                match mysql_async::Conn::new(opts.clone()).await {
+                    Ok(mut c) => c.query_drop(format!("KILL QUERY {id}")).await.is_ok(),
+                    Err(_) => false,
+                }
+            }
+            Canceller::Unsupported => false,
+        }
+    }
+}
+
 pub struct Conn {
     inner: Inner,
+    tunnel: Option<crate::tunnel::Tunnel>,
     pub config: ConnectionConfig,
     pub metadata: Metadata,
     pub history: EditHistory,
     pub server_version: String,
+    in_tx: bool,
+    timeout_ms: u64,
 }
 
 impl Conn {
     pub async fn connect(config: ConnectionConfig, password: &str) -> Result<Self> {
+        let password = crate::creds::resolve(&config, password).await?;
+        let password = password.as_str();
+        let tunnel = Self::open_tunnel(&config).await?;
+        let effective = Self::through(&config, tunnel.as_ref());
         let inner = match config.db_type {
-            DbType::Postgres => Inner::Pg(Pg::connect(&config, password).await?),
-            DbType::MySql => Inner::My(My::connect(&config, password).await?),
-            DbType::Mongo => Inner::Mongo(Mongo::connect(&config, password).await?),
+            DbType::Postgres => Inner::Pg(Pg::connect(&effective, password).await?),
+            DbType::MySql => Inner::My(My::connect(&effective, password).await?),
+            DbType::Mongo => Inner::Mongo(Mongo::connect(&effective, password).await?),
+            DbType::Sqlite => Inner::Sqlite(Sqlite::connect(&effective, password).await?),
         };
-        let mut c = Self { inner, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new() };
+        let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new(), in_tx: false, timeout_ms: 0 };
         c.server_version = dispatch!(c, d => d.version().await).unwrap_or_default();
         c.refresh_metadata().await?;
         Ok(c)
+    }
+
+    async fn open_tunnel(config: &ConnectionConfig) -> Result<Option<crate::tunnel::Tunnel>> {
+        if config.ssh_host.trim().is_empty() || (config.db_type == DbType::Mongo && !config.mongo_uri.trim().is_empty()) {
+            return Ok(None);
+        }
+        crate::tunnel::open(crate::tunnel::TunnelSpec {
+            ssh_host: config.ssh_host.trim(),
+            ssh_port: if config.ssh_port == 0 { 22 } else { config.ssh_port },
+            ssh_user: &config.ssh_user,
+            key_path: &config.ssh_key,
+            remote_host: &config.host,
+            remote_port: config.port,
+        })
+        .await
+        .map(Some)
+    }
+
+    /// The config to actually dial: the local end of the SSH tunnel when there is one.
+    fn through(config: &ConnectionConfig, tunnel: Option<&crate::tunnel::Tunnel>) -> ConnectionConfig {
+        let mut c = config.clone();
+        if let Some(t) = tunnel {
+            c.host = "127.0.0.1".into();
+            c.port = t.local_port;
+        }
+        c
     }
 
     pub fn db_type(&self) -> DbType {
@@ -76,12 +143,73 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.fetch(&t, page).await,
             Inner::My(d) => d.fetch(&t, page).await,
+            Inner::Sqlite(d) => d.fetch(&t, page).await,
             Inner::Mongo(_) => unreachable!(),
         }
     }
 
     pub async fn execute_query(&mut self, text: &str) -> Result<Rows> {
         dispatch!(self, d => d.query(text).await)
+    }
+
+    pub fn canceller(&self) -> Canceller {
+        match &self.inner {
+            Inner::Pg(d) => d.canceller(),
+            Inner::My(d) => d.canceller(),
+            Inner::Mongo(_) | Inner::Sqlite(_) => Canceller::Unsupported,
+        }
+    }
+
+    /// Server-side limit for a single statement, 0 = none (MongoDB: not applied).
+    pub async fn set_statement_timeout(&mut self, ms: u64) -> Result<()> {
+        self.timeout_ms = ms;
+        match &mut self.inner {
+            Inner::Pg(d) => d.set_timeout(ms).await,
+            Inner::My(d) => d.set_timeout(ms).await,
+            Inner::Mongo(_) | Inner::Sqlite(_) => Ok(()),
+        }
+    }
+
+    pub fn in_transaction(&self) -> bool {
+        self.in_tx
+    }
+
+    /// Start a transaction: every statement and grid edit on this connection is held until
+    /// `commit` or `rollback`. SQL engines only.
+    pub async fn begin(&mut self) -> Result<()> {
+        if self.config.db_type == DbType::Mongo {
+            return Err(Error::Db("Transactions are not available for MongoDB here.".into()));
+        }
+        if self.in_tx {
+            return Ok(());
+        }
+        dispatch!(self, d => d.query("BEGIN").await)?;
+        self.in_tx = true;
+        Ok(())
+    }
+
+    pub async fn commit(&mut self) -> Result<()> {
+        self.end_tx("COMMIT", false).await
+    }
+
+    pub async fn rollback(&mut self) -> Result<()> {
+        self.end_tx("ROLLBACK", true).await
+    }
+
+    async fn end_tx(&mut self, stmt: &str, discard_history: bool) -> Result<()> {
+        if !self.in_tx {
+            return Ok(());
+        }
+        let res = dispatch!(self, d => d.query(stmt).await);
+        if res.is_ok() {
+            self.in_tx = false;
+            if discard_history {
+                // rolled-back changes no longer exist, so they cannot be undone
+                self.history.clear();
+            }
+            let _ = self.refresh_metadata().await;
+        }
+        res.map(|_| ())
     }
 
     pub async fn explain(&mut self, text: &str, analyze: bool) -> Result<Rows> {
@@ -97,6 +225,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.object_def(o).await,
             Inner::My(d) => d.object_def(o).await,
+            Inner::Sqlite(d) => d.object_def(o).await,
             Inner::Mongo(_) => Ok(String::new()),
         }
     }
@@ -172,6 +301,7 @@ impl Conn {
                 },
                 Inner::Pg(d) => d.insert_nullable(&t, &Self::named_values(&t, row)).await,
                 Inner::My(d) => d.insert_nullable(&t, &Self::named_values(&t, row)).await,
+                Inner::Sqlite(d) => d.insert_nullable(&t, &Self::named_values(&t, row)).await,
             },
         }
     }
@@ -262,6 +392,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.current_database().await.map(Some),
             Inner::My(_) => Ok(Some(self.config.database.clone()).filter(|d| !d.is_empty())),
+            Inner::Sqlite(d) => d.current_database().await.map(Some),
             Inner::Mongo(m) => Ok(m.current_database()),
         }
     }
@@ -269,14 +400,24 @@ impl Conn {
     /// Point this connection at another database on the same server (`None`: all databases,
     /// MySQL / MongoDB only). PostgreSQL needs a fresh connection, hence the password.
     pub async fn switch_database(&mut self, db: Option<&str>, password: &str) -> Result<()> {
+        if self.in_tx {
+            return Err(Error::Db("Commit or roll back the open transaction before switching database.".into()));
+        }
         match &mut self.inner {
             Inner::Pg(_) => {
                 let name = db.ok_or_else(|| Error::Db("Pick a database.".into()))?;
-                let mut cfg = self.config.clone();
+                let mut cfg = Self::through(&self.config, self.tunnel.as_ref());
                 cfg.database = name.to_string();
+                let password = crate::creds::resolve(&self.config, password).await?;
+                let password = password.as_str();
                 self.inner = Inner::Pg(Pg::connect(&cfg, password).await?);
+                if self.timeout_ms > 0 {
+                    let ms = self.timeout_ms;
+                    self.set_statement_timeout(ms).await?;
+                }
             }
             Inner::My(d) => d.use_database(db).await?,
+            Inner::Sqlite(_) => return Err(Error::Db("A SQLite connection is one file; open another file as a new connection.".into())),
             Inner::Mongo(m) => m.use_database(db),
         }
         self.config.database = db.unwrap_or_default().to_string();
@@ -314,6 +455,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.set_access(&u.name, level).await,
             Inner::My(d) => d.set_access(u, level).await,
+            Inner::Sqlite(d) => d.set_access(u, level).await,
             Inner::Mongo(m) => m.set_access(u, level).await,
         }
     }
@@ -329,6 +471,7 @@ impl Conn {
         let res = match &mut self.inner {
             Inner::Pg(d) => d.dump(opts, &mut out, progress).await,
             Inner::My(d) => d.dump(opts, &tables, &objects, &mut out, progress).await,
+            Inner::Sqlite(d) => d.dump(opts, &mut out, progress).await,
             Inner::Mongo(m) => m.dump(opts, &tables, &mut out, progress).await,
         };
         let res = res.and_then(|st| out.flush().map(|_| st).map_err(Error::from));
@@ -352,6 +495,7 @@ impl Conn {
         let res = match &mut self.inner {
             Inner::Pg(d) => d.import(&mut reader, opts, progress).await,
             Inner::My(d) => d.import(&mut reader, opts, progress).await,
+            Inner::Sqlite(d) => d.import(&mut reader, opts, progress).await,
             Inner::Mongo(m) => {
                 let target = m.current_database();
                 m.import(&mut reader, target.as_deref(), opts, progress).await

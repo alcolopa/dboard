@@ -13,6 +13,9 @@ const D: Dialect = Dialect::Pg;
 
 pub struct Pg {
     client: Client,
+    cancel: tokio_postgres::CancelToken,
+    /// Set when the session is TLS-encrypted, so a cancel request can be encrypted the same way.
+    tls_cfg: Option<ConnectionConfig>,
 }
 
 impl Pg {
@@ -26,15 +29,18 @@ impl Pg {
         if !c.database.is_empty() {
             cfg.dbname(&c.database);
         }
-        let client = match c.ssl {
-            SslMode::Disable => Self::plain(&cfg).await?,
-            SslMode::Prefer => match Self::secure(&cfg, c.ssl).await {
-                Ok(cl) => cl,
-                Err(_) => Self::plain(&cfg).await?,
+        let (client, secure) = match c.ssl {
+            SslMode::Disable => (Self::plain(&cfg).await?, false),
+            SslMode::Prefer => match Self::secure(&cfg, c).await {
+                Ok(cl) => (cl, true),
+                Err(_) => (Self::plain(&cfg).await?, false),
             },
-            _ => Self::secure(&cfg, c.ssl).await?,
+            _ => (Self::secure(&cfg, c).await?, true),
         };
-        Ok(Self { client })
+        if c.read_only {
+            client.simple_query("SET default_transaction_read_only = on").await?;
+        }
+        Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()) })
     }
 
     async fn plain(cfg: &Config) -> Result<Client> {
@@ -45,15 +51,25 @@ impl Pg {
         Ok(client)
     }
 
-    async fn secure(cfg: &Config, mode: SslMode) -> Result<Client> {
+    async fn secure(cfg: &Config, c: &ConnectionConfig) -> Result<Client> {
         let mut cfg = cfg.clone();
         cfg.ssl_mode(tokio_postgres::config::SslMode::Require);
-        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(tls::client_config(mode));
+        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(tls::client_config(c)?);
         let (client, conn) = cfg.connect(connector).await?;
         tokio::spawn(async move {
             let _ = conn.await;
         });
         Ok(client)
+    }
+
+    /// A handle that can cancel whatever this connection is running, from another task.
+    pub fn canceller(&self) -> crate::driver::Canceller {
+        crate::driver::Canceller::Pg { token: self.cancel.clone(), tls: self.tls_cfg.clone() }
+    }
+
+    pub async fn set_timeout(&mut self, ms: u64) -> Result<()> {
+        self.client.simple_query(&format!("SET statement_timeout = {ms}")).await?;
+        Ok(())
     }
 
     pub async fn version(&mut self) -> Result<String> {
@@ -881,8 +897,18 @@ impl Pg {
 pub fn explain_rows_from_json(json: &str) -> std::result::Result<Rows, String> {
     let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("could not parse plan: {e}"))?;
     let plan = v.get(0).and_then(|p| p.get("Plan")).ok_or("no plan in EXPLAIN output")?;
-    let mut rows = Vec::new();
-    fn walk(n: &serde_json::Value, depth: usize, rows: &mut Vec<Vec<Cell>>) {
+
+    struct Node {
+        label: String,
+        cost: Option<f64>,
+        est: Option<f64>,
+        ms: Option<f64>,
+        actual: Option<f64>,
+        /// Time (or, without ANALYZE, cost) spent in this node itself, excluding its children.
+        own: f64,
+    }
+    // Returns this node's inclusive metric so the parent can subtract it.
+    fn walk(n: &serde_json::Value, depth: usize, out: &mut Vec<(usize, Node)>) -> (f64, bool) {
         let s = |k: &str| n.get(k).and_then(|x| x.as_str()).map(str::to_string);
         let f = |k: &str| n.get(k).and_then(|x| x.as_f64());
         let mut label = s("Node Type").unwrap_or_default();
@@ -892,30 +918,52 @@ pub fn explain_rows_from_json(json: &str) -> std::result::Result<Rows, String> {
         if let Some(i) = s("Index Name") {
             label.push_str(&format!(" using {i}"));
         }
-        let indent = if depth == 0 { String::new() } else { format!("{}↳ ", "   ".repeat(depth - 1)) };
-        rows.push(vec![
-            Some(format!("{indent}{label}")),
-            f("Total Cost").map(|c| format!("{c:.2}")),
-            f("Plan Rows").map(|c| format!("{c:.0}")),
-            f("Actual Total Time").map(|c| format!("{c:.3}")),
-            f("Actual Rows").map(|c| format!("{c:.0}")),
-        ]);
+        let loops = f("Actual Loops").unwrap_or(1.0).max(1.0);
+        let (total, timed) = match f("Actual Total Time") {
+            Some(t) => (t * loops, true),
+            None => (f("Total Cost").unwrap_or(0.0), false),
+        };
+        let idx = out.len();
+        out.push((depth, Node { label, cost: f("Total Cost"), est: f("Plan Rows"), ms: f("Actual Total Time"), actual: f("Actual Rows"), own: 0.0 }));
+        let mut child_sum = 0.0;
         if let Some(children) = n.get("Plans").and_then(|p| p.as_array()) {
             for c in children {
-                walk(c, depth + 1, rows);
+                child_sum += walk(c, depth + 1, out).0;
             }
         }
+        out[idx].1.own = (total - child_sum).max(0.0);
+        (total, timed)
     }
-    walk(plan, 0, &mut rows);
-    let mut extra = Vec::new();
+    let mut nodes: Vec<(usize, Node)> = Vec::new();
+    let (_, timed) = walk(plan, 0, &mut nodes);
+    let sum: f64 = nodes.iter().map(|(_, n)| n.own).sum();
+    let slowest = nodes.iter().enumerate().max_by(|a, b| a.1 .1.own.partial_cmp(&b.1 .1.own).unwrap_or(std::cmp::Ordering::Equal)).map(|(i, _)| i);
+
+    let mut rows: Vec<Vec<Cell>> = Vec::new();
+    for (i, (depth, n)) in nodes.iter().enumerate() {
+        let indent = if *depth == 0 { String::new() } else { format!("{}↳ ", "   ".repeat(depth - 1)) };
+        let pct = if sum > 0.0 { n.own / sum * 100.0 } else { 0.0 };
+        let filled = ((pct / 10.0).round() as usize).min(10);
+        let mut share = format!("{}{} {pct:.0}%", "█".repeat(filled), "░".repeat(10 - filled));
+        if Some(i) == slowest && nodes.len() > 1 {
+            share.push_str("  ◀ slowest");
+        }
+        rows.push(vec![
+            Some(format!("{indent}{}", n.label)),
+            n.cost.map(|c| format!("{c:.2}")),
+            n.est.map(|c| format!("{c:.0}")),
+            n.ms.map(|c| format!("{c:.3}")),
+            n.actual.map(|c| format!("{c:.0}")),
+            Some(if timed { format!("{:.3} ms self", n.own) } else { format!("{:.2} cost self", n.own) }).map(|t| format!("{t} · {share}")),
+        ]);
+    }
     for (k, label) in [("Planning Time", "Planning ms"), ("Execution Time", "Execution ms")] {
         if let Some(t) = v.get(0).and_then(|p| p.get(k)).and_then(|x| x.as_f64()) {
-            extra.push(vec![Some(label.to_string()), None, None, Some(format!("{t:.3}")), None]);
+            rows.push(vec![Some(label.to_string()), None, None, Some(format!("{t:.3}")), None, None]);
         }
     }
-    rows.extend(extra);
     Ok(Rows {
-        columns: vec!["Plan".into(), "Cost".into(), "Est. rows".into(), "Actual ms".into(), "Actual rows".into()],
+        columns: vec!["Plan".into(), "Cost".into(), "Est. rows".into(), "Actual ms".into(), "Actual rows".into(), "Where the time goes".into()],
         rows,
         duration_ms: 0.0,
         total_estimate: None,
@@ -938,5 +986,8 @@ mod tests {
         assert_eq!(r.rows[2][0].as_deref(), Some("↳ Index Scan on b using b_pkey"));
         assert_eq!(r.rows.last().unwrap()[0].as_deref(), Some("Execution ms"));
         assert!(explain_rows_from_json("nope").is_err());
+        // the root's own cost (12.5 - 1.0 - 2.0) makes it the slowest node
+        assert!(r.rows[0][5].as_deref().unwrap().contains("slowest"));
+        assert!(!r.rows[1][5].as_deref().unwrap().contains("slowest"));
     }
 }

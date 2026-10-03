@@ -16,7 +16,7 @@ component GridCellView inherits Rectangle {
     callback commit(string, bool);
 
     height: Theme.row-h;
-    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (selected ? Theme.sel : transparent));
+    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (cell.state == 4 ? Theme.warn-bg : (selected ? Theme.sel : transparent)));
     border-width: anchor ? 1.5px : 0.5px;
     border-color: anchor ? Theme.accent : Theme.line;
     clip: true;
@@ -75,8 +75,11 @@ component GridCellView inherits Rectangle {
     if !editing && col-info.is-bool && !cell.is-null && editable: Text {
         x: 52px; text: cell.text; color: Theme.dim; font-size: 11px; vertical-alignment: center;
     }
-    if !editing && col-info.fk != "" && !cell.is-null: Text {
-        x: parent.width - (cell.state == 0 ? 18px : 34px); text: "→"; color: Theme.accent; vertical-alignment: center;
+    if !editing && col-info.fk != "" && !cell.is-null: Rectangle {
+        x: parent.width - (cell.state == 0 ? 20px : 36px); width: 18px;
+        background: fa.has-hover ? Theme.hover : transparent;
+        Text { text: "→"; color: Theme.accent; horizontal-alignment: center; vertical-alignment: center; }
+        fa := TouchArea { clicked => { AppState.goto-fk(root.row-idx, root.ci); } }
     }
     if !editing && cell.state == 1: Text { x: parent.width - 18px; text: "…"; color: Theme.dim; vertical-alignment: center; }
     if !editing && cell.state == 2: Text { x: parent.width - 18px; text: "✓"; color: Theme.ok; vertical-alignment: center; }
@@ -204,6 +207,28 @@ export component DataGrid inherits Rectangle {
                                 if e.kind == PointerEventKind.up { AppState.col-resized(c, AppState.col-widths[c]); }
                             }
                         }
+                    }
+                }
+            }
+            // ---- per-column filter row (type, press Enter) ----
+            if AppState.filter-row-open && ((AppState.db-type != 2 && AppState.tab-kind == 0) || AppState.tab-kind == 5): HorizontalLayout {
+                height: 28px;
+                Rectangle {
+                    width: 48px; background: Theme.panel; border-width: 0.5px; border-color: Theme.line;
+                    Text { text: "filter"; color: Theme.dim; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                for col[c] in AppState.cols: Rectangle {
+                    width: AppState.col-widths[c];
+                    background: Theme.panel2; border-width: 0.5px; border-color: Theme.line; clip: true;
+                    Text {
+                        x: 8px; width: parent.width - 12px; visible: cfi.text == "";
+                        text: "contains…"; color: Theme.dim; font-italic: true; font-size: 11px; vertical-alignment: center;
+                    }
+                    cfi := TextInput {
+                        x: 8px; y: 0px; width: parent.width - 12px; height: parent.height;
+                        color: Theme.text; single-line: true; vertical-alignment: center; font-size: 12px;
+                        init => { self.text = AppState.col-filters[c]; }
+                        accepted => { AppState.col-filter(c, self.text); }
                     }
                 }
             }

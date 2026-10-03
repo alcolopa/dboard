@@ -187,6 +187,15 @@ pub struct Settings {
     /// Docked and kept open across restarts; otherwise the inspector floats over the workspace.
     pub inspector_pinned: bool,
     pub last_connection_id: String,
+    /// Ids of the connections that were open at last quit, in tab order.
+    pub open_connections: Vec<String>,
+    /// Server-side limit per statement in seconds, 0 = none.
+    pub statement_timeout_secs: u32,
+    /// Automatic backups of open connections: every N hours (0 = off), keeping the newest few.
+    pub backup_every_hours: u32,
+    pub backup_keep: u32,
+    /// Connection id -> unix time of its last automatic backup.
+    pub last_backup: std::collections::BTreeMap<String, u64>,
 }
 
 impl Default for Settings {
@@ -202,6 +211,11 @@ impl Default for Settings {
             inspector_open: false,
             inspector_pinned: false,
             last_connection_id: String::new(),
+            open_connections: Vec::new(),
+            statement_timeout_secs: 0,
+            backup_every_hours: 0,
+            backup_keep: 7,
+            last_backup: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -214,6 +228,71 @@ pub struct HistoryEntry {
     pub at: u64,
     pub duration_ms: f64,
     pub ok: bool,
+}
+
+/// One line of the local audit trail of write statements.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct AuditEntry {
+    pub at: u64,
+    pub connection: String,
+    pub environment: String,
+    pub text: String,
+}
+
+impl Store {
+    /// Hooks from `hooks.json` (missing file = none). A broken file is reported, not ignored.
+    pub fn load_hooks(&self) -> Result<Vec<crate::hooks::Hook>, String> {
+        match std::fs::read_to_string(self.dir.join("hooks.json")) {
+            Ok(text) => crate::hooks::parse(&text),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    /// Path of `hooks.json`, creating a commented sample the first time.
+    pub fn hooks_path(&self) -> std::path::PathBuf {
+        let p = self.dir.join("hooks.json");
+        if !p.exists() {
+            let _ = std::fs::create_dir_all(&self.dir);
+            let _ = std::fs::write(&p, crate::hooks::SAMPLE);
+        }
+        p
+    }
+}
+
+const AUDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+impl Store {
+    /// Append to `audit.log` (one JSON object per line). Never fails the caller; the file is
+    /// rotated to `audit.log.1` past 5 MB so it cannot grow without bound.
+    pub fn append_audit(&self, e: &AuditEntry) {
+        use std::io::Write;
+        let _ = std::fs::create_dir_all(&self.dir);
+        let path = self.dir.join("audit.log");
+        if std::fs::metadata(&path).map(|m| m.len() > AUDIT_MAX_BYTES).unwrap_or(false) {
+            let _ = std::fs::rename(&path, self.dir.join("audit.log.1"));
+        }
+        let Ok(line) = serde_json::to_string(e) else { return };
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+
+    /// Newest first, at most `limit` entries, across the current and the rotated file.
+    pub fn read_audit(&self, limit: usize) -> Vec<AuditEntry> {
+        let mut out: Vec<AuditEntry> = Vec::new();
+        for name in ["audit.log", "audit.log.1"] {
+            let Ok(text) = std::fs::read_to_string(self.dir.join(name)) else { continue };
+            let mut part: Vec<AuditEntry> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            part.reverse();
+            out.extend(part);
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out.truncate(limit);
+        out
+    }
 }
 
 pub const FOLDERS: [&str; 5] = ["General", "Users", "Analytics", "Production", "Debugging"];
@@ -268,6 +347,25 @@ pub mod secrets {
                 let _ = e.delete_credential();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn audit_entries_round_trip_newest_first() {
+        let dir = std::env::temp_dir().join(format!("dboard-audit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::at(&dir);
+        for (i, text) in ["INSERT a", "UPDATE b", "DROP c"].iter().enumerate() {
+            s.append_audit(&AuditEntry { at: i as u64, connection: "prod".into(), environment: "Production".into(), text: text.to_string() });
+        }
+        let got = s.read_audit(10);
+        assert_eq!(got.iter().map(|e| e.text.as_str()).collect::<Vec<_>>(), ["DROP c", "UPDATE b", "INSERT a"]);
+        assert_eq!(s.read_audit(2).len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

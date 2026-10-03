@@ -29,7 +29,9 @@ export component SessionBar inherits Rectangle {
             ta := TouchArea {
                 clicked => { AppState.switch-session(i); }
                 pointer-event(e) => {
-                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.middle { AppState.close-session(i); }
+                    if e.kind != PointerEventKind.down { return; }
+                    if e.button == PointerEventButton.middle { AppState.close-session(i); }
+                    if e.button == PointerEventButton.right { AppState.ctx("session", i, 0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y); }
                 }
             }
             Rectangle {
@@ -42,7 +44,7 @@ export component SessionBar inherits Rectangle {
     }
     IconBtn {
         x: parent.width - 38px; y: 3px; size: 30px;
-        d: Icons.plus; hint: "Open another connection";
-        clicked => { AppState.connected = false; }
+        d: Icons.plus; hint: "New connection (open another database)";
+        clicked => { AppState.connected = false; AppState.new-conn(); }
     }
 }

@@ -1,7 +1,9 @@
 import { TextEdit, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Chip } from "widgets.slint";
+import { Btn, Chip, EditLine, EditArea } from "widgets.slint";
+import { SqlEditor } from "editor.slint";
+import { HlToken } from "state.slint";
 
 export component QueryEditor inherits VerticalLayout {
     spacing: 6px;
@@ -9,10 +11,9 @@ export component QueryEditor inherits VerticalLayout {
     Rectangle {
         height: 150px;
         border-radius: 6px; border-width: 1px; border-color: Theme.line; background: Theme.panel;
-        TextEdit {
+        editor := SqlEditor {
             width: parent.width; height: parent.height;
             text <=> AppState.query-text;
-            font-family: "JetBrains Mono";
             font-size: AppState.set-font-size * 1px;
             edited(t) => { AppState.query-edited(t); }
         }
@@ -20,6 +21,12 @@ export component QueryEditor inherits VerticalLayout {
     HorizontalLayout {
         spacing: 6px;
         Btn { text: "▶ Run"; primary: true; clicked => { AppState.run-query(AppState.query-text); } }
+        Btn {
+            text: "Run selection";
+            // The editor widget doesn't expose its selection, so copy it through the clipboard
+            // (the Rust side stashes and restores the user's clipboard around this).
+            clicked => { AppState.stash-clipboard(); editor.copy(); AppState.run-selection(AppState.query-text); }
+        }
         Btn { text: "Explain"; clicked => { AppState.explain-query(AppState.query-text, false); } }
         if AppState.db-type != 2: Btn { text: "Explain analyze"; clicked => { AppState.explain-query(AppState.query-text, true); } }
         Btn { text: "Save…"; clicked => { AppState.open-save-query(); } }
@@ -27,10 +34,24 @@ export component QueryEditor inherits VerticalLayout {
         Rectangle { horizontal-stretch: 1; }
         Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
     }
+    if AppState.result-labels.length > 1: HorizontalLayout {
+        spacing: 6px; alignment: start;
+        Text { text: "Results:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+        for l[i] in AppState.result-labels: Chip {
+            text: l;
+            fill: AppState.result-index == i ? Theme.accent : Theme.panel2;
+            clicked => { AppState.pick-result(i); }
+        }
+    }
     if AppState.db-type == 2: HorizontalLayout {
         spacing: 6px; alignment: start;
         Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Chip { text: t; clicked => { AppState.insert-template(t); } }
+    }
+    if AppState.db-type != 2: HorizontalLayout {
+        spacing: 6px; alignment: start;
+        Text { text: "Snippets:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+        for t in [{ k: "select", l: "SELECT" }, { k: "count", l: "COUNT" }, { k: "group", l: "GROUP BY" }, { k: "join", l: "JOIN on FK" }, { k: "insert", l: "INSERT" }, { k: "update", l: "UPDATE" }, { k: "delete", l: "DELETE" }, { k: "cte", l: "WITH (CTE)" }]: Chip { text: t.l; clicked => { AppState.insert-template(t.k); } }
     }
     if AppState.suggestions.length > 0: HorizontalLayout {
         spacing: 6px; alignment: start;

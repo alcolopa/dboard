@@ -1,13 +1,14 @@
 import { Palette, ComboBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge, Icons, IconBtn, Slot, Sep } from "widgets.slint";
+import { Btn, Badge, Icons, IconBtn, Slot, Sep, EditLine, EditArea } from "widgets.slint";
 import { SessionBar } from "sessions.slint";
 import { ConnectionManager } from "connections.slint";
 import { Sidebar } from "sidebar.slint";
 import { TabBar } from "tabs.slint";
 import { DataGrid } from "grid.slint";
 import { QueryEditor, HistoryDrawer } from "query.slint";
+import { Diagram } from "diagram.slint";
 import { Inspector } from "inspector.slint";
 import { Dialogs } from "dialogs.slint";
 import { TextEdit, LineEdit } from "std-widgets.slint";
@@ -25,7 +26,7 @@ component Workspace inherits VerticalLayout {
         HorizontalLayout {
             height: 44px; padding: 8px; spacing: 8px;
             Text { text: AppState.table-title; font-weight: 700; color: Theme.text; vertical-alignment: center; }
-            LineEdit {
+            EditLine {
                 placeholder-text: AppState.db-type == 2 ? "Filter as JSON, e.g. {\"age\": {\"$gt\": 30}}" : "WHERE clause, e.g. id > 10";
                 text <=> AppState.filter-text;
                 accepted => { AppState.apply-filter(self.text); }
@@ -47,13 +48,14 @@ component Workspace inherits VerticalLayout {
             Text { text: Theme.mod + "+K command palette   ·   " + Theme.mod + "+P search objects   ·   " + Theme.mod + "+Tab next tab"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
         }
     }
-    if AppState.tab-kind >= 0 && AppState.tab-kind != 3: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
+    if AppState.tab-kind == 4: Diagram { vertical-stretch: 1; }
+    if AppState.tab-kind >= 0 && AppState.tab-kind != 3 && AppState.tab-kind != 4: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
     if AppState.tab-kind == 2 || AppState.tab-kind == 3: Rectangle {
         vertical-stretch: AppState.tab-kind == 3 ? 1 : 0;
         min-height: 100px;
         preferred-height: AppState.tab-kind == 3 ? 400px : 220px;
         background: Theme.panel; border-width: 1px; border-color: Theme.line;
-        TextEdit { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-family: "JetBrains Mono"; font-size: AppState.set-font-size * 1px; }
+        EditArea { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-family: "JetBrains Mono"; font-size: AppState.set-font-size * 1px; }
     }
     // footer
     if AppState.tab-kind >= 0: Rectangle {
@@ -82,9 +84,14 @@ component Workspace inherits VerticalLayout {
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.plus; hint: "Add row"; primary: true; clicked => { AppState.open-insert(); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.trash; hint: "Delete selected row"; danger: true; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } } }
+            if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { Btn { text: AppState.stage-on ? "Staging: on" : "Staging: off"; clicked => { AppState.stage-toggle(); } } }
+            if AppState.tab-kind == 0 && AppState.pending-count > 0: Slot { Btn { text: "Review " + AppState.pending-count + " change(s)"; primary: true; clicked => { AppState.review-open-request(); } } }
+            if (AppState.tab-kind == 0 && AppState.db-type != 2) || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
             if AppState.tab-kind == 0: Slot { Sep { } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
-            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.pin; hint: "Pin this result so you can compare against it later"; enabled: AppState.rows.length > 0; clicked => { AppState.pin-result(); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { Btn { text: "Compare with pinned"; clicked => { AppState.compare-result(); } } }
+            if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }
         }
     }
 }
@@ -104,37 +111,67 @@ export component App inherits Window {
     // Closing a dialog destroys its focused input; hand focus back so shortcuts keep working.
     property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
         || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open
-        || AppState.editrow-open || AppState.users-open || AppState.xfer-open;
-    changed any-modal => { if !self.any-modal { fs.focus(); } }
+        || AppState.editrow-open || AppState.users-open || AppState.xfer-open || AppState.review-open || AppState.vars-open;
+    changed any-modal => { AppState.text-focus = 0; if !self.any-modal { fs.focus(); } }
     // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
     property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
-    changed focus-key => { fs.focus(); }
+    changed focus-key => { AppState.text-focus = 0; fs.focus(); }
     // Clicking a cell must pull focus out of whatever text box had it so Copy / Paste act on the grid.
     property <int> focus-token: AppState.focus-token;
-    changed focus-token => { fs.focus(); }
+    changed focus-token => { AppState.text-focus = 0; fs.focus(); }
 
     // Native menu bar on macOS (global top bar); other platforms get the same entries in-window.
     MenuBar {
         Menu {
             title: "File";
-            MenuItem { title: "New Query"; activated => { AppState.new-query-tab(); } }
-            MenuItem { title: "Close Tab"; activated => { AppState.close-tab(-1); } }
-            MenuItem { title: "Reopen Closed Tab"; activated => { AppState.reopen-tab(); } }
-            MenuItem { title: "Disconnect"; activated => { AppState.disconnect(); } }
+            MenuItem { title: "New Connection"; activated => { AppState.connected = false; AppState.new-conn(); } }
+            MenuItem { title: "New Query"; enabled: AppState.connected; activated => { AppState.new-query-tab(); } }
+            MenuItem { title: "Back Up Database Now"; enabled: AppState.connected; activated => { AppState.backup-now(); } }
+            Menu {
+                title: "Automatic Backups";
+                MenuItem { title: (AppState.backup-hours == 0 ? "✓ " : "") + "Off"; activated => { AppState.set-backup(0, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-hours == 1 ? "✓ " : "") + "Every hour"; activated => { AppState.set-backup(1, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-hours == 6 ? "✓ " : "") + "Every 6 hours"; activated => { AppState.set-backup(6, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-hours == 24 ? "✓ " : "") + "Daily"; activated => { AppState.set-backup(24, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-keep == 3 ? "✓ " : "") + "Keep the last 3"; activated => { AppState.set-backup(AppState.backup-hours, 3); } }
+                MenuItem { title: (AppState.backup-keep == 7 ? "✓ " : "") + "Keep the last 7"; activated => { AppState.set-backup(AppState.backup-hours, 7); } }
+                MenuItem { title: (AppState.backup-keep == 30 ? "✓ " : "") + "Keep the last 30"; activated => { AppState.set-backup(AppState.backup-hours, 30); } }
+            }
+            MenuItem { title: "Close Tab"; enabled: AppState.connected; activated => { AppState.close-tab(-1); } }
+            MenuItem { title: "Reopen Closed Tab"; enabled: AppState.connected; activated => { AppState.reopen-tab(); } }
+            MenuItem { title: "Disconnect"; enabled: AppState.connected; activated => { AppState.disconnect(); } }
             MenuItem { title: "Quit"; activated => { AppState.quit(); } }
         }
         Menu {
             title: "Edit";
-            MenuItem { title: "Undo Last Change"; activated => { AppState.undo(); } }
-            MenuItem { title: "Select All"; activated => { AppState.select-all(); } }
+            MenuItem { title: "Undo Last Change"; enabled: AppState.connected && AppState.undo-count > 0; activated => { AppState.undo(); } }
+            MenuItem { title: "Cut"; activated => { AppState.edit(0); } }
+            MenuItem { title: "Copy"; activated => { AppState.edit(1); } }
+            MenuItem { title: "Paste"; activated => { AppState.edit(2); } }
+            MenuItem { title: "Select All"; activated => { AppState.edit(3); } }
             MenuItem { title: "Settings…"; activated => { AppState.open-settings(); } }
         }
         Menu {
             title: "View";
+            Menu {
+                title: "Query Timeout";
+                MenuItem { title: (AppState.timeout-secs == 0 ? "✓ " : "") + "Off"; activated => { AppState.set-timeout(0); } }
+                MenuItem { title: (AppState.timeout-secs == 30 ? "✓ " : "") + "30 seconds"; activated => { AppState.set-timeout(30); } }
+                MenuItem { title: (AppState.timeout-secs == 120 ? "✓ " : "") + "2 minutes"; activated => { AppState.set-timeout(120); } }
+                MenuItem { title: (AppState.timeout-secs == 600 ? "✓ " : "") + "10 minutes"; activated => { AppState.set-timeout(600); } }
+            }
+            MenuItem { title: "Audit Log"; enabled: AppState.connected; activated => { AppState.open-audit(); } }
+            MenuItem { title: "ER Diagram"; enabled: AppState.connected && AppState.db-type != 2; activated => { AppState.open-er(); } }
             MenuItem { title: "Refresh"; activated => { AppState.refresh(); } }
             MenuItem { title: "Toggle Inspector"; activated => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
             MenuItem { title: "Command Palette"; activated => { AppState.open-palette(false); } }
             MenuItem { title: "Search Objects"; activated => { AppState.open-palette(true); } }
+        }
+        Menu {
+            title: "Help";
+            MenuItem { title: "Check for Updates…"; activated => { AppState.check-updates(); } }
+            MenuItem { title: "Edit Hooks File…"; activated => { AppState.open-hooks(); } }
+            MenuItem { title: "Release Notes"; activated => { AppState.open-link("https://github.com/alcolopa/dboard/releases"); } }
         }
         Menu {
             title: "Tab";
@@ -205,10 +242,19 @@ export component App inherits Window {
             reject
         }
 
-        if !AppState.connected: ConnectionManager { }
+        if !AppState.connected: VerticalLayout {
+            if AppState.sessions.length > 0: SessionBar { }
+            ConnectionManager { vertical-stretch: 1; }
+        }
 
         if AppState.connected: VerticalLayout {
             SessionBar { }
+            // Production gets an unmissable banner; every other environment a thin coloured strip.
+            if AppState.env-label == "Production": Rectangle {
+                height: 18px; background: AppState.env-color;
+                Text { text: "PRODUCTION DATABASE — changes here affect real data"; color: white; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            if AppState.env-label != "Production": Rectangle { height: 2px; background: AppState.env-color; }
             // ---- top bar ----
             Rectangle {
                 height: 44px; background: Theme.panel;
@@ -233,6 +279,22 @@ export component App inherits Window {
                         color: AppState.hint != "" ? Theme.text : Theme.dim;
                         vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; min-width: 40px;
                     }
+                    if AppState.read-only: Slot {
+                        Rectangle {
+                            width: rol.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.panel2; border-width: 1px; border-color: Theme.line;
+                            rol := Text { text: "READ-ONLY"; color: Theme.dim; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                    if AppState.running: Slot { Btn { text: "Stop query"; danger: true; clicked => { AppState.stop-query(); } } }
+                    if AppState.db-type != 2 && !AppState.in-tx: Slot { Btn { text: "Begin transaction"; clicked => { AppState.tx-begin(); } } }
+                    if AppState.in-tx: Slot {
+                        Rectangle {
+                            width: txl.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.warn;
+                            txl := Text { text: "IN TRANSACTION"; color: black; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                    if AppState.in-tx: Slot { Btn { text: "Commit"; primary: true; clicked => { AppState.tx-commit(); } } }
+                    if AppState.in-tx: Slot { Btn { text: "Rollback"; danger: true; clicked => { AppState.tx-rollback(); } } }
                     Slot { IconBtn { d: Icons.undo; hint: "Undo last change (" + Theme.mod + "+Z)"; badge: AppState.undo-count; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } } }
                     Slot { IconBtn { d: Icons.history; hint: "Query history & saved queries"; active: AppState.drawer-open; clicked => { AppState.drawer-open = !AppState.drawer-open; } } }
                     Slot {

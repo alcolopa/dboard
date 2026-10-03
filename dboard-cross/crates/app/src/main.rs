@@ -3,9 +3,15 @@
 
 slint::include_modules!();
 
+mod backup;
 mod clipboard;
+mod datagen;
 mod export;
+mod highlight;
+mod snippets;
 mod suggest;
+mod update;
+mod vars;
 mod worker;
 
 use dboard_core::config::Store;
@@ -27,7 +33,54 @@ fn main() {
         }};
     }
 
+    // Editor colouring runs synchronously on the UI thread so text never flashes invisible.
+    st.on_highlight(|text| {
+        let toks: Vec<HlToken> = highlight::tokens(text.as_str())
+            .into_iter()
+            .map(|t| HlToken { line: t.line as i32, col: t.col as i32, text: t.text.into(), kind: t.kind as i32 })
+            .collect();
+        slint::ModelRc::new(slint::VecModel::from(toks))
+    });
+    st.on_bracket_match(|text, off| {
+        let v: Vec<i32> = highlight::match_bracket(text.as_str(), off.max(0) as usize)
+            .map(|[a, b]| vec![a.0 as i32, a.1 as i32, b.0 as i32, b.1 as i32])
+            .unwrap_or_default();
+        slint::ModelRc::new(slint::VecModel::from(v))
+    });
+    st.on_count_lines(|t| t.as_str().split('\n').count() as i32);
+    st.on_gutter(|n| (1..=n.max(1)).map(|i| i.to_string()).collect::<Vec<_>>().join("\n").into());
+    wire!(on_vars_edited, |i, v| Cmd::VarsEdited(i.max(0) as usize, v.to_string()));
+    wire!(on_vars_submit, | | Cmd::VarsSubmit);
+    wire!(on_vars_cancel, | | Cmd::VarsCancel);
+    st.on_stop_query(|| worker::CANCEL.notify_one());
+    wire!(on_set_timeout, |s| Cmd::SetTimeout(s.max(0) as u32));
+    wire!(on_stage_toggle, | | Cmd::StageToggle);
+    wire!(on_review_open_request, | | Cmd::ReviewOpen);
+    wire!(on_review_apply, | | Cmd::ReviewApply);
+    wire!(on_review_cancel, | | Cmd::ReviewCancel);
+    wire!(on_review_discard, | | Cmd::ReviewDiscard);
+    wire!(on_pin_result, | | Cmd::PinResult);
+    wire!(on_compare_result, | | Cmd::CompareResult);
+    wire!(on_xfer_preview_request, |p, h| Cmd::XferPreview(p.to_string(), h));
+    wire!(on_xfer_map_pick, |i, j| Cmd::XferMapPick(i.max(0) as usize, j.max(0) as usize));
+    wire!(on_generate_rows, |n| Cmd::GenerateRows(n.max(0) as usize));
+    wire!(on_open_audit, | | Cmd::OpenAudit);
+    wire!(on_backup_now, | | Cmd::BackupNow);
+    wire!(on_set_backup, |h, k| Cmd::SetBackup(h.max(0) as u32, k.max(1) as u32));
+    wire!(on_open_hooks, | | Cmd::OpenHooks);
     wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
+    wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));
+    wire!(on_open_er, | | Cmd::OpenEr);
+    wire!(on_er_open, |s, n| Cmd::ErOpen(s.to_string(), n.to_string()));
+    wire!(on_check_updates, | | Cmd::CheckUpdates);
+    wire!(on_open_link, |u| Cmd::OpenLink(u.to_string()));
+    wire!(on_pick_result, |i| Cmd::PickResult(i.max(0) as usize));
+    wire!(on_tx_begin, | | Cmd::TxBegin);
+    wire!(on_tx_commit, | | Cmd::TxCommit);
+    wire!(on_tx_rollback, | | Cmd::TxRollback);
+    wire!(on_parse_conn_url, |u| Cmd::ParseConnUrl(u.to_string()));
+    wire!(on_conn_filter, |q| Cmd::ConnFilter(q.to_string()));
     wire!(on_select_conn, |id| Cmd::SelectConn(id.to_string()));
     wire!(on_save_conn, |f| Cmd::SaveConn(f));
     wire!(on_test_conn, |f| Cmd::TestConn(f));
@@ -94,6 +147,25 @@ fn main() {
     wire!(on_open_export, | | Cmd::OpenExport);
     wire!(on_query_edited, |t| Cmd::QueryEdited(t.to_string()));
     wire!(on_apply_suggestion, |s| Cmd::ApplySuggestion(s.to_string()));
+    // "Run selection": runs on the UI thread so the clipboard round-trip is synchronous.
+    {
+        use std::sync::Mutex;
+        const MARK: &str = "\u{1}dboard-selection-probe\u{1}";
+        static SAVED: Mutex<Option<String>> = Mutex::new(None);
+        st.on_stash_clipboard(|| {
+            *SAVED.lock().unwrap() = clipboard::get().ok();
+            let _ = clipboard::set(MARK);
+        });
+        let tx = tx.clone();
+        st.on_run_selection(move |full| {
+            let got = clipboard::get().unwrap_or_default();
+            if let Some(old) = SAVED.lock().unwrap().take() {
+                let _ = clipboard::set(&old);
+            }
+            let text = if got.trim().is_empty() || got == MARK { full.to_string() } else { got };
+            let _ = tx.send(Cmd::RunSnippet(text));
+        });
+    }
     wire!(on_run_query, |t| Cmd::RunQuery(t.to_string()));
     wire!(on_explain_query, |t, a| Cmd::ExplainQuery(t.to_string(), a));
     wire!(on_insert_template, |t| Cmd::InsertTemplate(t.to_string()));
@@ -137,7 +209,8 @@ fn main() {
             let mut form = st.get_form();
             let is_default = form.port.is_empty() || DbType::ALL.iter().any(|t| form.port.as_str() == t.default_port().to_string());
             if is_default {
-                form.port = DbType::ALL[(idx.max(0) as usize).min(2)].default_port().to_string().into();
+                let t = DbType::ALL[(idx.max(0) as usize).min(3)];
+                form.port = if t == DbType::Sqlite { "".into() } else { t.default_port().to_string().into() };
             }
             st.set_form(form);
         });
@@ -145,11 +218,27 @@ fn main() {
 
     let weak = app.as_weak();
     let worker_tx = tx.clone();
+    let worker_tx_ticker = tx.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
         rt.block_on(async move {
             let mut w = Worker::new(weak, worker_tx, Store::open_default());
             w.init();
+            // Scheduled backups: check every ten minutes while the app is open.
+            {
+                let tx = worker_tx_ticker.clone();
+                tokio::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+                    tick.tick().await;
+                    loop {
+                        tick.tick().await;
+                        if tx.send(Cmd::BackupTick).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            w.restore_sessions().await;
             while let Some(cmd) = rx.recv().await {
                 w.handle(cmd).await;
             }
@@ -157,4 +246,62 @@ fn main() {
     });
 
     app.run().expect("run event loop");
+}
+
+#[cfg(test)]
+mod ui_tests {
+    use super::*;
+
+    /// The whole window builds headlessly and the state bindings the worker relies on behave.
+    #[test]
+    fn window_builds_and_state_defaults_are_sane() {
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().expect("window builds");
+        let st = app.global::<AppState>();
+        assert!(!st.get_connected());
+        assert!(!st.get_in_tx());
+        assert_eq!(slint::Model::row_count(&st.get_sessions()), 0);
+
+        // Callbacks the Rust side wires must exist and be invocable without a worker attached.
+        st.invoke_new_conn();
+        st.invoke_conn_filter("x".into());
+    }
+
+    #[test]
+    fn escape_closes_a_dialog() {
+        use slint::platform::{Key, WindowEvent};
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().unwrap();
+        app.window().set_size(slint::PhysicalSize::new(1200, 800));
+        app.show().unwrap();
+        let st = app.global::<AppState>();
+        let closed = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = closed.clone();
+        st.on_review_cancel(move || flag.set(true));
+        st.set_connected(true);
+        st.set_review_open(true);
+        // let the dialog's focus scope take focus, then press Escape
+        slint::platform::update_timers_and_animations();
+        app.window().dispatch_event(WindowEvent::KeyPressed { text: Key::Escape.into() });
+        app.window().dispatch_event(WindowEvent::KeyReleased { text: Key::Escape.into() });
+        assert!(closed.get(), "Escape must dismiss the dialog");
+    }
+
+    #[test]
+    fn edit_menu_targets_grid_when_no_text_field_is_focused() {
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().unwrap();
+        let st = app.global::<AppState>();
+        let copied = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = copied.clone();
+        st.on_copy_selection(move |_, _, _, _, _| flag.set(true));
+        st.set_sel_kind(1);
+        st.invoke_edit(1); // Copy
+        assert!(copied.get());
+        // With a text field focused the grid is left alone.
+        copied.set(false);
+        st.set_text_focus(1);
+        st.invoke_edit(1);
+        assert!(!copied.get());
+    }
 }

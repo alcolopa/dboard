@@ -3,16 +3,22 @@
 
 pub mod admin;
 pub mod config;
+pub mod creds;
 pub mod driver;
 pub mod edit;
 pub mod error;
+pub mod hooks;
 pub mod model;
 pub mod mongo;
 pub mod mysql;
 pub mod pg;
 pub mod split;
 pub mod safety;
+pub mod schemadiff;
 pub mod sql;
+pub mod sqlite;
+pub mod tunnel;
+pub mod url;
 pub mod dump;
 mod tls;
 

@@ -1,0 +1,101 @@
+import { Theme } from "theme.slint";
+import { AppState, HlToken } from "state.slint";
+
+// SQL / Mongo shell editor: a transparent TextInput (caret, selection, editing) drawn over
+// colour-coded runs of the same text, plus a line-number gutter and bracket matching.
+export component SqlEditor inherits Rectangle {
+    in property <length> font-size: 13px;
+    in-out property <string> text <=> ed.text;
+    callback edited(string);
+    out property <bool> has-focus: ed.has-focus;
+
+    public function copy() { ed.copy(); }
+    public function cut() { ed.cut(); }
+    public function paste() { ed.paste(); }
+    public function select-all() { ed.select-all(); }
+
+    // Measured, not guessed: one glyph's advance and one line's height for the current font.
+    property <length> cw: probe-w.preferred-width / 10;
+    property <length> lh: probe-h.preferred-height / 2;
+    property <length> pad: 8px;
+    property <int> line-count: AppState.count-lines(ed.text);
+    property <length> gutter-w: gutter-text.preferred-width + 16px;
+    property <[int]> bracket: AppState.bracket-match(ed.text, ed.cursor-position-byte-offset);
+    property <[HlToken]> toks: AppState.highlight(ed.text);
+
+    probe-w := Text { visible: false; text: "MMMMMMMMMM"; font-family: "JetBrains Mono"; font-size: root.font-size; }
+    probe-h := Text { visible: false; text: "M\nM"; font-family: "JetBrains Mono"; font-size: root.font-size; }
+    gutter-text := Text { visible: false; text: AppState.gutter(root.line-count); font-family: "JetBrains Mono"; font-size: root.font-size; }
+
+    function token-color(kind: int) -> color {
+        kind == 1 ? (Theme.dark ? #7aa2f7 : #3b5bdb)
+        : kind == 2 ? (Theme.dark ? #9ece6a : #2b8a3e)
+        : kind == 3 ? (Theme.dark ? #ff9e64 : #d9480f)
+        : kind == 4 ? Theme.dim
+        : kind == 5 ? (Theme.dark ? #89ddff : #1971c2)
+        : kind == 6 ? (Theme.dark ? #e0af68 : #9c6b00)
+        : Theme.text
+    }
+
+    clip: true;
+    fl := Flickable {
+        content-width: max(root.width, root.gutter-w + root.pad + ed.preferred-width + 40px);
+        content-height: max(root.height, ed.preferred-height + 2 * root.pad);
+
+        // gutter stays put horizontally
+        Rectangle {
+            x: -fl.content-x; y: 0px; width: root.gutter-w; height: fl.content-height;
+            background: Theme.panel2;
+            Text {
+                x: 0px; y: root.pad; width: parent.width - 8px;
+                text: AppState.gutter(root.line-count);
+                horizontal-alignment: right;
+                font-family: "JetBrains Mono"; font-size: root.font-size; color: Theme.dim;
+            }
+        }
+        // bracket pair
+        if root.bracket.length == 4: Rectangle {
+            x: root.gutter-w + root.pad + root.bracket[1] * root.cw; y: root.pad + root.bracket[0] * root.lh;
+            width: root.cw; height: root.lh; background: #5b7cfa55; border-radius: 2px;
+        }
+        if root.bracket.length == 4: Rectangle {
+            x: root.gutter-w + root.pad + root.bracket[3] * root.cw; y: root.pad + root.bracket[2] * root.lh;
+            width: root.cw; height: root.lh; background: #5b7cfa55; border-radius: 2px;
+        }
+        for t in root.toks: Text {
+            x: root.gutter-w + root.pad + t.col * root.cw;
+            y: root.pad + t.line * root.lh;
+            text: t.text;
+            color: root.token-color(t.kind);
+            font-family: "JetBrains Mono"; font-size: root.font-size;
+        }
+        ed := TextInput {
+            x: root.gutter-w + root.pad; y: root.pad;
+            width: max(fl.width - root.gutter-w - 2 * root.pad, self.preferred-width + 40px);
+            height: max(fl.height - 2 * root.pad, self.preferred-height);
+            single-line: false; wrap: no-wrap;
+            font-family: "JetBrains Mono"; font-size: root.font-size;
+            color: transparent;
+            selection-foreground-color: transparent;
+            selection-background-color: #5b7cfa66;
+            edited => { root.edited(self.text); }
+            changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
+            cursor-position-changed(p) => {
+                // keep the caret in view
+                if p.y + root.pad < -fl.content-y { fl.content-y = -(p.y + root.pad); }
+                else if p.y + root.lh + root.pad > -fl.content-y + fl.height { fl.content-y = -(p.y + root.lh + root.pad - fl.height); }
+                if p.x + root.gutter-w < -fl.content-x { fl.content-x = -(p.x + root.gutter-w); }
+                else if p.x + root.gutter-w + root.pad + 8px > -fl.content-x + fl.width { fl.content-x = -(p.x + root.gutter-w + root.pad + 8px - fl.width); }
+            }
+        }
+    }
+    property <int> edit-seq: AppState.edit-seq;
+    changed edit-seq => {
+        if ed.has-focus {
+            if AppState.edit-kind == 0 { ed.cut(); }
+            else if AppState.edit-kind == 1 { ed.copy(); }
+            else if AppState.edit-kind == 2 { ed.paste(); }
+            else { ed.select-all(); }
+        }
+    }
+}

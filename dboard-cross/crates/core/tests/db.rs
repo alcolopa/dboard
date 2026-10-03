@@ -5,6 +5,12 @@
 use dboard_core::model::*;
 use dboard_core::Conn;
 
+/// The Postgres tests share one database and run DDL, so they take turns (other engines are separate servers).
+static PG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn pg_lock() -> std::sync::MutexGuard<'static, ()> {
+    PG_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn cfg(var: &str, ty: DbType) -> Option<(ConnectionConfig, String)> {
     let v = std::env::var(var).ok()?;
     let p: Vec<&str> = v.split(':').collect();
@@ -136,8 +142,91 @@ async fn scenario(c: ConnectionConfig, pw: String) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn postgres() {
+    let _g = pg_lock();
     if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
         scenario(c, pw).await;
+    }
+}
+
+async fn transactions(c: ConnectionConfig, pw: String) {
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    let _ = d.execute_query("DROP TABLE IF EXISTS dboard_tx").await;
+    d.execute_query("CREATE TABLE dboard_tx (id int primary key)").await.unwrap();
+    let count = |r: dboard_core::model::Rows| r.rows[0][0].clone().unwrap();
+
+    d.begin().await.unwrap();
+    assert!(d.in_transaction());
+    d.execute_query("INSERT INTO dboard_tx VALUES (1)").await.unwrap();
+    d.rollback().await.unwrap();
+    assert!(!d.in_transaction());
+    assert_eq!(count(d.execute_query("SELECT count(*) FROM dboard_tx").await.unwrap()), "0");
+
+    d.begin().await.unwrap();
+    d.execute_query("INSERT INTO dboard_tx VALUES (2)").await.unwrap();
+    d.commit().await.unwrap();
+    assert_eq!(count(d.execute_query("SELECT count(*) FROM dboard_tx").await.unwrap()), "1");
+    d.begin().await.unwrap();
+    assert!(d.switch_database(Some("x"), &pw).await.is_err());
+    d.rollback().await.unwrap();
+    d.execute_query("DROP TABLE dboard_tx").await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn postgres_cancel_and_timeout() {
+    let _g = pg_lock();
+    let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    let canceller = d.canceller();
+    let started = std::time::Instant::now();
+    let (res, cancelled) = tokio::join!(d.execute_query("SELECT pg_sleep(20)"), async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        canceller.cancel().await
+    });
+    assert!(cancelled);
+    assert!(res.is_err(), "the sleeping query must be interrupted");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    // the connection stays usable
+    assert!(d.execute_query("SELECT 1").await.is_ok());
+
+    d.set_statement_timeout(300).await.unwrap();
+    let started = std::time::Instant::now();
+    assert!(d.execute_query("SELECT pg_sleep(20)").await.is_err());
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    d.set_statement_timeout(0).await.unwrap();
+    assert!(d.execute_query("SELECT 1").await.is_ok());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn postgres_explain_shows_where_time_goes() {
+    let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
+    let _g = pg_lock();
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    let plan = d.explain("SELECT g, count(*) FROM generate_series(1, 20000) g GROUP BY g ORDER BY 2 DESC", true).await.unwrap();
+    assert_eq!(plan.columns.len(), 6);
+    assert!(plan.rows.iter().any(|r| r[5].as_deref().is_some_and(|s| s.contains("slowest"))));
+    assert!(plan.rows.iter().any(|r| r[0].as_deref() == Some("Execution ms")));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn postgres_read_only_blocks_writes() {
+    let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
+    let _g = pg_lock();
+    let mut rw = Conn::connect(c.clone(), &pw).await.unwrap();
+    let _ = rw.execute_query("DROP TABLE IF EXISTS dboard_ro").await;
+    rw.execute_query("CREATE TABLE dboard_ro (id int primary key)").await.unwrap();
+    let mut ro = Conn::connect(ConnectionConfig { read_only: true, ..c }, &pw).await.unwrap();
+    assert!(ro.execute_query("SELECT * FROM dboard_ro").await.is_ok());
+    let err = ro.execute_query("INSERT INTO dboard_ro VALUES (1)").await.unwrap_err().to_string();
+    assert!(err.to_lowercase().contains("read-only"), "{err}");
+    assert!(ro.execute_query("CREATE TABLE dboard_ro2 (x int)").await.is_err());
+    rw.execute_query("DROP TABLE dboard_ro").await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn postgres_transactions() {
+    let _g = pg_lock();
+    if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
+        transactions(c, pw).await;
     }
 }
 
@@ -216,6 +305,7 @@ async fn mongo() {
 /// TLS: forces `Require` (encrypted, no cert verification) and confirms the session is actually SSL.
 #[tokio::test(flavor = "current_thread")]
 async fn postgres_tls_required() {
+    let _g = pg_lock();
     let Some((mut c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
     if std::env::var("DBOARD_TEST_PG_SSL").is_err() {
         return; // server may not have ssl enabled
@@ -231,6 +321,7 @@ async fn postgres_tls_required() {
 /// then exercise users, database switching and the object listing.
 #[tokio::test(flavor = "current_thread")]
 async fn postgres_dump_import_users() {
+    let _g = pg_lock();
     use dboard_core::dump::{DumpOptions, ImportOptions};
     let Some((base, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
     let mut admin = Conn::connect(base.clone(), &pw).await.unwrap();

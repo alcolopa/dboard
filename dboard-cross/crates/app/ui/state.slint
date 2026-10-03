@@ -3,8 +3,10 @@ export struct ColInfo { name: string, type-name: string, pk: bool, fk: string, i
 export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string }
 export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
 export struct SessionTab { name: string, color: color, active: bool }
+export struct HlToken { line: int, col: int, text: string, kind: int }
+export struct ErBox { x: length, y: length, w: length, h: length, title: string, body: string, schema: string, name: string }
 export struct MetaRow { label: string, value: string }
-export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool }
+export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool, header: bool }
 export struct HistoryItem { sql: string, meta: string, ok: bool }
 export struct SavedItem { id: string, name: string, folder: string, sql: string }
 export struct PaletteItem { title: string, subtitle: string, kind: string }
@@ -15,6 +17,8 @@ export struct CtxItem { label: string, action: string, sep: bool, danger: bool }
 export struct ConnForm {
     id: string, name: string, type-index: int, host: string, port: string, database: string,
     user: string, password: string, env-index: int, ssl-index: int, uri: string, remember: bool,
+    ssh-host: string, ssh-port: string, ssh-user: string, ssh-key: string, read-only: bool,
+    ssl-ca: string, ssl-cert: string, ssl-key: string,
 }
 
 // Everything the Rust worker pushes to the UI, and every action the UI can request.
@@ -109,10 +113,60 @@ export global AppState {
     in property <string> form-info;
     in property <bool> form-is-new: true;
     in property <bool> form-busy;
-    in property <[string]> type-names: ["PostgreSQL", "MySQL / MariaDB", "MongoDB"];
+    in property <[string]> type-names: ["PostgreSQL", "MySQL / MariaDB", "MongoDB", "SQLite"];
     in property <[string]> env-names: ["Production", "Staging", "Development", "Local"];
     in property <[string]> ssl-names: ["Disable", "Prefer", "Require", "Verify full"];
+    in property <[string]> result-labels;
+    in property <int> result-index;
+    callback pick-result(int);
+    in property <bool> in-tx;
+    callback tx-begin();
+    callback tx-commit();
+    callback tx-rollback();
+    callback check-updates();
+    callback open-link(string);
+    in property <[ErBox]> er-boxes;
+    in property <[string]> er-lines;
+    in property <length> er-width;
+    in property <length> er-height;
+    callback open-er();
+    callback er-open(string, string);
+    in-out property <bool> filter-row-open;
+    in property <[string]> col-filters;
+    callback col-filter(int, string);
+    callback goto-fk(int, int);
+    in property <bool> vars-open;
+    in property <[FieldItem]> vars-items;
+    callback vars-edited(int, string);
+    callback vars-submit();
+    callback vars-cancel();
+    in property <bool> running;
+    in property <int> timeout-secs;
+    callback stop-query();
+    callback set-timeout(int);
+    in property <bool> stage-on;
+    in property <int> pending-count;
+    in property <bool> review-open;
+    in property <[EditItem]> review-items;
+    in property <string> review-error;
+    callback stage-toggle();
+    callback review-open-request();
+    callback review-apply();
+    callback review-cancel();
+    callback review-discard();
+    callback pin-result();
+    callback compare-result();
+    callback generate-rows(int);
+    in property <bool> read-only;
+    callback open-audit();
+    in property <int> backup-hours;
+    in property <int> backup-keep;
+    callback backup-now();
+    callback set-backup(int, int);
+    callback open-hooks();
     callback new-conn();
+    callback parse-conn-url(string);
+    callback conn-filter(string);
     callback select-conn(string);
     callback save-conn(ConnForm);
     callback test-conn(ConnForm);
@@ -198,6 +252,28 @@ export global AppState {
     callback next-page();
     callback prev-page();
     callback set-page-size(int);
+    // Native Edit menu: text inputs report focus; the menu targets the focused input, else the grid.
+    in-out property <int> text-focus;
+    in-out property <int> edit-seq;
+    in-out property <int> edit-kind;
+    public function edit(kind: int) {
+        if (text-focus > 0) {
+            edit-kind = kind;
+            edit-seq += 1;
+        } else if (kind == 0 || kind == 1) {
+            if (sel-kind != 0) { copy-selection(sel-r0, sel-c0, sel-r1, sel-c1, 0); }
+        } else if (kind == 2) {
+            if (sel-kind != 0) { paste-selection(sel-r0, sel-c0, sel-r1, sel-c1); }
+        } else {
+            select-all();
+        }
+    }
+    callback stash-clipboard();
+    callback run-selection(string);
+    pure callback highlight(string) -> [HlToken];
+    pure callback bracket-match(string, int) -> [int];
+    pure callback gutter(int) -> string;
+    pure callback count-lines(string) -> int;
     callback copy-text(string);
     callback copy-selection(int, int, int, int, int);
     callback paste-selection(int, int, int, int);
@@ -303,7 +379,7 @@ export global AppState {
     // ---- export ----
     in property <bool> export-open;
     in property <string> export-info;
-    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT"];
+    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT", "Excel (.xlsx)"];
     in-out property <int> export-format;
     in-out property <bool> export-headers: true;
     callback export-copy(int, bool);
@@ -359,6 +435,12 @@ export global AppState {
     in property <string> xfer-error;
     in property <bool> xfer-busy;
     callback open-transfer(int);
+    in property <[string]> xfer-map-files;
+    in property <[string]> xfer-map-targets;
+    in property <[int]> xfer-map-sel;
+    in property <string> xfer-preview;
+    callback xfer-preview-request(string, bool);
+    callback xfer-map-pick(int, int);
     callback xfer-browse();
     callback xfer-run(string, bool, bool);
     callback xfer-cancel();

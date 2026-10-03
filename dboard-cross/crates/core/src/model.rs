@@ -46,16 +46,18 @@ pub enum DbType {
     Postgres,
     MySql,
     Mongo,
+    Sqlite,
 }
 
 impl DbType {
-    pub const ALL: [DbType; 3] = [Self::Postgres, Self::MySql, Self::Mongo];
+    pub const ALL: [DbType; 4] = [Self::Postgres, Self::MySql, Self::Mongo, Self::Sqlite];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Postgres => "PostgreSQL",
             Self::MySql => "MySQL / MariaDB",
             Self::Mongo => "MongoDB",
+            Self::Sqlite => "SQLite",
         }
     }
 
@@ -64,6 +66,7 @@ impl DbType {
             Self::Postgres => 5432,
             Self::MySql => 3306,
             Self::Mongo => 27017,
+            Self::Sqlite => 0,
         }
     }
 
@@ -119,6 +122,17 @@ pub struct ConnectionConfig {
     /// MongoDB only: full connection string (overrides host/port/user).
     pub mongo_uri: String,
     pub remember_password: bool,
+    /// Optional SSH tunnel (system `ssh`): bastion host, port, user and private key path.
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub ssh_user: String,
+    pub ssh_key: String,
+    /// Optional TLS files (PEM paths): CA bundle to trust, client certificate and its private key.
+    pub ssl_ca: String,
+    pub ssl_cert: String,
+    pub ssl_key: String,
+    /// Block every write: the session is put in read-only mode and the app refuses edits.
+    pub read_only: bool,
     /// Unix seconds; used to sort "recent" connections.
     pub last_used: u64,
 }
@@ -137,6 +151,14 @@ impl Default for ConnectionConfig {
             ssl: SslMode::Prefer,
             mongo_uri: String::new(),
             remember_password: true,
+            ssh_host: String::new(),
+            ssh_port: 22,
+            ssh_user: String::new(),
+            ssh_key: String::new(),
+            ssl_ca: String::new(),
+            ssl_cert: String::new(),
+            ssl_key: String::new(),
+            read_only: false,
             last_used: 0,
         }
     }
@@ -153,6 +175,7 @@ impl ConnectionConfig {
         }
         match self.db_type {
             DbType::Mongo if !self.mongo_uri.is_empty() => "MongoDB".into(),
+            DbType::Sqlite if !self.database.is_empty() => self.database.rsplit(['/', '\\']).next().unwrap_or("SQLite").to_string(),
             _ if !self.host.is_empty() => format!("{}@{}", self.username, self.host),
             _ => "Untitled".into(),
         }
@@ -162,6 +185,9 @@ impl ConnectionConfig {
     pub fn validate(&self) -> Option<&'static str> {
         if self.db_type == DbType::Mongo && !self.mongo_uri.trim().is_empty() {
             return None;
+        }
+        if self.db_type == DbType::Sqlite {
+            return if self.database.trim().is_empty() { Some("Enter the path of the SQLite file.") } else { None };
         }
         if self.host.trim().is_empty() {
             return Some("Enter a host.");

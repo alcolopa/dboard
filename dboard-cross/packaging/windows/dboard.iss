@@ -1,4 +1,4 @@
-; Inno Setup script. Build: iscc /DAppVersion=1.0.0 /DArch=x86_64|arm64 packaging\windows\dboard.iss  (run from dboard-cross\)
+; Inno Setup script. Build: iscc /DAppVersion=2.0.0 /DArch=x86_64|arm64 packaging\windows\dboard.iss  (run from dboard-cross\)
 #ifndef Arch
   #define Arch "x86_64"
 #endif
@@ -8,7 +8,7 @@
   #define ArchAllowed "x64compatible"
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "2.0.0"
 #endif
 
 [Setup]

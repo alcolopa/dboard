@@ -13,6 +13,7 @@ const D: Dialect = Dialect::My;
 
 pub struct My {
     conn: Conn,
+    opts: mysql_async::Opts,
     is_mariadb: bool,
     /// Only this database is listed (None = every non-system database).
     scope: Option<String>,
@@ -75,10 +76,11 @@ impl My {
             .db_name(Some(c.database.clone()).filter(|d| !d.is_empty()));
         let with_ssl = |b: OptsBuilder| match c.ssl {
             SslMode::Disable => b,
+            SslMode::Prefer | SslMode::Require if !c.ssl_ca.trim().is_empty() => b.ssl_opts(Some(ca_opts(SslOpts::default().with_danger_skip_domain_validation(true), &c.ssl_ca))),
             SslMode::Prefer | SslMode::Require => b.ssl_opts(Some(
                 SslOpts::default().with_danger_accept_invalid_certs(true).with_danger_skip_domain_validation(true),
             )),
-            SslMode::VerifyFull => b.ssl_opts(Some(SslOpts::default())),
+            SslMode::VerifyFull => b.ssl_opts(Some(ca_opts(SslOpts::default(), &c.ssl_ca))),
         };
         let connect = |b: OptsBuilder| async move {
             tokio::time::timeout(Duration::from_secs(10), Conn::new(b))
@@ -93,7 +95,25 @@ impl My {
             },
             _ => connect(with_ssl(base)).await?,
         };
-        Ok(Self { conn, is_mariadb: false, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
+        let mut conn = conn;
+        if c.read_only {
+            conn.query_drop("SET SESSION TRANSACTION READ ONLY").await?;
+        }
+        Ok(Self { opts: conn.opts().clone(), conn, is_mariadb: false, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
+    }
+
+    pub fn canceller(&self) -> crate::driver::Canceller {
+        crate::driver::Canceller::My { opts: self.opts.clone(), id: self.conn.id() }
+    }
+
+    pub async fn set_timeout(&mut self, ms: u64) -> Result<()> {
+        if self.is_mariadb {
+            self.conn.query_drop(format!("SET SESSION max_statement_time = {}", ms as f64 / 1000.0)).await?;
+        } else {
+            // Applies to SELECT statements (MySQL has no general statement timeout).
+            self.conn.query_drop(format!("SET SESSION max_execution_time = {ms}")).await?;
+        }
+        Ok(())
     }
 
     pub async fn version(&mut self) -> Result<String> {
@@ -582,5 +602,14 @@ mod tests {
     fn humanizes_errors() {
         assert!(humanize(1062, "x").contains("unique"));
         assert_eq!(humanize(9999, "raw"), "raw");
+    }
+}
+
+/// Trust the user's CA bundle (PEM path) when one is configured.
+fn ca_opts(o: SslOpts, ca: &str) -> SslOpts {
+    if ca.trim().is_empty() {
+        o
+    } else {
+        o.with_root_certs(vec![std::path::PathBuf::from(ca.trim()).into()])
     }
 }
