@@ -267,6 +267,26 @@ mod ui_tests {
     }
 
     #[test]
+    fn escape_closes_a_dialog() {
+        use slint::platform::{Key, WindowEvent};
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().unwrap();
+        app.window().set_size(slint::PhysicalSize::new(1200, 800));
+        app.show().unwrap();
+        let st = app.global::<AppState>();
+        let closed = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = closed.clone();
+        st.on_review_cancel(move || flag.set(true));
+        st.set_connected(true);
+        st.set_review_open(true);
+        // let the dialog's focus scope take focus, then press Escape
+        slint::platform::update_timers_and_animations();
+        app.window().dispatch_event(WindowEvent::KeyPressed { text: Key::Escape.into() });
+        app.window().dispatch_event(WindowEvent::KeyReleased { text: Key::Escape.into() });
+        assert!(closed.get(), "Escape must dismiss the dialog");
+    }
+
+    #[test]
     fn edit_menu_targets_grid_when_no_text_field_is_focused() {
         i_slint_backend_testing::init_no_event_loop();
         let app = App::new().unwrap();
