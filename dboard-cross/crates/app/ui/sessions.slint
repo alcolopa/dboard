@@ -29,7 +29,9 @@ export component SessionBar inherits Rectangle {
             ta := TouchArea {
                 clicked => { AppState.switch-session(i); }
                 pointer-event(e) => {
-                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.middle { AppState.close-session(i); }
+                    if e.kind != PointerEventKind.down { return; }
+                    if e.button == PointerEventButton.middle { AppState.close-session(i); }
+                    if e.button == PointerEventButton.right { AppState.ctx("session", i, 0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y); }
                 }
             }
             Rectangle {

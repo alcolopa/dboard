@@ -337,6 +337,7 @@ enum JsonTarget {
 enum CtxTarget {
     Tree(usize),
     Tab(usize),
+    Session(usize),
     Cell(usize, usize),
     Header(usize),
     Row(usize),
@@ -3510,6 +3511,19 @@ impl Worker {
                 };
                 (CtxTarget::Tree(i), items)
             }
+            "session" => {
+                if i >= self.sess_meta.len() {
+                    return;
+                }
+                let mut v = vec![item("Close", "close"), item("Close other connections", "close-others"), sep()];
+                if i > 0 {
+                    v.push(item("Move left", "left"));
+                }
+                if i + 1 < self.sess_meta.len() {
+                    v.push(item("Move right", "right"));
+                }
+                (CtxTarget::Session(i), v)
+            }
             "tab" => {
                 let Some(t) = self.tabs.get(i) else { return };
                 (CtxTarget::Tab(i), vec![item(if t.pinned { "Unpin tab" } else { "Pin tab" }, "pin"), item("Duplicate tab", "duplicate"), sep(), item("Close tab", "close"), item("Close other tabs", "close-others")])
@@ -3582,6 +3596,31 @@ impl Worker {
         let [r0, c0, r1, c1] = rect.map(|v| v.max(0) as usize);
         match target {
             CtxTarget::Tree(i) => self.tree_action(i, action).await,
+            CtxTarget::Session(i) => match action {
+                "close" => self.close_session(i as i32),
+                "close-others" => {
+                    self.switch_session(i);
+                    for j in (0..self.sess_meta.len()).rev() {
+                        if j != self.cur {
+                            self.close_session(j as i32);
+                        }
+                    }
+                }
+                "left" | "right" => {
+                    let j = if action == "left" { i.wrapping_sub(1) } else { i + 1 };
+                    if j < self.sess_meta.len() {
+                        self.sess_meta.swap(i, j);
+                        self.parked.swap(i, j);
+                        if self.cur == i {
+                            self.cur = j;
+                        } else if self.cur == j {
+                            self.cur = i;
+                        }
+                        self.push_sessions();
+                    }
+                }
+                _ => {}
+            },
             CtxTarget::Tab(i) => match action {
                 "close" => self.close_tab(i as i32),
                 other => self.tab_action(i, other).await,
