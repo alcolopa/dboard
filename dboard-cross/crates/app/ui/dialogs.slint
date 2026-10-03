@@ -160,6 +160,32 @@ export component Dialogs inherits Rectangle {
         }
     }
 
+    // ---- review staged edits (old -> new) ----
+    if AppState.review-open: Modal {
+        box-width: 640px;
+        dismissed => { AppState.review-cancel(); }
+        Title { text: "Review " + AppState.pending-count + " pending change(s)"; }
+        Note { text: "These edits are applied together in one transaction. If any fails, none are kept."; }
+        ListView {
+            height: min(320px, AppState.review-items.length * 46px);
+            for it in AppState.review-items: Rectangle {
+                height: 46px;
+                VerticalLayout {
+                    alignment: center; spacing: 1px;
+                    Text { text: it.text; color: Theme.text; overflow: elide; font-size: 12px; }
+                    Text { text: it.detail; color: Theme.warn; overflow: elide; font-size: 11px; font-family: "JetBrains Mono"; }
+                }
+            }
+        }
+        if AppState.review-error != "": Text { text: AppState.review-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
+        HorizontalLayout {
+            spacing: 8px; alignment: end;
+            Btn { text: "Discard all"; danger: true; clicked => { AppState.review-discard(); } }
+            Btn { text: "Keep editing"; clicked => { AppState.review-cancel(); } }
+            Btn { text: "Apply changes"; primary: true; clicked => { AppState.review-apply(); } }
+        }
+    }
+
     // ---- query variables ----
     if AppState.vars-open: Modal {
         box-width: 480px;

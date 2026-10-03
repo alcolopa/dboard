@@ -182,21 +182,24 @@ impl Conn {
     }
 
     pub async fn commit(&mut self) -> Result<()> {
-        self.end_tx("COMMIT").await
+        self.end_tx("COMMIT", false).await
     }
 
     pub async fn rollback(&mut self) -> Result<()> {
-        self.end_tx("ROLLBACK").await
+        self.end_tx("ROLLBACK", true).await
     }
 
-    async fn end_tx(&mut self, stmt: &str) -> Result<()> {
+    async fn end_tx(&mut self, stmt: &str, discard_history: bool) -> Result<()> {
         if !self.in_tx {
             return Ok(());
         }
         let res = dispatch!(self, d => d.query(stmt).await);
         if res.is_ok() {
             self.in_tx = false;
-            self.history.clear();
+            if discard_history {
+                // rolled-back changes no longer exist, so they cannot be undone
+                self.history.clear();
+            }
             let _ = self.refresh_metadata().await;
         }
         res.map(|_| ())

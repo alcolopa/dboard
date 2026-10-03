@@ -70,7 +70,10 @@ impl Worker {
                 st.set_cols(ModelRc::new(VecModel::from(cols)));
                 st.set_col_widths(ModelRc::new(VecModel::from(t.widths.clone())));
                 st.set_grid_width(t.widths.iter().sum());
-                st.set_rows(grid_model(t.rows.iter().map(|r| r.iter().map(|c| (c.clone(), 0)).collect()).collect()));
+                let pend = Self::pending_cells(&t);
+                st.set_rows(grid_model(t.rows.iter().enumerate().map(|(ri, r)| r.iter().enumerate().map(|(ci, c)| (c.clone(), if pend.contains(&(ri, ci)) { 4 } else { 0 })).collect()).collect()));
+                st.set_stage_on(t.stage);
+                st.set_pending_count(t.staged.len() as i32);
                 st.set_row_offset(t.page.offset as i32);
                 st.set_selected_row(-1);
                 st.set_sel_kind(0);
@@ -153,6 +156,7 @@ impl Worker {
         let same = self.tabs.iter().filter(|t| t.kind == Kind::Table && t.schema == schema && t.name == name).count();
         let title = if same == 0 { name.to_string() } else { format!("{name} ({})", same + 1) };
         let mut t = Tab::new(Kind::Table, title, self.default_page_size());
+        t.stage = self.protected() && !self.is_mongo();
         t.schema = schema.into();
         t.name = name.into();
         self.add_tab(t);
@@ -258,6 +262,7 @@ impl Worker {
                 t.widths = if t.widths.len() == meta.len() && !t.widths.is_empty() { t.widths.clone() } else { auto_widths(&meta, &r.rows) };
                 t.cols = meta;
                 t.rows = r.rows;
+                Self::overlay_staged(t);
                 t.editable = editable;
                 t.banner = banner.into();
                 t.banner_err = false;

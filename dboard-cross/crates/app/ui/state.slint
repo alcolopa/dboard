@@ -144,6 +144,16 @@ export global AppState {
     in property <int> timeout-secs;
     callback stop-query();
     callback set-timeout(int);
+    in property <bool> stage-on;
+    in property <int> pending-count;
+    in property <bool> review-open;
+    in property <[EditItem]> review-items;
+    in property <string> review-error;
+    callback stage-toggle();
+    callback review-open-request();
+    callback review-apply();
+    callback review-cancel();
+    callback review-discard();
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

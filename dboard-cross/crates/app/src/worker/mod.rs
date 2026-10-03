@@ -22,6 +22,11 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    StageToggle,
+    ReviewOpen,
+    ReviewApply,
+    ReviewCancel,
+    ReviewDiscard,
     SetTimeout(u32),
     ColFilter(usize, String),
     GotoFk(usize, usize),
@@ -213,6 +218,18 @@ pub(crate) struct Tab {
     er: ErLayout,
     /// Per-column "contains" filters from the filter row, by column index.
     col_filters: Vec<String>,
+    /// Edit staging: queued cell edits waiting for review, the rows as loaded they apply to.
+    stage: bool,
+    staged: Vec<Staged>,
+    orig_rows: std::collections::HashMap<usize, Vec<Cell>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Staged {
+    orig: Vec<Cell>,
+    c: usize,
+    col: String,
+    new: Cell,
 }
 
 /// Pre-computed ER diagram geometry (boxes, FK lines, canvas size).
@@ -258,6 +275,9 @@ impl Tab {
             result_idx: 0,
             er: ErLayout::default(),
             col_filters: Vec::new(),
+            stage: false,
+            staged: Vec::new(),
+            orig_rows: std::collections::HashMap::new(),
         }
     }
 }
@@ -657,6 +677,7 @@ mod tree;
 mod tabs;
 mod editing;
 mod query;
+mod staging;
 pub(crate) use query::CANCEL;
 mod palette;
 mod selection;

@@ -16,7 +16,7 @@ component GridCellView inherits Rectangle {
     callback commit(string, bool);
 
     height: Theme.row-h;
-    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (selected ? Theme.sel : transparent));
+    background: cell.state == 3 ? Theme.err-bg : (cell.state == 2 ? Theme.ok-bg : (cell.state == 4 ? Theme.warn-bg : (selected ? Theme.sel : transparent)));
     border-width: anchor ? 1.5px : 0.5px;
     border-color: anchor ? Theme.accent : Theme.line;
     clip: true;

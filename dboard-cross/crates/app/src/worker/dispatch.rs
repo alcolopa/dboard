@@ -62,6 +62,11 @@ impl Worker {
                 }
                 self.toast(if secs == 0 { "Query timeout off.".to_string() } else { format!("Queries stop after {secs} s.") });
             }
+            Cmd::StageToggle => self.stage_toggle(),
+            Cmd::ReviewOpen => self.review_open(),
+            Cmd::ReviewApply => self.review_apply().await,
+            Cmd::ReviewCancel => ui(&self.w, |st| st.set_review_open(false)),
+            Cmd::ReviewDiscard => self.review_discard(),
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

@@ -26,6 +26,10 @@ impl Worker {
         if row.get(c) == Some(&new) {
             return Ok(false); // unchanged
         }
+        if tab.stage && !self.is_mongo() {
+            self.stage_edit(r, c, new);
+            return Ok(true);
+        }
         if let Some(t) = self.active_mut() {
             t.rows[r][c] = new.clone();
         }

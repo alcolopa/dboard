@@ -51,6 +51,11 @@ fn main() {
     wire!(on_vars_cancel, | | Cmd::VarsCancel);
     st.on_stop_query(|| worker::CANCEL.notify_one());
     wire!(on_set_timeout, |s| Cmd::SetTimeout(s.max(0) as u32));
+    wire!(on_stage_toggle, | | Cmd::StageToggle);
+    wire!(on_review_open_request, | | Cmd::ReviewOpen);
+    wire!(on_review_apply, | | Cmd::ReviewApply);
+    wire!(on_review_cancel, | | Cmd::ReviewCancel);
+    wire!(on_review_discard, | | Cmd::ReviewDiscard);
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));
