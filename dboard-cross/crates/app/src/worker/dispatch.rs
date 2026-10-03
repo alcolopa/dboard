@@ -37,6 +37,8 @@ impl Worker {
                     let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
                 }
             }
+            Cmd::OpenEr => self.open_er().await,
+            Cmd::ErOpen(s, n) => self.open_table(&s, &n).await,
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

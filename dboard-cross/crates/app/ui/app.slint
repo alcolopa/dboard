@@ -8,6 +8,7 @@ import { Sidebar } from "sidebar.slint";
 import { TabBar } from "tabs.slint";
 import { DataGrid } from "grid.slint";
 import { QueryEditor, HistoryDrawer } from "query.slint";
+import { Diagram } from "diagram.slint";
 import { Inspector } from "inspector.slint";
 import { Dialogs } from "dialogs.slint";
 import { TextEdit, LineEdit } from "std-widgets.slint";
@@ -47,7 +48,8 @@ component Workspace inherits VerticalLayout {
             Text { text: Theme.mod + "+K command palette   ·   " + Theme.mod + "+P search objects   ·   " + Theme.mod + "+Tab next tab"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
         }
     }
-    if AppState.tab-kind >= 0 && AppState.tab-kind != 3: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
+    if AppState.tab-kind == 4: Diagram { vertical-stretch: 1; }
+    if AppState.tab-kind >= 0 && AppState.tab-kind != 3 && AppState.tab-kind != 4: DataGrid { vertical-stretch: 1; visible: AppState.cols.length > 0; }
     if AppState.tab-kind == 2 || AppState.tab-kind == 3: Rectangle {
         vertical-stretch: AppState.tab-kind == 3 ? 1 : 0;
         min-height: 100px;
@@ -135,6 +137,7 @@ export component App inherits Window {
         }
         Menu {
             title: "View";
+            MenuItem { title: "ER Diagram"; enabled: AppState.connected && AppState.db-type != 2; activated => { AppState.open-er(); } }
             MenuItem { title: "Refresh"; activated => { AppState.refresh(); } }
             MenuItem { title: "Toggle Inspector"; activated => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
             MenuItem { title: "Command Palette"; activated => { AppState.open-palette(false); } }

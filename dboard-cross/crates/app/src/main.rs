@@ -29,6 +29,8 @@ fn main() {
     }
 
     wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_open_er, | | Cmd::OpenEr);
+    wire!(on_er_open, |s, n| Cmd::ErOpen(s.to_string(), n.to_string()));
     wire!(on_check_updates, | | Cmd::CheckUpdates);
     wire!(on_open_link, |u| Cmd::OpenLink(u.to_string()));
     wire!(on_pick_result, |i| Cmd::PickResult(i.max(0) as usize));

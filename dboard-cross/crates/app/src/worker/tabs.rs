@@ -88,6 +88,16 @@ impl Worker {
                 st.set_page_size_index(PAGE_SIZES.iter().position(|p| *p == t.page.limit).unwrap_or(2) as i32);
                 st.set_suggestions(strs(Vec::new()));
                 st.set_result_labels(strs(t.results.iter().map(|r| r.label.clone()).collect()));
+                let boxes: Vec<ErBox> = t
+                    .er
+                    .boxes
+                    .iter()
+                    .map(|(x, y, w, h, title, body, schema, name)| ErBox { x: *x, y: *y, w: *w, h: *h, title: title.into(), body: body.into(), schema: schema.into(), name: name.into() })
+                    .collect();
+                st.set_er_boxes(ModelRc::new(VecModel::from(boxes)));
+                st.set_er_lines(strs(t.er.lines.clone()));
+                st.set_er_width(t.er.size.0);
+                st.set_er_height(t.er.size.1);
                 st.set_result_index(t.result_idx as i32);
             }
         });
@@ -204,6 +214,7 @@ impl Worker {
             Kind::Query => {}
             Kind::Table => self.load_table(i, tab).await,
             Kind::Structure => self.load_structure(i, tab).await,
+            Kind::Diagram => {}
             Kind::Routine => {
                 let text = match (&mut self.conn, &tab.obj) {
                     (Some(c), Some(o)) => c.object_def(o).await.unwrap_or_else(|e| format!("-- {e}")),
@@ -475,3 +486,110 @@ impl Worker {
     }
 }
 
+
+impl Worker {
+    /// Open (or refresh) the ER diagram tab for every table of the connected database.
+    pub(crate) async fn open_er(&mut self) {
+        if self.is_mongo() {
+            return self.toast("ER diagrams need a SQL database.");
+        }
+        let Some(conn) = self.conn.as_ref() else { return };
+        let tables: Vec<Table> = conn.metadata.tables.iter().filter(|t| t.kind == TableKind::Table).take(80).cloned().collect();
+        if tables.is_empty() {
+            return self.toast("No tables to draw.");
+        }
+        let layout = er_layout(&tables);
+        let idx = match self.tabs.iter().position(|t| t.kind == Kind::Diagram) {
+            Some(i) => i,
+            None => {
+                self.add_tab(Tab::new(Kind::Diagram, "ER diagram", self.default_page_size()));
+                self.tabs.len() - 1
+            }
+        };
+        let t = &mut self.tabs[idx];
+        t.page_info = format!("{} table(s) · double-click a table to open it", tables.len());
+        t.er = layout;
+        self.active = Some(idx);
+        self.show_active();
+    }
+}
+
+/// Grid layout of table boxes with a straight line per foreign key.
+pub(crate) fn er_layout(tables: &[Table]) -> ErLayout {
+    const W: f32 = 210.0;
+    const HEAD: f32 = 30.0;
+    const ROW: f32 = 15.0;
+    const GAP_X: f32 = 70.0;
+    const GAP_Y: f32 = 36.0;
+    const MAX_ROWS: usize = 14;
+    let per_row = ((tables.len() as f32).sqrt().ceil() as usize).max(1);
+    let mut boxes = Vec::new();
+    let mut pos = std::collections::HashMap::new();
+    let (mut y, mut max_w) = (20.0f32, 0.0f32);
+    for chunk in tables.chunks(per_row) {
+        let mut row_h = 0.0f32;
+        for (c, t) in chunk.iter().enumerate() {
+            let shown = t.columns.len().min(MAX_ROWS);
+            let mut body: Vec<String> = t
+                .columns
+                .iter()
+                .take(shown)
+                .map(|c| format!("{} {}", if c.is_primary_key { "#" } else if c.fk.is_some() { ">" } else { " " }, c.name))
+                .collect();
+            if t.columns.len() > shown {
+                body.push(format!("  … {} more", t.columns.len() - shown));
+            }
+            let h = HEAD + ROW * body.len() as f32 + 6.0;
+            let x = 20.0 + c as f32 * (W + GAP_X);
+            row_h = row_h.max(h);
+            max_w = max_w.max(x + W + 20.0);
+            let title = if t.schema.is_empty() || t.schema == "public" { t.name.clone() } else { format!("{}.{}", t.schema, t.name) };
+            pos.insert((t.schema.clone(), t.name.clone()), (x, y, h));
+            boxes.push((x, y, W, h, title, body.join("\n"), t.schema.clone(), t.name.clone()));
+        }
+        y += row_h + GAP_Y;
+    }
+    let mut lines = Vec::new();
+    for t in tables {
+        for c in &t.columns {
+            let Some(fk) = &c.fk else { continue };
+            let Some((target, _)) = fk.strip_suffix(')').and_then(|s| s.rsplit_once('(')) else { continue };
+            let (ts, tn) = target.split_once('.').unwrap_or(("", target));
+            let (Some(&(sx, sy, sh)), Some(&(tx, ty, th))) = (pos.get(&(t.schema.clone(), t.name.clone())), pos.get(&(ts.to_string(), tn.to_string()))) else { continue };
+            if (sx, sy) == (tx, ty) {
+                continue;
+            }
+            let (x1, x2) = if tx > sx { (sx + W, tx) } else if tx < sx { (sx, tx + W) } else { (sx + W, tx + W) };
+            lines.push(format!("M {x1} {} L {x2} {}", sy + sh / 2.0, ty + th / 2.0));
+        }
+    }
+    ErLayout { boxes, lines, size: (max_w.max(400.0), y + 20.0) }
+}
+
+#[cfg(test)]
+mod er_tests {
+    use super::*;
+
+    fn col(name: &str, pk: bool, fk: Option<&str>) -> Column {
+        Column { name: name.into(), type_name: "int".into(), nullable: false, is_primary_key: pk, default: None, fk: fk.map(String::from) }
+    }
+    fn table(name: &str, columns: Vec<Column>) -> Table {
+        Table { schema: "public".into(), name: name.into(), kind: TableKind::Table, columns, estimated_rows: None, size_bytes: None, indexes: Vec::new(), keyless_edit: false }
+    }
+
+    #[test]
+    fn draws_a_box_per_table_and_a_line_per_foreign_key() {
+        let users = table("users", vec![col("id", true, None)]);
+        let orders = table("orders", vec![col("id", true, None), col("user_id", false, Some("public.users(id)"))]);
+        let l = er_layout(&[users, orders]);
+        assert_eq!(l.boxes.len(), 2);
+        assert_eq!(l.lines.len(), 1);
+        assert!(l.size.0 > 400.0 - 1.0);
+    }
+
+    #[test]
+    fn ignores_foreign_keys_to_unlisted_tables() {
+        let t = table("a", vec![col("x", false, Some("other.b(id)"))]);
+        assert!(er_layout(&[t]).lines.is_empty());
+    }
+}

@@ -3,7 +3,7 @@
 
 use crate::export::{self, ExportCol};
 use crate::suggest;
-use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, EditItem, FieldItem, GridCell, HistoryItem, MetaRow, PaletteItem, SavedItem, SessionTab, TabInfo, TreeItem, UserRow};
+use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, EditItem, ErBox, FieldItem, GridCell, HistoryItem, MetaRow, PaletteItem, SavedItem, SessionTab, TabInfo, TreeItem, UserRow};
 use dboard_core::config::{self, secrets, HistoryEntry, SavedQuery, Settings, Store, Theme as ThemePref, FOLDERS};
 use dboard_core::model::*;
 use dboard_core::sql::Dialect;
@@ -22,6 +22,8 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    OpenEr,
+    ErOpen(String, String),
     CheckUpdates,
     OpenLink(String),
     UpdateResult(Result<(String, String), String>),
@@ -176,6 +178,7 @@ pub(crate) enum Kind {
     Query = 1,
     Structure = 2,
     Routine = 3,
+    Diagram = 4,
 }
 
 #[derive(Clone)]
@@ -201,6 +204,15 @@ pub(crate) struct Tab {
     /// One entry per statement when a query tab ran a multi-statement script.
     results: Vec<ResultSet>,
     result_idx: usize,
+    er: ErLayout,
+}
+
+/// Pre-computed ER diagram geometry (boxes, FK lines, canvas size).
+#[derive(Clone, Default)]
+pub(crate) struct ErLayout {
+    boxes: Vec<(f32, f32, f32, f32, String, String, String, String)>,
+    lines: Vec<String>,
+    size: (f32, f32),
 }
 
 #[derive(Clone)]
@@ -236,6 +248,7 @@ impl Tab {
             ddl: String::new(),
             results: Vec::new(),
             result_idx: 0,
+            er: ErLayout::default(),
         }
     }
 }
