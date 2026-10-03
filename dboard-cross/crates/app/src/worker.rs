@@ -1752,6 +1752,23 @@ impl Worker {
         self.active_tab()?.rows.get(r)?.get(c).cloned()
     }
 
+    /// Follow a foreign key: open the referenced table filtered to the row this cell points at.
+    async fn goto_fk(&mut self, r: usize, c: usize) {
+        let Some(fk) = self.active_tab().and_then(|t| t.cols.get(c)).map(|c| c.fk.clone()) else { return };
+        let Some(Some(value)) = self.cell_text(r, c) else { return self.toast("This cell is NULL, nothing to follow.") };
+        let Some((table_part, col)) = fk.strip_suffix(')').and_then(|s| s.rsplit_once('(')) else { return };
+        let (schema, table) = table_part.split_once('.').unwrap_or(("", table_part));
+        let d = self.dialect();
+        let filter = format!("{} = {}", d.quote(col), dboard_core::sql::literal(d, &value));
+        self.open_table_in(schema, table, true).await;
+        if let Some(t) = self.active_mut() {
+            t.page.filter = Some(filter.clone());
+            t.page.offset = 0;
+            t.filter_text = filter;
+        }
+        self.load_active().await;
+    }
+
     fn open_json_cell(&mut self, r: usize, c: usize) {
         let Some(Some(v)) = self.cell_text(r, c).map(|v| v.or(Some(String::new()))) else { return };
         let col = self.active_tab().and_then(|t| t.cols.get(c)).cloned().unwrap_or_default();
@@ -3533,6 +3550,11 @@ impl Worker {
                 if editable {
                     v.push(item("Paste", "paste"));
                 }
+                let has_fk = self.active_tab().and_then(|t| t.cols.get(j)).is_some_and(|c| !c.fk.is_empty());
+                if has_fk && relational {
+                    v.push(sep());
+                    v.push(item("Go to referenced row", "goto-fk"));
+                }
                 v.push(sep());
                 v.push(item("Select whole row", "sel-row"));
                 v.push(item("Select whole column", "sel-col"));
@@ -3640,6 +3662,7 @@ impl Worker {
                 "sel-row" => ui(&self.w, move |st| st.invoke_select_row(r as i32, false)),
                 "sel-col" => ui(&self.w, move |st| st.invoke_select_column(c as i32, false)),
                 "edit-row" => self.open_edit_row(r),
+                "goto-fk" => self.goto_fk(r, c).await,
                 "null" => self.edit_cell(r, c, String::new(), true).await,
                 "json" => self.open_json_cell(r, c),
                 "delete" => self.ask_delete_row(r),
