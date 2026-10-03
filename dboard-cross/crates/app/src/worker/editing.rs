@@ -405,6 +405,7 @@ impl Worker {
             Some(Pending::Paste(r, c, grid)) => self.apply_paste(r, c, grid).await,
             Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop).await,
             Some(Pending::ImportRows(path, header)) => self.run_import_rows(path, header).await,
+            Some(Pending::GenerateRows(n)) => self.generate_rows(n, true).await,
             None => {}
         }
     }

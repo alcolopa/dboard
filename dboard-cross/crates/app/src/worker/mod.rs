@@ -22,6 +22,7 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    GenerateRows(usize),
     XferPreview(String, bool),
     XferMapPick(usize, usize),
     PinResult,
@@ -390,6 +391,7 @@ pub(crate) enum Pending {
     Paste(usize, usize, Vec<Vec<String>>),
     ImportDatabase(String, bool),
     ImportRows(String, bool),
+    GenerateRows(usize),
 }
 
 /// The "edit whole row" dialog: the row as loaded and what the user has typed since.
@@ -689,6 +691,7 @@ mod tree;
 mod tabs;
 mod editing;
 mod query;
+mod datagen_ui;
 mod results;
 mod staging;
 pub(crate) use query::CANCEL;

@@ -71,6 +71,7 @@ impl Worker {
             Cmd::CompareResult => self.compare_result(),
             Cmd::XferPreview(p, h) => self.xfer_preview(p, h),
             Cmd::XferMapPick(i, j) => self.xfer_map_pick(i, j),
+            Cmd::GenerateRows(n) => self.generate_rows(n, false).await,
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

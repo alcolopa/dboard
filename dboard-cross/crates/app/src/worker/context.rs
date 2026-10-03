@@ -111,7 +111,7 @@ impl Worker {
             }
             "dbmenu" => (
                 CtxTarget::DbMenu,
-                vec![item("Users & access…", "users"), sep(), item("Export database…", "export-db"), item("Import database…", "import-db"), item("Import rows into open table…", "import-rows"), sep(), item("ER diagram", "er"), item("Refresh metadata", "refresh")],
+                vec![item("Users & access…", "users"), sep(), item("Export database…", "export-db"), item("Import database…", "import-db"), item("Import rows into open table…", "import-rows"), item("Generate 100 sample rows", "gen-100"), item("Generate 1,000 sample rows", "gen-1000"), sep(), item("ER diagram", "er"), item("Refresh metadata", "refresh")],
             ),
             _ => return,
         };
@@ -168,6 +168,8 @@ impl Worker {
                 "export-db" => self.open_transfer(0),
                 "import-db" => self.open_transfer(1),
                 "import-rows" => self.open_transfer(2),
+                "gen-100" => self.generate_rows(100, false).await,
+                "gen-1000" => self.generate_rows(1000, false).await,
                 "er" => self.open_er().await,
                 "refresh" => self.refresh().await,
                 _ => {}
