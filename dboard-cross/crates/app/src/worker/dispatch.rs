@@ -15,17 +15,45 @@ impl Worker {
                 self.toast("Checking for updates…");
                 let tx = self.tx.clone();
                 std::thread::spawn(move || {
-                    let r = crate::update::latest_release().map(|r| (r.tag, r.url));
+                    let r = crate::update::latest_release().map(|r| (r.tag, r.url, r.assets));
                     let _ = tx.send(Cmd::UpdateResult(r));
                 });
             }
             Cmd::UpdateResult(r) => match r {
-                Ok((tag, url)) if crate::update::is_newer(&tag, env!("CARGO_PKG_VERSION")) => {
-                    let _ = crate::clipboard::set(&url);
-                    self.toast(format!("dboard {tag} is available. The download link was copied to your clipboard."));
+                Ok((tag, url, assets)) if crate::update::is_newer(&tag, env!("CARGO_PKG_VERSION")) => {
+                    let arch = std::env::consts::ARCH;
+                    let os = match std::env::consts::OS {
+                        "macos" => "macos",
+                        "windows" => "windows",
+                        _ => "linux",
+                    };
+                    match crate::update::pick_asset(&assets, os, arch) {
+                        Some((name, dl, size)) => {
+                            let text = format!("dboard {tag} is available (you have v{}). Download {name} ({:.1} MB) to your Downloads folder?", env!("CARGO_PKG_VERSION"), *size as f64 / 1_048_576.0);
+                            self.ask_plain(Pending::DownloadUpdate(dl.clone(), name.clone()), "Update available".into(), text);
+                        }
+                        None => {
+                            let _ = crate::clipboard::set(&url);
+                            self.toast(format!("dboard {tag} is available. No installer matches this computer; the release page link was copied."));
+                        }
+                    }
                 }
                 Ok(_) => self.toast(format!("You are up to date (v{}).", env!("CARGO_PKG_VERSION"))),
                 Err(e) => self.toast(format!("Could not check for updates: {e}")),
+            },
+            Cmd::UpdateDownloaded(r) => match r {
+                Ok(path) => {
+                    self.toast(format!("Downloaded {}. Quit dboard and open it to finish updating.", path.display()));
+                    #[cfg(target_os = "macos")]
+                    let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+                    #[cfg(target_os = "windows")]
+                    let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+                    #[cfg(all(unix, not(target_os = "macos")))]
+                    if let Some(dir) = path.parent() {
+                        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+                    }
+                }
+                Err(e) => self.toast(format!("Download failed: {e}")),
             },
             Cmd::OpenLink(url) => {
                 if url.starts_with("https://") {

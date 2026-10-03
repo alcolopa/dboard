@@ -473,6 +473,15 @@ impl Worker {
     /// Open the confirmation dialog for `p`. Typed confirmation is required on protected connections.
     pub(crate) fn ask(&mut self, p: Pending, title: String, text: String) {
         let typing = self.protected();
+        self.ask_with(p, title, text, typing);
+    }
+
+    /// A confirmation that never asks for typed CONFIRM (for things unrelated to the database).
+    pub(crate) fn ask_plain(&mut self, p: Pending, title: String, text: String) {
+        self.ask_with(p, title, text, false);
+    }
+
+    fn ask_with(&mut self, p: Pending, title: String, text: String, typing: bool) {
         let env = self.env.label().to_string();
         self.pending = Some(p);
         ui(&self.w, move |st| {

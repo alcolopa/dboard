@@ -43,7 +43,8 @@ pub enum Cmd {
     ErOpen(String, String),
     CheckUpdates,
     OpenLink(String),
-    UpdateResult(Result<(String, String), String>),
+    UpdateResult(Result<(String, String, Vec<(String, String, u64)>), String>),
+    UpdateDownloaded(Result<std::path::PathBuf, String>),
     PickResult(usize),
     TxCommit,
     TxRollback,
@@ -399,6 +400,7 @@ pub(crate) enum Pending {
     ImportDatabase(String, bool),
     ImportRows(String, bool),
     GenerateRows(usize),
+    DownloadUpdate(String, String),
 }
 
 /// The "edit whole row" dialog: the row as loaded and what the user has typed since.

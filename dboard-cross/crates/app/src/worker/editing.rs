@@ -418,6 +418,14 @@ impl Worker {
             Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop).await,
             Some(Pending::ImportRows(path, header)) => self.run_import_rows(path, header).await,
             Some(Pending::GenerateRows(n)) => self.generate_rows(n, true).await,
+            Some(Pending::DownloadUpdate(url, name)) => {
+                self.toast(format!("Downloading {name}…"));
+                let tx = self.tx.clone();
+                std::thread::spawn(move || {
+                    let r = crate::update::download(&url, &name, &downloads_dir());
+                    let _ = tx.send(Cmd::UpdateDownloaded(r));
+                });
+            }
             None => {}
         }
     }
