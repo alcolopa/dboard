@@ -119,6 +119,27 @@ impl Worker {
         self.load_active().await;
     }
 
+    /// Narrow the open table to rows where this cell's column equals (or differs from) its value.
+    pub(crate) async fn filter_by_cell(&mut self, r: usize, c: usize, equal: bool) {
+        let Some(col) = self.active_tab().and_then(|t| t.cols.get(c)).map(|c| c.name.clone()) else { return };
+        let d = self.dialect();
+        let q = d.quote(&col);
+        let clause = match self.cell_text(r, c) {
+            Some(Some(v)) => format!("{q} {} {}", if equal { "=" } else { "<>" }, dboard_core::sql::literal(d, &v)),
+            _ => format!("{q} IS {}NULL", if equal { "" } else { "NOT " }),
+        };
+        if let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) {
+            let combined = match t.page.filter.as_deref().filter(|f| !f.trim().is_empty()) {
+                Some(existing) => format!("({existing}) AND {clause}"),
+                None => clause,
+            };
+            t.page.filter = Some(combined.clone());
+            t.filter_text = combined;
+            t.page.offset = 0;
+            self.load_active().await;
+        }
+    }
+
     pub(crate) fn open_json_cell(&mut self, r: usize, c: usize) {
         let Some(Some(v)) = self.cell_text(r, c).map(|v| v.or(Some(String::new()))) else { return };
         let col = self.active_tab().and_then(|t| t.cols.get(c)).cloned().unwrap_or_default();

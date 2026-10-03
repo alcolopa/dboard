@@ -55,6 +55,11 @@ impl Worker {
                     v.push(item("Paste", "paste"));
                 }
                 let has_fk = self.active_tab().and_then(|t| t.cols.get(j)).is_some_and(|c| !c.fk.is_empty());
+                if is_table_tab && relational {
+                    v.push(sep());
+                    v.push(item("Filter: equals this value", "filter-eq"));
+                    v.push(item("Filter: not equal to this value", "filter-ne"));
+                }
                 if has_fk && relational {
                     v.push(sep());
                     v.push(item("Go to referenced row", "goto-fk"));
@@ -169,6 +174,7 @@ impl Worker {
                 "sel-col" => ui(&self.w, move |st| st.invoke_select_column(c as i32, false)),
                 "edit-row" => self.open_edit_row(r),
                 "goto-fk" => self.goto_fk(r, c).await,
+                "filter-eq" | "filter-ne" => self.filter_by_cell(r, c, action == "filter-eq").await,
                 "null" => self.edit_cell(r, c, String::new(), true).await,
                 "json" => self.open_json_cell(r, c),
                 "delete" => self.ask_delete_row(r),
