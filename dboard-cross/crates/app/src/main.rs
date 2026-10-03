@@ -7,6 +7,7 @@ mod clipboard;
 mod datagen;
 mod export;
 mod highlight;
+mod snippets;
 mod suggest;
 mod update;
 mod vars;

@@ -48,6 +48,11 @@ export component QueryEditor inherits VerticalLayout {
         Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Chip { text: t; clicked => { AppState.insert-template(t); } }
     }
+    if AppState.db-type != 2: HorizontalLayout {
+        spacing: 6px; alignment: start;
+        Text { text: "Snippets:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+        for t in [{ k: "select", l: "SELECT" }, { k: "count", l: "COUNT" }, { k: "group", l: "GROUP BY" }, { k: "join", l: "JOIN on FK" }, { k: "insert", l: "INSERT" }, { k: "update", l: "UPDATE" }, { k: "delete", l: "DELETE" }, { k: "cte", l: "WITH (CTE)" }]: Chip { text: t.l; clicked => { AppState.insert-template(t.k); } }
+    }
     if AppState.suggestions.length > 0: HorizontalLayout {
         spacing: 6px; alignment: start;
         Text { text: "Suggest:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }

@@ -279,6 +279,15 @@ impl Worker {
     }
 
     pub(crate) fn insert_template(&mut self, which: &str) {
+        if !self.is_mongo() {
+            let active = self.active_tab().filter(|t| t.kind == Kind::Table).map(|t| t.name.clone());
+            let d = self.dialect();
+            let text = self.conn.as_ref().and_then(|c| crate::snippets::sql_snippet(which, d, &c.metadata.tables, active.as_deref()));
+            return match text {
+                Some(t) => self.set_query_text(t),
+                None => self.toast("No suitable table or foreign key found for that snippet."),
+            };
+        }
         let coll = self
             .active_tab()
             .filter(|t| t.kind == Kind::Table)
