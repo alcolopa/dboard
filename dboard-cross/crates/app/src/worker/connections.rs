@@ -294,6 +294,7 @@ impl Worker {
         let (env, protected, db) = (self.env, self.protected(), conn.db_type().index() as i32);
         let status = self.status_line();
         let act = self.activity.clone();
+        let in_tx = self.conn.as_ref().is_some_and(|c| c.in_transaction());
         self.push_sessions();
         self.save_open_sessions();
         self.push_databases();
@@ -309,6 +310,7 @@ impl Worker {
             st.set_status(status.into());
             st.set_db_type(db);
             st.set_is_protected(protected);
+            st.set_in_tx(in_tx);
             st.set_tree_filter("".into());
             st.set_activity(strs(act));
             st.set_busy(false);
@@ -519,6 +521,33 @@ impl Worker {
         }
         if !failed.is_empty() {
             self.toast(format!("Could not reopen: {}", failed.join(", ")));
+        }
+    }
+}
+
+impl Worker {
+    /// 0 = begin, 1 = commit, 2 = roll back the session's transaction.
+    pub(crate) async fn tx_action(&mut self, what: u8) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        let res = match what {
+            0 => conn.begin().await,
+            1 => conn.commit().await,
+            _ => conn.rollback().await,
+        };
+        let in_tx = conn.in_transaction();
+        match res {
+            Ok(()) => {
+                ui(&self.w, move |st| st.set_in_tx(in_tx));
+                self.toast(match what {
+                    0 => "Transaction started. Nothing is saved until you Commit.",
+                    1 => "Transaction committed.",
+                    _ => "Transaction rolled back.",
+                });
+                if what != 0 {
+                    self.refresh().await;
+                }
+            }
+            Err(e) => self.toast(e.to_string()),
         }
     }
 }

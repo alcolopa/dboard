@@ -33,6 +33,7 @@ pub struct Conn {
     pub metadata: Metadata,
     pub history: EditHistory,
     pub server_version: String,
+    in_tx: bool,
 }
 
 impl Conn {
@@ -44,7 +45,7 @@ impl Conn {
             DbType::MySql => Inner::My(My::connect(&effective, password).await?),
             DbType::Mongo => Inner::Mongo(Mongo::connect(&effective, password).await?),
         };
-        let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new() };
+        let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new(), in_tx: false };
         c.server_version = dispatch!(c, d => d.version().await).unwrap_or_default();
         c.refresh_metadata().await?;
         Ok(c)
@@ -111,6 +112,45 @@ impl Conn {
 
     pub async fn execute_query(&mut self, text: &str) -> Result<Rows> {
         dispatch!(self, d => d.query(text).await)
+    }
+
+    pub fn in_transaction(&self) -> bool {
+        self.in_tx
+    }
+
+    /// Start a transaction: every statement and grid edit on this connection is held until
+    /// `commit` or `rollback`. SQL engines only.
+    pub async fn begin(&mut self) -> Result<()> {
+        if self.config.db_type == DbType::Mongo {
+            return Err(Error::Db("Transactions are not available for MongoDB here.".into()));
+        }
+        if self.in_tx {
+            return Ok(());
+        }
+        dispatch!(self, d => d.query("BEGIN").await)?;
+        self.in_tx = true;
+        Ok(())
+    }
+
+    pub async fn commit(&mut self) -> Result<()> {
+        self.end_tx("COMMIT").await
+    }
+
+    pub async fn rollback(&mut self) -> Result<()> {
+        self.end_tx("ROLLBACK").await
+    }
+
+    async fn end_tx(&mut self, stmt: &str) -> Result<()> {
+        if !self.in_tx {
+            return Ok(());
+        }
+        let res = dispatch!(self, d => d.query(stmt).await);
+        if res.is_ok() {
+            self.in_tx = false;
+            self.history.clear();
+            let _ = self.refresh_metadata().await;
+        }
+        res.map(|_| ())
     }
 
     pub async fn explain(&mut self, text: &str, analyze: bool) -> Result<Rows> {
@@ -298,6 +338,9 @@ impl Conn {
     /// Point this connection at another database on the same server (`None`: all databases,
     /// MySQL / MongoDB only). PostgreSQL needs a fresh connection, hence the password.
     pub async fn switch_database(&mut self, db: Option<&str>, password: &str) -> Result<()> {
+        if self.in_tx {
+            return Err(Error::Db("Commit or roll back the open transaction before switching database.".into()));
+        }
         match &mut self.inner {
             Inner::Pg(_) => {
                 let name = db.ok_or_else(|| Error::Db("Pick a database.".into()))?;

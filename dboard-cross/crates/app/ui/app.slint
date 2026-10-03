@@ -246,6 +246,15 @@ export component App inherits Window {
                         color: AppState.hint != "" ? Theme.text : Theme.dim;
                         vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; min-width: 40px;
                     }
+                    if AppState.db-type != 2 && !AppState.in-tx: Slot { Btn { text: "Begin transaction"; clicked => { AppState.tx-begin(); } } }
+                    if AppState.in-tx: Slot {
+                        Rectangle {
+                            width: txl.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.warn;
+                            txl := Text { text: "IN TRANSACTION"; color: black; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                    if AppState.in-tx: Slot { Btn { text: "Commit"; primary: true; clicked => { AppState.tx-commit(); } } }
+                    if AppState.in-tx: Slot { Btn { text: "Rollback"; danger: true; clicked => { AppState.tx-rollback(); } } }
                     Slot { IconBtn { d: Icons.undo; hint: "Undo last change (" + Theme.mod + "+Z)"; badge: AppState.undo-count; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } } }
                     Slot { IconBtn { d: Icons.history; hint: "Query history & saved queries"; active: AppState.drawer-open; clicked => { AppState.drawer-open = !AppState.drawer-open; } } }
                     Slot {

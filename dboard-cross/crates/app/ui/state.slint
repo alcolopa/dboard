@@ -113,6 +113,10 @@ export global AppState {
     in property <[string]> type-names: ["PostgreSQL", "MySQL / MariaDB", "MongoDB"];
     in property <[string]> env-names: ["Production", "Staging", "Development", "Local"];
     in property <[string]> ssl-names: ["Disable", "Prefer", "Require", "Verify full"];
+    in property <bool> in-tx;
+    callback tx-begin();
+    callback tx-commit();
+    callback tx-rollback();
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

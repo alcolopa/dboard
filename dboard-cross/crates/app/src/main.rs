@@ -28,6 +28,9 @@ fn main() {
     }
 
     wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_tx_begin, | | Cmd::TxBegin);
+    wire!(on_tx_commit, | | Cmd::TxCommit);
+    wire!(on_tx_rollback, | | Cmd::TxRollback);
     wire!(on_parse_conn_url, |u| Cmd::ParseConnUrl(u.to_string()));
     wire!(on_conn_filter, |q| Cmd::ConnFilter(q.to_string()));
     wire!(on_select_conn, |id| Cmd::SelectConn(id.to_string()));

@@ -141,6 +141,36 @@ async fn postgres() {
     }
 }
 
+async fn transactions(c: ConnectionConfig, pw: String) {
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    let _ = d.execute_query("DROP TABLE IF EXISTS dboard_tx").await;
+    d.execute_query("CREATE TABLE dboard_tx (id int primary key)").await.unwrap();
+    let count = |r: dboard_core::model::Rows| r.rows[0][0].clone().unwrap();
+
+    d.begin().await.unwrap();
+    assert!(d.in_transaction());
+    d.execute_query("INSERT INTO dboard_tx VALUES (1)").await.unwrap();
+    d.rollback().await.unwrap();
+    assert!(!d.in_transaction());
+    assert_eq!(count(d.execute_query("SELECT count(*) FROM dboard_tx").await.unwrap()), "0");
+
+    d.begin().await.unwrap();
+    d.execute_query("INSERT INTO dboard_tx VALUES (2)").await.unwrap();
+    d.commit().await.unwrap();
+    assert_eq!(count(d.execute_query("SELECT count(*) FROM dboard_tx").await.unwrap()), "1");
+    d.begin().await.unwrap();
+    assert!(d.switch_database(Some("x"), &pw).await.is_err());
+    d.rollback().await.unwrap();
+    d.execute_query("DROP TABLE dboard_tx").await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn postgres_transactions() {
+    if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
+        transactions(c, pw).await;
+    }
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn mysql() {
     if let Some((c, pw)) = cfg("DBOARD_TEST_MYSQL", DbType::MySql) {

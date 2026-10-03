@@ -21,6 +21,9 @@ const RESULT_CAP: usize = 5000;
 pub enum Cmd {
     // connection manager
     NewConn,
+    TxBegin,
+    TxCommit,
+    TxRollback,
     ParseConnUrl(String),
     ConnFilter(String),
     SelectConn(String),

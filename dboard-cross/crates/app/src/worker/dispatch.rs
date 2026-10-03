@@ -10,6 +10,9 @@ impl Worker {
     pub(crate) async fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::NewConn => self.new_conn(),
+            Cmd::TxBegin => self.tx_action(0).await,
+            Cmd::TxCommit => self.tx_action(1).await,
+            Cmd::TxRollback => self.tx_action(2).await,
             Cmd::ParseConnUrl(u) => self.parse_conn_url(&u),
             Cmd::ConnFilter(q) => {
                 self.conn_filter = q.to_lowercase();
