@@ -5,6 +5,12 @@
 use dboard_core::model::*;
 use dboard_core::Conn;
 
+/// The Postgres tests share one database and run DDL, so they take turns (other engines are separate servers).
+static PG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn pg_lock() -> std::sync::MutexGuard<'static, ()> {
+    PG_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn cfg(var: &str, ty: DbType) -> Option<(ConnectionConfig, String)> {
     let v = std::env::var(var).ok()?;
     let p: Vec<&str> = v.split(':').collect();
@@ -136,6 +142,7 @@ async fn scenario(c: ConnectionConfig, pw: String) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn postgres() {
+    let _g = pg_lock();
     if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
         scenario(c, pw).await;
     }
@@ -166,6 +173,7 @@ async fn transactions(c: ConnectionConfig, pw: String) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn postgres_cancel_and_timeout() {
+    let _g = pg_lock();
     let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
     let mut d = Conn::connect(c, &pw).await.unwrap();
     let canceller = d.canceller();
@@ -190,6 +198,7 @@ async fn postgres_cancel_and_timeout() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn postgres_transactions() {
+    let _g = pg_lock();
     if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
         transactions(c, pw).await;
     }
@@ -270,6 +279,7 @@ async fn mongo() {
 /// TLS: forces `Require` (encrypted, no cert verification) and confirms the session is actually SSL.
 #[tokio::test(flavor = "current_thread")]
 async fn postgres_tls_required() {
+    let _g = pg_lock();
     let Some((mut c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
     if std::env::var("DBOARD_TEST_PG_SSL").is_err() {
         return; // server may not have ssl enabled
@@ -285,6 +295,7 @@ async fn postgres_tls_required() {
 /// then exercise users, database switching and the object listing.
 #[tokio::test(flavor = "current_thread")]
 async fn postgres_dump_import_users() {
+    let _g = pg_lock();
     use dboard_core::dump::{DumpOptions, ImportOptions};
     let Some((base, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
     let mut admin = Conn::connect(base.clone(), &pw).await.unwrap();
