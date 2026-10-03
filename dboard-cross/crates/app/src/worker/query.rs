@@ -79,6 +79,17 @@ impl Worker {
         self.run_sql(text).await;
     }
 
+    pub(crate) async fn run_snippet(&mut self, text: String) {
+        if text.trim().is_empty() {
+            return;
+        }
+        if !self.is_mongo() && self.protected() && safety::is_destructive(&text) {
+            let preview = one_line(&text);
+            return self.ask(Pending::Query(text), "Destructive statement".into(), preview);
+        }
+        self.run_sql(text).await;
+    }
+
     pub(crate) async fn run_sql(&mut self, sql: String) {
         let Some(i) = self.active else { return };
         // SQL scripts with several statements get one result set per statement.

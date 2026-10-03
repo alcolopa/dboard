@@ -100,6 +100,25 @@ fn main() {
     wire!(on_open_export, | | Cmd::OpenExport);
     wire!(on_query_edited, |t| Cmd::QueryEdited(t.to_string()));
     wire!(on_apply_suggestion, |s| Cmd::ApplySuggestion(s.to_string()));
+    // "Run selection": runs on the UI thread so the clipboard round-trip is synchronous.
+    {
+        use std::sync::Mutex;
+        const MARK: &str = "\u{1}dboard-selection-probe\u{1}";
+        static SAVED: Mutex<Option<String>> = Mutex::new(None);
+        st.on_stash_clipboard(|| {
+            *SAVED.lock().unwrap() = clipboard::get().ok();
+            let _ = clipboard::set(MARK);
+        });
+        let tx = tx.clone();
+        st.on_run_selection(move |full| {
+            let got = clipboard::get().unwrap_or_default();
+            if let Some(old) = SAVED.lock().unwrap().take() {
+                let _ = clipboard::set(&old);
+            }
+            let text = if got.trim().is_empty() || got == MARK { full.to_string() } else { got };
+            let _ = tx.send(Cmd::RunSnippet(text));
+        });
+    }
     wire!(on_run_query, |t| Cmd::RunQuery(t.to_string()));
     wire!(on_explain_query, |t, a| Cmd::ExplainQuery(t.to_string(), a));
     wire!(on_insert_template, |t| Cmd::InsertTemplate(t.to_string()));

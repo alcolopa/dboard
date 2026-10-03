@@ -9,7 +9,7 @@ export component QueryEditor inherits VerticalLayout {
     Rectangle {
         height: 150px;
         border-radius: 6px; border-width: 1px; border-color: Theme.line; background: Theme.panel;
-        EditArea {
+        editor := EditArea {
             width: parent.width; height: parent.height;
             text <=> AppState.query-text;
             font-family: "JetBrains Mono";
@@ -20,6 +20,12 @@ export component QueryEditor inherits VerticalLayout {
     HorizontalLayout {
         spacing: 6px;
         Btn { text: "▶ Run"; primary: true; clicked => { AppState.run-query(AppState.query-text); } }
+        Btn {
+            text: "Run selection";
+            // The editor widget doesn't expose its selection, so copy it through the clipboard
+            // (the Rust side stashes and restores the user's clipboard around this).
+            clicked => { AppState.stash-clipboard(); editor.copy(); AppState.run-selection(AppState.query-text); }
+        }
         Btn { text: "Explain"; clicked => { AppState.explain-query(AppState.query-text, false); } }
         if AppState.db-type != 2: Btn { text: "Explain analyze"; clicked => { AppState.explain-query(AppState.query-text, true); } }
         Btn { text: "Save…"; clicked => { AppState.open-save-query(); } }

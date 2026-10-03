@@ -83,6 +83,8 @@ pub enum Cmd {
     QueryEdited(String),
     ApplySuggestion(String),
     RunQuery(String),
+    /// Run part of the editor text without replacing what is in the editor.
+    RunSnippet(String),
     ExplainQuery(String, bool),
     InsertTemplate(String),
     OpenSaveQuery,

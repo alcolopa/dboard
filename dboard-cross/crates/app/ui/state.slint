@@ -224,6 +224,8 @@ export global AppState {
             select-all();
         }
     }
+    callback stash-clipboard();
+    callback run-selection(string);
     callback copy-text(string);
     callback copy-selection(int, int, int, int, int);
     callback paste-selection(int, int, int, int);

@@ -179,6 +179,7 @@ impl Worker {
                 let cur = self.active_tab().map(|t| t.query_text.clone()).unwrap_or_default();
                 self.set_query_text(suggest::apply(&cur, &s));
             }
+            Cmd::RunSnippet(t) => self.run_snippet(t).await,
             Cmd::RunQuery(t) => self.run_query(t).await,
             Cmd::ExplainQuery(t, a) => self.explain_query(t, a).await,
             Cmd::InsertTemplate(t) => self.insert_template(&t),
