@@ -120,8 +120,8 @@ impl Worker {
         if src.db_type() != dst.db_type() {
             return self.toast("Schema diff needs two connections of the same database type.");
         }
-        if src.db_type() == DbType::Mongo {
-            return self.toast("Schema diff is for SQL databases.");
+        if matches!(src.db_type(), DbType::Mongo | DbType::Sqlite) {
+            return self.toast("Schema diff supports PostgreSQL and MySQL / MariaDB.");
         }
         let target_name = self.sess_meta.get(target).map(|m| m.0.clone()).unwrap_or_default();
         let diff = dboard_core::schemadiff::diff(&src.metadata.tables, &dst.metadata.tables);

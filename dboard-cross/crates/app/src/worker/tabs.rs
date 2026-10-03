@@ -604,6 +604,7 @@ impl Worker {
     /// Rebuild the active table's WHERE from the filter box plus the per-column filters.
     pub(crate) fn apply_effective_filter(&mut self) {
         let d = self.dialect();
+        let sqlite = self.conn.as_ref().is_some_and(|c| c.db_type() == DbType::Sqlite);
         let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) else { return };
         let mut parts: Vec<String> = Vec::new();
         if !t.filter_text.trim().is_empty() {
@@ -618,6 +619,8 @@ impl Worker {
             let like = dboard_core::sql::literal(d, &format!("%{text}%"));
             parts.push(match d {
                 Dialect::My => format!("CAST({q} AS CHAR) LIKE {like}"),
+                // SQLite has no ILIKE, but its LIKE ignores ASCII case
+                _ if sqlite => format!("CAST({q} AS TEXT) LIKE {like}"),
                 _ => format!("CAST({q} AS TEXT) ILIKE {like}"),
             });
         }

@@ -698,7 +698,7 @@ impl Worker {
                 last_env = Some(c.environment);
                 items.push((String::new(), c.environment.label().to_string(), String::new(), c.environment.color(), false, true));
             }
-            let who = if c.username.is_empty() { c.host.clone() } else { format!("{}@{}", c.username, c.host) };
+            let who = if c.db_type == DbType::Sqlite { c.database.clone() } else if c.username.is_empty() { c.host.clone() } else { format!("{}@{}", c.username, c.host) };
             items.push((c.id.clone(), c.display_name(), format!("{} • {}", c.db_type.label(), who), c.environment.color(), c.id == sel, false));
         }
         ui(&self.w, move |st| {

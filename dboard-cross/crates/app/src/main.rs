@@ -208,7 +208,8 @@ fn main() {
             let mut form = st.get_form();
             let is_default = form.port.is_empty() || DbType::ALL.iter().any(|t| form.port.as_str() == t.default_port().to_string());
             if is_default {
-                form.port = DbType::ALL[(idx.max(0) as usize).min(2)].default_port().to_string().into();
+                let t = DbType::ALL[(idx.max(0) as usize).min(3)];
+                form.port = if t == DbType::Sqlite { "".into() } else { t.default_port().to_string().into() };
             }
             st.set_form(form);
         });

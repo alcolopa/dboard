@@ -46,16 +46,18 @@ pub enum DbType {
     Postgres,
     MySql,
     Mongo,
+    Sqlite,
 }
 
 impl DbType {
-    pub const ALL: [DbType; 3] = [Self::Postgres, Self::MySql, Self::Mongo];
+    pub const ALL: [DbType; 4] = [Self::Postgres, Self::MySql, Self::Mongo, Self::Sqlite];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Postgres => "PostgreSQL",
             Self::MySql => "MySQL / MariaDB",
             Self::Mongo => "MongoDB",
+            Self::Sqlite => "SQLite",
         }
     }
 
@@ -64,6 +66,7 @@ impl DbType {
             Self::Postgres => 5432,
             Self::MySql => 3306,
             Self::Mongo => 27017,
+            Self::Sqlite => 0,
         }
     }
 
@@ -172,6 +175,7 @@ impl ConnectionConfig {
         }
         match self.db_type {
             DbType::Mongo if !self.mongo_uri.is_empty() => "MongoDB".into(),
+            DbType::Sqlite if !self.database.is_empty() => self.database.rsplit(['/', '\\']).next().unwrap_or("SQLite").to_string(),
             _ if !self.host.is_empty() => format!("{}@{}", self.username, self.host),
             _ => "Untitled".into(),
         }
@@ -181,6 +185,9 @@ impl ConnectionConfig {
     pub fn validate(&self) -> Option<&'static str> {
         if self.db_type == DbType::Mongo && !self.mongo_uri.trim().is_empty() {
             return None;
+        }
+        if self.db_type == DbType::Sqlite {
+            return if self.database.trim().is_empty() { Some("Enter the path of the SQLite file.") } else { None };
         }
         if self.host.trim().is_empty() {
             return Some("Enter a host.");

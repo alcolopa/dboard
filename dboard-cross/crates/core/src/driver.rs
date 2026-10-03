@@ -6,6 +6,7 @@ use crate::model::*;
 use crate::mongo::Mongo;
 use crate::mysql::My;
 use crate::pg::Pg;
+use crate::sqlite::Sqlite;
 use crate::{Error, Result};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
@@ -14,6 +15,7 @@ enum Inner {
     Pg(Pg),
     My(My),
     Mongo(Mongo),
+    Sqlite(Sqlite),
 }
 
 macro_rules! dispatch {
@@ -22,6 +24,7 @@ macro_rules! dispatch {
             Inner::Pg($d) => $body,
             Inner::My($d) => $body,
             Inner::Mongo($d) => $body,
+            Inner::Sqlite($d) => $body,
         }
     };
 }
@@ -77,6 +80,7 @@ impl Conn {
             DbType::Postgres => Inner::Pg(Pg::connect(&effective, password).await?),
             DbType::MySql => Inner::My(My::connect(&effective, password).await?),
             DbType::Mongo => Inner::Mongo(Mongo::connect(&effective, password).await?),
+            DbType::Sqlite => Inner::Sqlite(Sqlite::connect(&effective, password).await?),
         };
         let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new(), in_tx: false, timeout_ms: 0 };
         c.server_version = dispatch!(c, d => d.version().await).unwrap_or_default();
@@ -139,6 +143,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.fetch(&t, page).await,
             Inner::My(d) => d.fetch(&t, page).await,
+            Inner::Sqlite(d) => d.fetch(&t, page).await,
             Inner::Mongo(_) => unreachable!(),
         }
     }
@@ -151,7 +156,7 @@ impl Conn {
         match &self.inner {
             Inner::Pg(d) => d.canceller(),
             Inner::My(d) => d.canceller(),
-            Inner::Mongo(_) => Canceller::Unsupported,
+            Inner::Mongo(_) | Inner::Sqlite(_) => Canceller::Unsupported,
         }
     }
 
@@ -161,7 +166,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.set_timeout(ms).await,
             Inner::My(d) => d.set_timeout(ms).await,
-            Inner::Mongo(_) => Ok(()),
+            Inner::Mongo(_) | Inner::Sqlite(_) => Ok(()),
         }
     }
 
@@ -220,6 +225,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.object_def(o).await,
             Inner::My(d) => d.object_def(o).await,
+            Inner::Sqlite(d) => d.object_def(o).await,
             Inner::Mongo(_) => Ok(String::new()),
         }
     }
@@ -295,6 +301,7 @@ impl Conn {
                 },
                 Inner::Pg(d) => d.insert_nullable(&t, &Self::named_values(&t, row)).await,
                 Inner::My(d) => d.insert_nullable(&t, &Self::named_values(&t, row)).await,
+                Inner::Sqlite(d) => d.insert_nullable(&t, &Self::named_values(&t, row)).await,
             },
         }
     }
@@ -385,6 +392,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.current_database().await.map(Some),
             Inner::My(_) => Ok(Some(self.config.database.clone()).filter(|d| !d.is_empty())),
+            Inner::Sqlite(d) => d.current_database().await.map(Some),
             Inner::Mongo(m) => Ok(m.current_database()),
         }
     }
@@ -409,6 +417,7 @@ impl Conn {
                 }
             }
             Inner::My(d) => d.use_database(db).await?,
+            Inner::Sqlite(_) => return Err(Error::Db("A SQLite connection is one file; open another file as a new connection.".into())),
             Inner::Mongo(m) => m.use_database(db),
         }
         self.config.database = db.unwrap_or_default().to_string();
@@ -446,6 +455,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(d) => d.set_access(&u.name, level).await,
             Inner::My(d) => d.set_access(u, level).await,
+            Inner::Sqlite(d) => d.set_access(u, level).await,
             Inner::Mongo(m) => m.set_access(u, level).await,
         }
     }
@@ -461,6 +471,7 @@ impl Conn {
         let res = match &mut self.inner {
             Inner::Pg(d) => d.dump(opts, &mut out, progress).await,
             Inner::My(d) => d.dump(opts, &tables, &objects, &mut out, progress).await,
+            Inner::Sqlite(d) => d.dump(opts, &mut out, progress).await,
             Inner::Mongo(m) => m.dump(opts, &tables, &mut out, progress).await,
         };
         let res = res.and_then(|st| out.flush().map(|_| st).map_err(Error::from));
@@ -484,6 +495,7 @@ impl Conn {
         let res = match &mut self.inner {
             Inner::Pg(d) => d.import(&mut reader, opts, progress).await,
             Inner::My(d) => d.import(&mut reader, opts, progress).await,
+            Inner::Sqlite(d) => d.import(&mut reader, opts, progress).await,
             Inner::Mongo(m) => {
                 let target = m.current_database();
                 m.import(&mut reader, target.as_deref(), opts, progress).await

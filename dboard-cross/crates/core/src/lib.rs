@@ -15,6 +15,7 @@ pub mod split;
 pub mod safety;
 pub mod schemadiff;
 pub mod sql;
+pub mod sqlite;
 pub mod tunnel;
 pub mod url;
 pub mod dump;

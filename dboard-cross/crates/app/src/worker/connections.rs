@@ -8,7 +8,7 @@ use super::*;
 
 impl Worker {
     pub(crate) fn cfg_from_form(&self, f: &ConnForm) -> (ConnectionConfig, String) {
-        let db_type = DbType::ALL[(f.type_index.max(0) as usize).min(2)];
+        let db_type = DbType::ALL[(f.type_index.max(0) as usize).min(3)];
         let mut uri = f.uri.trim().to_string();
         let mut password = f.password.to_string();
         if db_type == DbType::Mongo && !uri.is_empty() {
@@ -395,6 +395,10 @@ impl Worker {
     pub(crate) fn status_line(&self) -> String {
         let Some(conn) = &self.conn else { return String::new() };
         let cfg = &conn.config;
+        if cfg.db_type == DbType::Sqlite {
+            // the server version already reads "SQLite 3.x"
+            return format!("{} · {}", conn.server_version, cfg.database);
+        }
         let who = if cfg.db_type == DbType::Mongo && !cfg.mongo_uri.is_empty() {
             cfg.mongo_uri.clone()
         } else {

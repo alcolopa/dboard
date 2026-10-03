@@ -93,12 +93,12 @@ export component ConnectionManager inherits Rectangle {
                         label: "Environment";
                         ComboBox { model: AppState.env-names; current-index <=> AppState.form.env-index; }
                     }
-                    Field {
+                    if AppState.form.type-index != 3: Field {
                         label: "SSL / TLS";
                         ComboBox { model: AppState.ssl-names; current-index <=> AppState.form.ssl-index; }
                     }
                 }
-                if AppState.form-is-new && AppState.form.type-index != 2: Field {
+                if AppState.form-is-new && AppState.form.type-index < 2: Field {
                     label: "Paste a connection string and press Enter (optional)";
                     EditLine {
                         placeholder-text: "postgres://user:password@host:5432/database?sslmode=require";
@@ -109,28 +109,32 @@ export component ConnectionManager inherits Rectangle {
                     label: "MongoDB connection string (optional, overrides the fields below)";
                     EditLine { placeholder-text: "mongodb://user@host:27017/dbname  or  mongodb+srv://…"; text <=> AppState.form.uri; }
                 }
-                HorizontalLayout {
+                if AppState.form.type-index == 3: Field {
+                    label: "SQLite database file";
+                    EditLine { placeholder-text: "/path/to/app.db  (the file must exist; an empty file is a valid new database)"; text <=> AppState.form.database; }
+                }
+                if AppState.form.type-index != 3: HorizontalLayout {
                     spacing: 12px;
                     Field { label: "Host"; horizontal-stretch: 1; EditLine { placeholder-text: "host or IP"; text <=> AppState.form.host; } }
                     Field { label: "Port"; width: 170px; EditLine { text <=> AppState.form.port; } }
                 }
-                Field { label: "Database"; EditLine { placeholder-text: "database name (optional for MongoDB / MySQL)"; text <=> AppState.form.database; } }
-                HorizontalLayout {
+                if AppState.form.type-index != 3: Field { label: "Database"; EditLine { placeholder-text: "database name (optional for MongoDB / MySQL)"; text <=> AppState.form.database; } }
+                if AppState.form.type-index != 3: HorizontalLayout {
                     spacing: 12px;
                     Field { label: "Username"; horizontal-stretch: 1; EditLine { text <=> AppState.form.user; } }
                     Field { label: "Password  (or a reference: env:NAME · op://vault/item/field · aws-rds-iam · gcloud-sql-iam)"; horizontal-stretch: 1; EditLine { input-type: password; text <=> AppState.form.password; } }
                 }
-                if AppState.form.ssl-index > 0: HorizontalLayout {
+                if AppState.form.ssl-index > 0 && AppState.form.type-index != 3: HorizontalLayout {
                     spacing: 12px;
                     Field { label: "CA certificate (PEM, optional)"; horizontal-stretch: 1; EditLine { placeholder-text: "/path/to/ca.pem"; text <=> AppState.form.ssl-ca; } }
                     Field { label: "Client certificate (PEM, optional)"; horizontal-stretch: 1; EditLine { placeholder-text: "/path/to/client.pem"; text <=> AppState.form.ssl-cert; } }
                     if AppState.form.type-index == 0: Field { label: "Client key (PEM)"; horizontal-stretch: 1; EditLine { placeholder-text: "/path/to/client-key.pem"; text <=> AppState.form.ssl-key; } }
                 }
-                Rectangle {
+                if AppState.form.type-index != 3: Rectangle {
                     height: 22px;
                     Text { x: 0px; width: parent.width; text: "SSH tunnel (optional, uses your system ssh)"; color: Theme.dim; font-size: 11px; font-weight: 700; horizontal-alignment: left; vertical-alignment: center; }
                 }
-                HorizontalLayout {
+                if AppState.form.type-index != 3: HorizontalLayout {
                     spacing: 12px;
                     Field { label: "SSH host (bastion)"; horizontal-stretch: 1; EditLine { placeholder-text: "leave empty for a direct connection"; text <=> AppState.form.ssh-host; } }
                     Field { label: "SSH port"; width: 170px; EditLine { placeholder-text: "22"; text <=> AppState.form.ssh-port; } }
@@ -141,7 +145,7 @@ export component ConnectionManager inherits Rectangle {
                     Field { label: "Private key file (optional, else ssh-agent)"; horizontal-stretch: 1; EditLine { placeholder-text: "~/.ssh/id_ed25519"; text <=> AppState.form.ssh-key; } }
                 }
                 CheckBox { text: "Read-only connection (blocks every write; recommended for production)"; checked <=> AppState.form.read-only; }
-                CheckBox { text: "Remember password in the OS keyring"; checked <=> AppState.form.remember; }
+                if AppState.form.type-index != 3: CheckBox { text: "Remember password in the OS keyring"; checked <=> AppState.form.remember; }
                 if AppState.form.env-index <= 1: Rectangle {
                     height: 30px; background: Theme.warn-bg; border-radius: 5px;
                     Text {
