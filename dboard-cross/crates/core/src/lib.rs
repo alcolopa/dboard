@@ -13,6 +13,8 @@ pub mod pg;
 pub mod split;
 pub mod safety;
 pub mod sql;
+pub mod tunnel;
+pub mod url;
 pub mod dump;
 mod tls;
 

@@ -28,6 +28,8 @@ fn main() {
     }
 
     wire!(on_new_conn, | | Cmd::NewConn);
+    wire!(on_parse_conn_url, |u| Cmd::ParseConnUrl(u.to_string()));
+    wire!(on_conn_filter, |q| Cmd::ConnFilter(q.to_string()));
     wire!(on_select_conn, |id| Cmd::SelectConn(id.to_string()));
     wire!(on_save_conn, |f| Cmd::SaveConn(f));
     wire!(on_test_conn, |f| Cmd::TestConn(f));

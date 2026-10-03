@@ -28,6 +28,7 @@ macro_rules! dispatch {
 
 pub struct Conn {
     inner: Inner,
+    tunnel: Option<crate::tunnel::Tunnel>,
     pub config: ConnectionConfig,
     pub metadata: Metadata,
     pub history: EditHistory,
@@ -36,15 +37,43 @@ pub struct Conn {
 
 impl Conn {
     pub async fn connect(config: ConnectionConfig, password: &str) -> Result<Self> {
+        let tunnel = Self::open_tunnel(&config).await?;
+        let effective = Self::through(&config, tunnel.as_ref());
         let inner = match config.db_type {
-            DbType::Postgres => Inner::Pg(Pg::connect(&config, password).await?),
-            DbType::MySql => Inner::My(My::connect(&config, password).await?),
-            DbType::Mongo => Inner::Mongo(Mongo::connect(&config, password).await?),
+            DbType::Postgres => Inner::Pg(Pg::connect(&effective, password).await?),
+            DbType::MySql => Inner::My(My::connect(&effective, password).await?),
+            DbType::Mongo => Inner::Mongo(Mongo::connect(&effective, password).await?),
         };
-        let mut c = Self { inner, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new() };
+        let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new() };
         c.server_version = dispatch!(c, d => d.version().await).unwrap_or_default();
         c.refresh_metadata().await?;
         Ok(c)
+    }
+
+    async fn open_tunnel(config: &ConnectionConfig) -> Result<Option<crate::tunnel::Tunnel>> {
+        if config.ssh_host.trim().is_empty() || (config.db_type == DbType::Mongo && !config.mongo_uri.trim().is_empty()) {
+            return Ok(None);
+        }
+        crate::tunnel::open(crate::tunnel::TunnelSpec {
+            ssh_host: config.ssh_host.trim(),
+            ssh_port: if config.ssh_port == 0 { 22 } else { config.ssh_port },
+            ssh_user: &config.ssh_user,
+            key_path: &config.ssh_key,
+            remote_host: &config.host,
+            remote_port: config.port,
+        })
+        .await
+        .map(Some)
+    }
+
+    /// The config to actually dial: the local end of the SSH tunnel when there is one.
+    fn through(config: &ConnectionConfig, tunnel: Option<&crate::tunnel::Tunnel>) -> ConnectionConfig {
+        let mut c = config.clone();
+        if let Some(t) = tunnel {
+            c.host = "127.0.0.1".into();
+            c.port = t.local_port;
+        }
+        c
     }
 
     pub fn db_type(&self) -> DbType {
@@ -272,7 +301,7 @@ impl Conn {
         match &mut self.inner {
             Inner::Pg(_) => {
                 let name = db.ok_or_else(|| Error::Db("Pick a database.".into()))?;
-                let mut cfg = self.config.clone();
+                let mut cfg = Self::through(&self.config, self.tunnel.as_ref());
                 cfg.database = name.to_string();
                 self.inner = Inner::Pg(Pg::connect(&cfg, password).await?);
             }

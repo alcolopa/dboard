@@ -118,15 +118,15 @@ export component App inherits Window {
         Menu {
             title: "File";
             MenuItem { title: "New Connection"; activated => { AppState.connected = false; AppState.new-conn(); } }
-            MenuItem { title: "New Query"; activated => { AppState.new-query-tab(); } }
-            MenuItem { title: "Close Tab"; activated => { AppState.close-tab(-1); } }
-            MenuItem { title: "Reopen Closed Tab"; activated => { AppState.reopen-tab(); } }
-            MenuItem { title: "Disconnect"; activated => { AppState.disconnect(); } }
+            MenuItem { title: "New Query"; enabled: AppState.connected; activated => { AppState.new-query-tab(); } }
+            MenuItem { title: "Close Tab"; enabled: AppState.connected; activated => { AppState.close-tab(-1); } }
+            MenuItem { title: "Reopen Closed Tab"; enabled: AppState.connected; activated => { AppState.reopen-tab(); } }
+            MenuItem { title: "Disconnect"; enabled: AppState.connected; activated => { AppState.disconnect(); } }
             MenuItem { title: "Quit"; activated => { AppState.quit(); } }
         }
         Menu {
             title: "Edit";
-            MenuItem { title: "Undo Last Change"; activated => { AppState.undo(); } }
+            MenuItem { title: "Undo Last Change"; enabled: AppState.connected && AppState.undo-count > 0; activated => { AppState.undo(); } }
             MenuItem { title: "Cut"; activated => { AppState.edit(0); } }
             MenuItem { title: "Copy"; activated => { AppState.edit(1); } }
             MenuItem { title: "Paste"; activated => { AppState.edit(2); } }
@@ -216,6 +216,12 @@ export component App inherits Window {
 
         if AppState.connected: VerticalLayout {
             SessionBar { }
+            // Production gets an unmissable banner; every other environment a thin coloured strip.
+            if AppState.env-label == "Production": Rectangle {
+                height: 18px; background: AppState.env-color;
+                Text { text: "PRODUCTION DATABASE — changes here affect real data"; color: white; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            if AppState.env-label != "Production": Rectangle { height: 2px; background: AppState.env-color; }
             // ---- top bar ----
             Rectangle {
                 height: 44px; background: Theme.panel;

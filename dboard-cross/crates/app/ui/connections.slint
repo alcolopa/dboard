@@ -26,6 +26,7 @@ export component ConnectionManager inherits Rectangle {
                     Rectangle { width: 6px; }
                     IconBtn { d: Icons.settings; hint: "Settings"; clicked => { AppState.open-settings(); } }
                 }
+                EditLine { placeholder-text: "Search connections"; edited(t) => { AppState.conn-filter(t); } }
                 if AppState.connections.length == 0: Text {
                     text: "No saved connections yet.\nFill in the form to add one.";
                     color: Theme.dim; wrap: word-wrap;
@@ -91,6 +92,13 @@ export component ConnectionManager inherits Rectangle {
                         ComboBox { model: AppState.ssl-names; current-index <=> AppState.form.ssl-index; }
                     }
                 }
+                if AppState.form-is-new && AppState.form.type-index != 2: Field {
+                    label: "Paste a connection string and press Enter (optional)";
+                    EditLine {
+                        placeholder-text: "postgres://user:password@host:5432/database?sslmode=require";
+                        accepted(t) => { AppState.parse-conn-url(t); }
+                    }
+                }
                 if AppState.form.type-index == 2: Field {
                     label: "MongoDB connection string (optional, overrides the fields below)";
                     EditLine { placeholder-text: "mongodb://user@host:27017/dbname  or  mongodb+srv://…"; text <=> AppState.form.uri; }
@@ -105,6 +113,20 @@ export component ConnectionManager inherits Rectangle {
                     spacing: 12px;
                     Field { label: "Username"; horizontal-stretch: 1; EditLine { text <=> AppState.form.user; } }
                     Field { label: "Password"; horizontal-stretch: 1; EditLine { input-type: password; text <=> AppState.form.password; } }
+                }
+                Rectangle {
+                    height: 22px;
+                    Text { text: (AppState.form.ssh-host != "" ? "▾" : "▸") + "  SSH tunnel (optional, uses your system ssh)"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Field { label: "SSH host (bastion)"; horizontal-stretch: 1; EditLine { placeholder-text: "leave empty for a direct connection"; text <=> AppState.form.ssh-host; } }
+                    Field { label: "SSH port"; width: 110px; EditLine { placeholder-text: "22"; text <=> AppState.form.ssh-port; } }
+                }
+                if AppState.form.ssh-host != "": HorizontalLayout {
+                    spacing: 12px;
+                    Field { label: "SSH user"; horizontal-stretch: 1; EditLine { text <=> AppState.form.ssh-user; } }
+                    Field { label: "Private key file (optional, else ssh-agent)"; horizontal-stretch: 1; EditLine { placeholder-text: "~/.ssh/id_ed25519"; text <=> AppState.form.ssh-key; } }
                 }
                 CheckBox { text: "Remember password in the OS keyring"; checked <=> AppState.form.remember; }
                 if AppState.form.env-index <= 1: Rectangle {

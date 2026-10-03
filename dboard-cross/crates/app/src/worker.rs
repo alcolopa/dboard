@@ -21,6 +21,8 @@ const RESULT_CAP: usize = 5000;
 pub enum Cmd {
     // connection manager
     NewConn,
+    ParseConnUrl(String),
+    ConnFilter(String),
     SelectConn(String),
     SaveConn(ConnForm),
     TestConn(ConnForm),
@@ -407,6 +409,7 @@ pub struct Worker {
     toast_id: u64,
     export_dialect: Dialect,
     form_id: String,
+    conn_filter: String,
     ctx_target: Option<CtxTarget>,
     /// Kept in memory for this session only, to reconnect when another database is picked.
     session_pw: String,
@@ -459,6 +462,7 @@ impl Worker {
             toast_id: 0,
             export_dialect: Dialect::Pg,
             form_id: String::new(),
+            conn_filter: String::new(),
             ctx_target: None,
             session_pw: String::new(),
             databases: Vec::new(),
@@ -553,6 +557,10 @@ impl Worker {
     fn push_connections(&self) {
         let sel = self.form_id_hint();
         let mut list = self.connections.clone();
+        let q = self.conn_filter.clone();
+        if !q.is_empty() {
+            list.retain(|c| format!("{} {} {}", c.display_name(), c.host, c.environment.label()).to_lowercase().contains(&q));
+        }
         list.sort_by(|a, b| b.last_used.cmp(&a.last_used).then(a.display_name().to_lowercase().cmp(&b.display_name().to_lowercase())));
         let items: Vec<(String, String, String, u32, bool)> = list
             .iter()
@@ -616,6 +624,10 @@ impl Worker {
             ssl: SslMode::ALL[(f.ssl_index.max(0) as usize).min(3)],
             mongo_uri: uri,
             remember_password: f.remember,
+            ssh_host: f.ssh_host.trim().to_string(),
+            ssh_port: f.ssh_port.trim().parse().unwrap_or(22),
+            ssh_user: f.ssh_user.trim().to_string(),
+            ssh_key: f.ssh_key.trim().to_string(),
             last_used: existing_last_used,
         };
         (cfg, password)
@@ -638,6 +650,10 @@ impl Worker {
                 ssl_index: c.ssl.index() as i32,
                 uri: c.mongo_uri.into(),
                 remember: c.remember_password,
+                ssh_port: if c.ssh_host.is_empty() { String::new() } else { c.ssh_port.to_string() }.into(),
+                ssh_host: c.ssh_host.into(),
+                ssh_user: c.ssh_user.into(),
+                ssh_key: c.ssh_key.into(),
             });
             st.set_form_is_new(is_new);
             st.set_form_info(info.into());
@@ -645,6 +661,29 @@ impl Worker {
             st.set_form_busy(false);
         });
         self.push_connections();
+    }
+
+    /// Fill the form from a pasted `postgres://` / `mysql://` string.
+    fn parse_conn_url(&mut self, text: &str) {
+        let Some(p) = dboard_core::url::parse(text) else {
+            return self.form_error("Not a postgres:// or mysql:// connection string.");
+        };
+        let mut c = ConnectionConfig::new_blank();
+        if let Some(existing) = self.connections.iter().find(|c| c.id == self.form_id) {
+            c.id = existing.id.clone();
+        } else if !self.form_id.is_empty() {
+            c.id = self.form_id.clone();
+        }
+        c.db_type = p.db_type;
+        c.host = p.host.clone();
+        c.port = p.port.unwrap_or(p.db_type.default_port());
+        c.username = p.user;
+        c.database = p.database;
+        c.name = p.host;
+        if let Some(s) = p.ssl {
+            c.ssl = s;
+        }
+        self.show_form(&c, p.password, true, "Filled from connection string. Pick an environment, then Save or Connect.".into(), String::new());
     }
 
     pub fn new_conn(&mut self) {
@@ -3174,6 +3213,11 @@ impl Worker {
     pub async fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::NewConn => self.new_conn(),
+            Cmd::ParseConnUrl(u) => self.parse_conn_url(&u),
+            Cmd::ConnFilter(q) => {
+                self.conn_filter = q.to_lowercase();
+                self.push_connections();
+            }
             Cmd::SelectConn(id) => self.select_conn(&id),
             Cmd::SaveConn(f) => {
                 self.save_conn(&f, false);

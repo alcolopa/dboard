@@ -119,6 +119,11 @@ pub struct ConnectionConfig {
     /// MongoDB only: full connection string (overrides host/port/user).
     pub mongo_uri: String,
     pub remember_password: bool,
+    /// Optional SSH tunnel (system `ssh`): bastion host, port, user and private key path.
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub ssh_user: String,
+    pub ssh_key: String,
     /// Unix seconds; used to sort "recent" connections.
     pub last_used: u64,
 }
@@ -137,6 +142,10 @@ impl Default for ConnectionConfig {
             ssl: SslMode::Prefer,
             mongo_uri: String::new(),
             remember_password: true,
+            ssh_host: String::new(),
+            ssh_port: 22,
+            ssh_user: String::new(),
+            ssh_key: String::new(),
             last_used: 0,
         }
     }
