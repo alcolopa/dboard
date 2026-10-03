@@ -140,6 +140,10 @@ export global AppState {
     callback vars-edited(int, string);
     callback vars-submit();
     callback vars-cancel();
+    in property <bool> running;
+    in property <int> timeout-secs;
+    callback stop-query();
+    callback set-timeout(int);
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

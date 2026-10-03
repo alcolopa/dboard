@@ -165,6 +165,30 @@ async fn transactions(c: ConnectionConfig, pw: String) {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn postgres_cancel_and_timeout() {
+    let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) else { return };
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    let canceller = d.canceller();
+    let started = std::time::Instant::now();
+    let (res, cancelled) = tokio::join!(d.execute_query("SELECT pg_sleep(20)"), async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        canceller.cancel().await
+    });
+    assert!(cancelled);
+    assert!(res.is_err(), "the sleeping query must be interrupted");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    // the connection stays usable
+    assert!(d.execute_query("SELECT 1").await.is_ok());
+
+    d.set_statement_timeout(300).await.unwrap();
+    let started = std::time::Instant::now();
+    assert!(d.execute_query("SELECT pg_sleep(20)").await.is_err());
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    d.set_statement_timeout(0).await.unwrap();
+    assert!(d.execute_query("SELECT 1").await.is_ok());
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn postgres_transactions() {
     if let Some((c, pw)) = cfg("DBOARD_TEST_PG", DbType::Postgres) {
         transactions(c, pw).await;

@@ -49,6 +49,8 @@ fn main() {
     wire!(on_vars_edited, |i, v| Cmd::VarsEdited(i.max(0) as usize, v.to_string()));
     wire!(on_vars_submit, | | Cmd::VarsSubmit);
     wire!(on_vars_cancel, | | Cmd::VarsCancel);
+    st.on_stop_query(|| worker::CANCEL.notify_one());
+    wire!(on_set_timeout, |s| Cmd::SetTimeout(s.max(0) as u32));
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));

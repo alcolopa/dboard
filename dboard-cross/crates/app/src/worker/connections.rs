@@ -210,6 +210,11 @@ impl Worker {
         self.settings.last_connection_id = cfg.id.clone();
         self.persist_settings();
         self.session_pw = pw;
+        let mut conn = conn;
+        let secs = self.settings.statement_timeout_secs;
+        if secs > 0 {
+            let _ = conn.set_statement_timeout(secs as u64 * 1000).await;
+        }
         self.conn = Some(conn);
         self.load_databases().await;
         self.show_session();

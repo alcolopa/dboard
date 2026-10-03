@@ -51,6 +51,17 @@ impl Worker {
                 }
             }
             Cmd::GotoFk(r, c) => self.goto_fk(r, c).await,
+            Cmd::SetTimeout(secs) => {
+                self.settings.statement_timeout_secs = secs;
+                self.persist_settings();
+                ui(&self.w, move |st| st.set_timeout_secs(secs as i32));
+                if let Some(c) = self.conn.as_mut() {
+                    if let Err(e) = c.set_statement_timeout(secs as u64 * 1000).await {
+                        return self.toast(format!("Could not set the timeout: {e}"));
+                    }
+                }
+                self.toast(if secs == 0 { "Query timeout off.".to_string() } else { format!("Queries stop after {secs} s.") });
+            }
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

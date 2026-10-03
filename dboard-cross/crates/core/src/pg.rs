@@ -13,6 +13,9 @@ const D: Dialect = Dialect::Pg;
 
 pub struct Pg {
     client: Client,
+    cancel: tokio_postgres::CancelToken,
+    /// Set when the session is TLS-encrypted, so a cancel request can be encrypted the same way.
+    tls_cfg: Option<ConnectionConfig>,
 }
 
 impl Pg {
@@ -26,15 +29,15 @@ impl Pg {
         if !c.database.is_empty() {
             cfg.dbname(&c.database);
         }
-        let client = match c.ssl {
-            SslMode::Disable => Self::plain(&cfg).await?,
+        let (client, secure) = match c.ssl {
+            SslMode::Disable => (Self::plain(&cfg).await?, false),
             SslMode::Prefer => match Self::secure(&cfg, c).await {
-                Ok(cl) => cl,
-                Err(_) => Self::plain(&cfg).await?,
+                Ok(cl) => (cl, true),
+                Err(_) => (Self::plain(&cfg).await?, false),
             },
-            _ => Self::secure(&cfg, c).await?,
+            _ => (Self::secure(&cfg, c).await?, true),
         };
-        Ok(Self { client })
+        Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()) })
     }
 
     async fn plain(cfg: &Config) -> Result<Client> {
@@ -54,6 +57,16 @@ impl Pg {
             let _ = conn.await;
         });
         Ok(client)
+    }
+
+    /// A handle that can cancel whatever this connection is running, from another task.
+    pub fn canceller(&self) -> crate::driver::Canceller {
+        crate::driver::Canceller::Pg { token: self.cancel.clone(), tls: self.tls_cfg.clone() }
+    }
+
+    pub async fn set_timeout(&mut self, ms: u64) -> Result<()> {
+        self.client.simple_query(&format!("SET statement_timeout = {ms}")).await?;
+        Ok(())
     }
 
     pub async fn version(&mut self) -> Result<String> {

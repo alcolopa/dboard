@@ -189,6 +189,8 @@ pub struct Settings {
     pub last_connection_id: String,
     /// Ids of the connections that were open at last quit, in tab order.
     pub open_connections: Vec<String>,
+    /// Server-side limit per statement in seconds, 0 = none.
+    pub statement_timeout_secs: u32,
 }
 
 impl Default for Settings {
@@ -205,6 +207,7 @@ impl Default for Settings {
             inspector_pinned: false,
             last_connection_id: String::new(),
             open_connections: Vec::new(),
+            statement_timeout_secs: 0,
         }
     }
 }

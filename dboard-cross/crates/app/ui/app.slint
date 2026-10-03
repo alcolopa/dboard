@@ -138,6 +138,13 @@ export component App inherits Window {
         }
         Menu {
             title: "View";
+            Menu {
+                title: "Query Timeout";
+                MenuItem { title: (AppState.timeout-secs == 0 ? "✓ " : "") + "Off"; activated => { AppState.set-timeout(0); } }
+                MenuItem { title: (AppState.timeout-secs == 30 ? "✓ " : "") + "30 seconds"; activated => { AppState.set-timeout(30); } }
+                MenuItem { title: (AppState.timeout-secs == 120 ? "✓ " : "") + "2 minutes"; activated => { AppState.set-timeout(120); } }
+                MenuItem { title: (AppState.timeout-secs == 600 ? "✓ " : "") + "10 minutes"; activated => { AppState.set-timeout(600); } }
+            }
             MenuItem { title: "ER Diagram"; enabled: AppState.connected && AppState.db-type != 2; activated => { AppState.open-er(); } }
             MenuItem { title: "Refresh"; activated => { AppState.refresh(); } }
             MenuItem { title: "Toggle Inspector"; activated => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
@@ -255,6 +262,7 @@ export component App inherits Window {
                         color: AppState.hint != "" ? Theme.text : Theme.dim;
                         vertical-alignment: center; overflow: elide; font-size: 12px; horizontal-stretch: 1; min-width: 40px;
                     }
+                    if AppState.running: Slot { Btn { text: "Stop query"; danger: true; clicked => { AppState.stop-query(); } } }
                     if AppState.db-type != 2 && !AppState.in-tx: Slot { Btn { text: "Begin transaction"; clicked => { AppState.tx-begin(); } } }
                     if AppState.in-tx: Slot {
                         Rectangle {

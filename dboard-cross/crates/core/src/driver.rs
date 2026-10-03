@@ -26,6 +26,36 @@ macro_rules! dispatch {
     };
 }
 
+/// Cancels the statement a connection is running. Cheap to clone and usable from any task.
+pub enum Canceller {
+    Pg { token: tokio_postgres::CancelToken, tls: Option<ConnectionConfig> },
+    My { opts: mysql_async::Opts, id: u32 },
+    Unsupported,
+}
+
+impl Canceller {
+    /// Ask the server to stop the running statement. `false` when that is not possible.
+    pub async fn cancel(&self) -> bool {
+        match self {
+            Canceller::Pg { token, tls } => match tls {
+                Some(cfg) => match crate::tls::client_config(cfg) {
+                    Ok(c) => token.cancel_query(tokio_postgres_rustls::MakeRustlsConnect::new(c)).await.is_ok(),
+                    Err(_) => false,
+                },
+                None => token.cancel_query(tokio_postgres::NoTls).await.is_ok(),
+            },
+            Canceller::My { opts, id } => {
+                use mysql_async::prelude::Queryable;
+                match mysql_async::Conn::new(opts.clone()).await {
+                    Ok(mut c) => c.query_drop(format!("KILL QUERY {id}")).await.is_ok(),
+                    Err(_) => false,
+                }
+            }
+            Canceller::Unsupported => false,
+        }
+    }
+}
+
 pub struct Conn {
     inner: Inner,
     tunnel: Option<crate::tunnel::Tunnel>,
@@ -34,6 +64,7 @@ pub struct Conn {
     pub history: EditHistory,
     pub server_version: String,
     in_tx: bool,
+    timeout_ms: u64,
 }
 
 impl Conn {
@@ -45,7 +76,7 @@ impl Conn {
             DbType::MySql => Inner::My(My::connect(&effective, password).await?),
             DbType::Mongo => Inner::Mongo(Mongo::connect(&effective, password).await?),
         };
-        let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new(), in_tx: false };
+        let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new(), in_tx: false, timeout_ms: 0 };
         c.server_version = dispatch!(c, d => d.version().await).unwrap_or_default();
         c.refresh_metadata().await?;
         Ok(c)
@@ -112,6 +143,24 @@ impl Conn {
 
     pub async fn execute_query(&mut self, text: &str) -> Result<Rows> {
         dispatch!(self, d => d.query(text).await)
+    }
+
+    pub fn canceller(&self) -> Canceller {
+        match &self.inner {
+            Inner::Pg(d) => d.canceller(),
+            Inner::My(d) => d.canceller(),
+            Inner::Mongo(_) => Canceller::Unsupported,
+        }
+    }
+
+    /// Server-side limit for a single statement, 0 = none (MongoDB: not applied).
+    pub async fn set_statement_timeout(&mut self, ms: u64) -> Result<()> {
+        self.timeout_ms = ms;
+        match &mut self.inner {
+            Inner::Pg(d) => d.set_timeout(ms).await,
+            Inner::My(d) => d.set_timeout(ms).await,
+            Inner::Mongo(_) => Ok(()),
+        }
     }
 
     pub fn in_transaction(&self) -> bool {
@@ -347,6 +396,10 @@ impl Conn {
                 let mut cfg = Self::through(&self.config, self.tunnel.as_ref());
                 cfg.database = name.to_string();
                 self.inner = Inner::Pg(Pg::connect(&cfg, password).await?);
+                if self.timeout_ms > 0 {
+                    let ms = self.timeout_ms;
+                    self.set_statement_timeout(ms).await?;
+                }
             }
             Inner::My(d) => d.use_database(db).await?,
             Inner::Mongo(m) => m.use_database(db),

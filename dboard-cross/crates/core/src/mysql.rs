@@ -13,6 +13,7 @@ const D: Dialect = Dialect::My;
 
 pub struct My {
     conn: Conn,
+    opts: mysql_async::Opts,
     is_mariadb: bool,
     /// Only this database is listed (None = every non-system database).
     scope: Option<String>,
@@ -94,7 +95,21 @@ impl My {
             },
             _ => connect(with_ssl(base)).await?,
         };
-        Ok(Self { conn, is_mariadb: false, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
+        Ok(Self { opts: conn.opts().clone(), conn, is_mariadb: false, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
+    }
+
+    pub fn canceller(&self) -> crate::driver::Canceller {
+        crate::driver::Canceller::My { opts: self.opts.clone(), id: self.conn.id() }
+    }
+
+    pub async fn set_timeout(&mut self, ms: u64) -> Result<()> {
+        if self.is_mariadb {
+            self.conn.query_drop(format!("SET SESSION max_statement_time = {}", ms as f64 / 1000.0)).await?;
+        } else {
+            // Applies to SELECT statements (MySQL has no general statement timeout).
+            self.conn.query_drop(format!("SET SESSION max_execution_time = {ms}")).await?;
+        }
+        Ok(())
     }
 
     pub async fn version(&mut self) -> Result<String> {

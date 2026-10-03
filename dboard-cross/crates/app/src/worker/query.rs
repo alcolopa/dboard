@@ -2,6 +2,27 @@
 
 use super::*;
 
+/// Signalled by the Stop button (from the UI thread) to interrupt the running statement.
+pub(crate) static CANCEL: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+async fn exec_cancellable(c: &mut Conn, stmt: &str) -> dboard_core::Result<Rows> {
+    // drop a stale permit from an earlier Stop click
+    let _ = tokio::time::timeout(Duration::ZERO, CANCEL.notified()).await;
+    let canceller = c.canceller();
+    let mut fut = Box::pin(c.execute_query(stmt));
+    tokio::select! {
+        r = &mut fut => r,
+        _ = CANCEL.notified() => {
+            if canceller.cancel().await {
+                fut.await
+            } else {
+                drop(fut);
+                Err(dboard_core::Error::Db("Cancelled.".into()))
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Query editor, history, saved queries
 // ---------------------------------------------------------------------------------------------
@@ -133,9 +154,10 @@ impl Worker {
         let mut failure: Option<String> = None;
         let mut total_ms = 0.0;
         let mut schema_changed = false;
+        ui(&self.w, |st| st.set_running(true));
         for (n, stmt) in stmts.iter().enumerate() {
             let res = match self.conn.as_mut() {
-                Some(c) => c.execute_query(stmt).await,
+                Some(c) => exec_cancellable(c, stmt).await,
                 None => return,
             };
             match res {
@@ -156,6 +178,7 @@ impl Worker {
                 }
             }
         }
+        ui(&self.w, |st| st.set_running(false));
         match failure {
             Some(msg) => {
                 let t = &mut self.tabs[i];
