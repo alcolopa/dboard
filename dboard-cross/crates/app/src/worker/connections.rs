@@ -40,6 +40,9 @@ impl Worker {
             ssh_port: f.ssh_port.trim().parse().unwrap_or(22),
             ssh_user: f.ssh_user.trim().to_string(),
             ssh_key: f.ssh_key.trim().to_string(),
+            ssl_ca: f.ssl_ca.trim().to_string(),
+            ssl_cert: f.ssl_cert.trim().to_string(),
+            ssl_key: f.ssl_key.trim().to_string(),
             last_used: existing_last_used,
         };
         (cfg, password)
@@ -66,6 +69,9 @@ impl Worker {
                 ssh_host: c.ssh_host.into(),
                 ssh_user: c.ssh_user.into(),
                 ssh_key: c.ssh_key.into(),
+                ssl_ca: c.ssl_ca.into(),
+                ssl_cert: c.ssl_cert.into(),
+                ssl_key: c.ssl_key.into(),
             });
             st.set_form_is_new(is_new);
             st.set_form_info(info.into());

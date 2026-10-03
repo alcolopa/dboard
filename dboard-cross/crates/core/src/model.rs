@@ -124,6 +124,10 @@ pub struct ConnectionConfig {
     pub ssh_port: u16,
     pub ssh_user: String,
     pub ssh_key: String,
+    /// Optional TLS files (PEM paths): CA bundle to trust, client certificate and its private key.
+    pub ssl_ca: String,
+    pub ssl_cert: String,
+    pub ssl_key: String,
     /// Unix seconds; used to sort "recent" connections.
     pub last_used: u64,
 }
@@ -146,6 +150,9 @@ impl Default for ConnectionConfig {
             ssh_port: 22,
             ssh_user: String::new(),
             ssh_key: String::new(),
+            ssl_ca: String::new(),
+            ssl_cert: String::new(),
+            ssl_key: String::new(),
             last_used: 0,
         }
     }

@@ -120,6 +120,12 @@ export component ConnectionManager inherits Rectangle {
                     Field { label: "Username"; horizontal-stretch: 1; EditLine { text <=> AppState.form.user; } }
                     Field { label: "Password"; horizontal-stretch: 1; EditLine { input-type: password; text <=> AppState.form.password; } }
                 }
+                if AppState.form.ssl-index > 0: HorizontalLayout {
+                    spacing: 12px;
+                    Field { label: "CA certificate (PEM, optional)"; horizontal-stretch: 1; EditLine { placeholder-text: "/path/to/ca.pem"; text <=> AppState.form.ssl-ca; } }
+                    Field { label: "Client certificate (PEM, optional)"; horizontal-stretch: 1; EditLine { placeholder-text: "/path/to/client.pem"; text <=> AppState.form.ssl-cert; } }
+                    if AppState.form.type-index == 0: Field { label: "Client key (PEM)"; horizontal-stretch: 1; EditLine { placeholder-text: "/path/to/client-key.pem"; text <=> AppState.form.ssl-key; } }
+                }
                 Rectangle {
                     height: 22px;
                     Text { text: (AppState.form.ssh-host != "" ? "▾" : "▸") + "  SSH tunnel (optional, uses your system ssh)"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }

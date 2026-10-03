@@ -112,9 +112,19 @@ fn build_uri(c: &ConnectionConfig, password: &str) -> String {
             opts.push("tlsAllowInvalidCertificates=true");
         }
     }
+    let mut owned: Vec<String> = Vec::new();
+    if !c.ssl_ca.trim().is_empty() && c.ssl != SslMode::Disable {
+        owned.push(format!("tlsCAFile={}", pct_encode(c.ssl_ca.trim())));
+    }
+    if !c.ssl_cert.trim().is_empty() && c.ssl != SslMode::Disable {
+        // MongoDB takes one PEM holding both the certificate and its key.
+        owned.push(format!("tlsCertificateKeyFile={}", pct_encode(c.ssl_cert.trim())));
+    }
     if !c.username.is_empty() {
         opts.push("authSource=admin");
     }
+    let mut opts: Vec<&str> = opts;
+    opts.extend(owned.iter().map(|s| s.as_str()));
     if !opts.is_empty() {
         uri.push('?');
         uri.push_str(&opts.join("&"));

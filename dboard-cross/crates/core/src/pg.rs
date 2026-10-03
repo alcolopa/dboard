@@ -28,11 +28,11 @@ impl Pg {
         }
         let client = match c.ssl {
             SslMode::Disable => Self::plain(&cfg).await?,
-            SslMode::Prefer => match Self::secure(&cfg, c.ssl).await {
+            SslMode::Prefer => match Self::secure(&cfg, c).await {
                 Ok(cl) => cl,
                 Err(_) => Self::plain(&cfg).await?,
             },
-            _ => Self::secure(&cfg, c.ssl).await?,
+            _ => Self::secure(&cfg, c).await?,
         };
         Ok(Self { client })
     }
@@ -45,10 +45,10 @@ impl Pg {
         Ok(client)
     }
 
-    async fn secure(cfg: &Config, mode: SslMode) -> Result<Client> {
+    async fn secure(cfg: &Config, c: &ConnectionConfig) -> Result<Client> {
         let mut cfg = cfg.clone();
         cfg.ssl_mode(tokio_postgres::config::SslMode::Require);
-        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(tls::client_config(mode));
+        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(tls::client_config(c)?);
         let (client, conn) = cfg.connect(connector).await?;
         tokio::spawn(async move {
             let _ = conn.await;
