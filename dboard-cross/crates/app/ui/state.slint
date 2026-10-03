@@ -159,6 +159,10 @@ export global AppState {
     callback generate-rows(int);
     in property <bool> read-only;
     callback open-audit();
+    in property <int> backup-hours;
+    in property <int> backup-keep;
+    callback backup-now();
+    callback set-backup(int, int);
     callback new-conn();
     callback parse-conn-url(string);
     callback conn-filter(string);

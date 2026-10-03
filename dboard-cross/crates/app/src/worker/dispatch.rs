@@ -85,6 +85,15 @@ impl Worker {
             Cmd::XferMapPick(i, j) => self.xfer_map_pick(i, j),
             Cmd::GenerateRows(n) => self.generate_rows(n, false).await,
             Cmd::OpenAudit => self.open_audit(),
+            Cmd::BackupNow => self.backup_current(true).await,
+            Cmd::BackupTick => self.backup_due().await,
+            Cmd::SetBackup(h, k) => {
+                self.settings.backup_every_hours = h;
+                self.settings.backup_keep = k;
+                self.persist_settings();
+                self.push_settings();
+                self.toast(if h == 0 { "Automatic backups off.".to_string() } else { format!("Backing up every {h} h while dboard is open, keeping the last {k}.") });
+            }
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

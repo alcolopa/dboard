@@ -3,6 +3,7 @@
 
 slint::include_modules!();
 
+mod backup;
 mod clipboard;
 mod datagen;
 mod export;
@@ -64,6 +65,8 @@ fn main() {
     wire!(on_xfer_map_pick, |i, j| Cmd::XferMapPick(i.max(0) as usize, j.max(0) as usize));
     wire!(on_generate_rows, |n| Cmd::GenerateRows(n.max(0) as usize));
     wire!(on_open_audit, | | Cmd::OpenAudit);
+    wire!(on_backup_now, | | Cmd::BackupNow);
+    wire!(on_set_backup, |h, k| Cmd::SetBackup(h.max(0) as u32, k.max(1) as u32));
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));
@@ -213,11 +216,26 @@ fn main() {
 
     let weak = app.as_weak();
     let worker_tx = tx.clone();
+    let worker_tx_ticker = tx.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
         rt.block_on(async move {
             let mut w = Worker::new(weak, worker_tx, Store::open_default());
             w.init();
+            // Scheduled backups: check every ten minutes while the app is open.
+            {
+                let tx = worker_tx_ticker.clone();
+                tokio::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+                    tick.tick().await;
+                    loop {
+                        tick.tick().await;
+                        if tx.send(Cmd::BackupTick).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
             w.restore_sessions().await;
             while let Some(cmd) = rx.recv().await {
                 w.handle(cmd).await;

@@ -191,6 +191,11 @@ pub struct Settings {
     pub open_connections: Vec<String>,
     /// Server-side limit per statement in seconds, 0 = none.
     pub statement_timeout_secs: u32,
+    /// Automatic backups of open connections: every N hours (0 = off), keeping the newest few.
+    pub backup_every_hours: u32,
+    pub backup_keep: u32,
+    /// Connection id -> unix time of its last automatic backup.
+    pub last_backup: std::collections::BTreeMap<String, u64>,
 }
 
 impl Default for Settings {
@@ -208,6 +213,9 @@ impl Default for Settings {
             last_connection_id: String::new(),
             open_connections: Vec::new(),
             statement_timeout_secs: 0,
+            backup_every_hours: 0,
+            backup_keep: 7,
+            last_backup: std::collections::BTreeMap::new(),
         }
     }
 }

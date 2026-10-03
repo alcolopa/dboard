@@ -126,6 +126,17 @@ export component App inherits Window {
             title: "File";
             MenuItem { title: "New Connection"; activated => { AppState.connected = false; AppState.new-conn(); } }
             MenuItem { title: "New Query"; enabled: AppState.connected; activated => { AppState.new-query-tab(); } }
+            MenuItem { title: "Back Up Database Now"; enabled: AppState.connected; activated => { AppState.backup-now(); } }
+            Menu {
+                title: "Automatic Backups";
+                MenuItem { title: (AppState.backup-hours == 0 ? "✓ " : "") + "Off"; activated => { AppState.set-backup(0, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-hours == 1 ? "✓ " : "") + "Every hour"; activated => { AppState.set-backup(1, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-hours == 6 ? "✓ " : "") + "Every 6 hours"; activated => { AppState.set-backup(6, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-hours == 24 ? "✓ " : "") + "Daily"; activated => { AppState.set-backup(24, AppState.backup-keep); } }
+                MenuItem { title: (AppState.backup-keep == 3 ? "✓ " : "") + "Keep the last 3"; activated => { AppState.set-backup(AppState.backup-hours, 3); } }
+                MenuItem { title: (AppState.backup-keep == 7 ? "✓ " : "") + "Keep the last 7"; activated => { AppState.set-backup(AppState.backup-hours, 7); } }
+                MenuItem { title: (AppState.backup-keep == 30 ? "✓ " : "") + "Keep the last 30"; activated => { AppState.set-backup(AppState.backup-hours, 30); } }
+            }
             MenuItem { title: "Close Tab"; enabled: AppState.connected; activated => { AppState.close-tab(-1); } }
             MenuItem { title: "Reopen Closed Tab"; enabled: AppState.connected; activated => { AppState.reopen-tab(); } }
             MenuItem { title: "Disconnect"; enabled: AppState.connected; activated => { AppState.disconnect(); } }

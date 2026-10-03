@@ -22,6 +22,9 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    BackupNow,
+    BackupTick,
+    SetBackup(u32, u32),
     OpenAudit,
     GenerateRows(usize),
     XferPreview(String, bool),
@@ -640,6 +643,8 @@ impl Worker {
                     .set_color_scheme(if dark { slint::language::ColorScheme::Dark } else { slint::language::ColorScheme::Light });
                 let st = app.global::<AppState>();
                 st.set_timeout_secs(s.statement_timeout_secs as i32);
+                st.set_backup_hours(s.backup_every_hours as i32);
+                st.set_backup_keep(s.backup_keep as i32);
                 st.set_set_dark(dark);
                 st.set_set_compact(s.compact_density);
                 st.set_set_page_size_index(idx);
@@ -723,6 +728,7 @@ mod tree;
 mod tabs;
 mod editing;
 mod query;
+mod backups;
 mod datagen_ui;
 mod results;
 mod staging;
