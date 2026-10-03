@@ -225,7 +225,7 @@ export component DataGrid inherits Rectangle {
                         text: "contains…"; color: Theme.dim; font-italic: true; font-size: 11px; vertical-alignment: center;
                     }
                     cfi := TextInput {
-                        x: 8px; width: parent.width - 12px;
+                        x: 8px; y: 0px; width: parent.width - 12px; height: parent.height;
                         color: Theme.text; single-line: true; vertical-alignment: center; font-size: 12px;
                         init => { self.text = AppState.col-filters[c]; }
                         accepted => { AppState.col-filter(c, self.text); }
