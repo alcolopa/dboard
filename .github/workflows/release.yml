@@ -26,6 +26,10 @@ jobs:
           - { runner: macos-15,       arch: arm64 }
           - { runner: macos-15-intel, arch: x86_64 }
     runs-on: ${{ matrix.runner }}
+    # Job-level so the optional signing steps can test for the secrets in their `if:`.
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
