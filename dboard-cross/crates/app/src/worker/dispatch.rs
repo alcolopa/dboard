@@ -69,6 +69,8 @@ impl Worker {
             Cmd::ReviewDiscard => self.review_discard(),
             Cmd::PinResult => self.pin_result(),
             Cmd::CompareResult => self.compare_result(),
+            Cmd::XferPreview(p, h) => self.xfer_preview(p, h),
+            Cmd::XferMapPick(i, j) => self.xfer_map_pick(i, j),
             Cmd::TxBegin => self.tx_action(0).await,
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,

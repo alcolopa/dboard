@@ -110,13 +110,33 @@ component TransferDialog inherits Modal {
             text <=> AppState.xfer-path; horizontal-stretch: 1;
             placeholder-text: AppState.xfer-mode == 0 ? "Where to save the export" : "Path of the file to import";
             enabled: !AppState.xfer-busy;
+            accepted(t) => { if AppState.xfer-mode == 2 { AppState.xfer-preview-request(t, AppState.xfer-opt-a); } }
         }
         Btn { text: "Browse…"; enabled: !AppState.xfer-busy; clicked => { AppState.xfer-browse(); } }
     }
     if AppState.xfer-mode == 0: CheckBox { text: "Structure (tables, views, routines, triggers, indexes)"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
     if AppState.xfer-mode == 0: CheckBox { text: "Data (all rows)"; checked <=> AppState.xfer-opt-b; enabled: !AppState.xfer-busy; }
     if AppState.xfer-mode == 1: CheckBox { text: "Stop at the first error"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
-    if AppState.xfer-mode == 2: CheckBox { text: "First CSV row holds the column names"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 2: CheckBox { text: "First CSV row holds the column names"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; toggled => { AppState.xfer-preview-request(AppState.xfer-path, AppState.xfer-opt-a); } }
+    if AppState.xfer-mode == 2: CheckBox { text: "Stop at the first bad record (otherwise skip it and write an error report)"; checked <=> AppState.xfer-opt-b; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 2 && AppState.xfer-map-files.length > 0: VerticalLayout {
+        spacing: 4px;
+        Text { text: "Map file columns to table columns"; color: Theme.dim; font-size: 11px; font-weight: 700; }
+        ListView {
+            height: min(170px, AppState.xfer-map-files.length * 34px);
+            for f[i] in AppState.xfer-map-files: HorizontalLayout {
+                height: 34px; spacing: 8px;
+                Text { text: f; width: 180px; overflow: elide; vertical-alignment: center; color: Theme.text; font-size: 12px; }
+                Text { text: "→"; color: Theme.dim; vertical-alignment: center; }
+                ComboBox {
+                    model: AppState.xfer-map-targets; current-index: AppState.xfer-map-sel[i];
+                    enabled: !AppState.xfer-busy;
+                    selected => { AppState.xfer-map-pick(i, self.current-index); }
+                }
+            }
+        }
+        if AppState.xfer-preview != "": Text { text: AppState.xfer-preview; color: Theme.dim; font-size: 10px; font-family: "JetBrains Mono"; wrap: word-wrap; }
+    }
     if AppState.xfer-info != "": Text { text: AppState.xfer-info; color: AppState.xfer-busy ? Theme.dim : Theme.ok; wrap: word-wrap; font-size: 12px; }
     if AppState.xfer-error != "": Text { text: AppState.xfer-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
     HorizontalLayout {

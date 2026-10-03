@@ -427,6 +427,12 @@ export global AppState {
     in property <string> xfer-error;
     in property <bool> xfer-busy;
     callback open-transfer(int);
+    in property <[string]> xfer-map-files;
+    in property <[string]> xfer-map-targets;
+    in property <[int]> xfer-map-sel;
+    in property <string> xfer-preview;
+    callback xfer-preview-request(string, bool);
+    callback xfer-map-pick(int, int);
     callback xfer-browse();
     callback xfer-run(string, bool, bool);
     callback xfer-cancel();

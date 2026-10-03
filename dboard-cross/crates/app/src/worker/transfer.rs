@@ -62,6 +62,12 @@ impl Worker {
             }
         };
         self.xfer_mode = mode;
+        self.xfer_map.clear();
+        self.xfer_targets.clear();
+        ui(&self.w, |st| {
+            st.set_xfer_map_files(strs(Vec::new()));
+            st.set_xfer_preview("".into());
+        });
         ui(&self.w, move |st| {
             st.set_xfer_mode(mode);
             st.set_xfer_title(title.into());
@@ -90,7 +96,11 @@ impl Worker {
         };
         if let Some(f) = picked {
             let p = f.path().display().to_string();
+            let (p2, hdr) = (p.clone(), true);
             ui(&self.w, move |st| st.set_xfer_path(p.into()));
+            if self.xfer_mode == 2 {
+                self.xfer_preview(p2, hdr);
+            }
         }
     }
 
@@ -110,6 +120,7 @@ impl Worker {
                 }
             }
             _ => {
+                self.xfer_stop_first = b;
                 if self.protected() {
                     let env = self.env.label();
                     self.ask(Pending::ImportRows(path.clone(), a), format!("Import rows into {env}"), format!("Insert every record in {path} as a new row?"));
@@ -227,10 +238,68 @@ impl Worker {
             .collect())
     }
 
+    /// Read the chosen file, list its columns and propose a mapping onto the open table.
+    pub(crate) fn xfer_preview(&mut self, path: String, header: bool) {
+        let path = path.trim().to_string();
+        if self.xfer_mode != 2 || path.is_empty() || self.is_mongo() {
+            return;
+        }
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
+        let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
+        let all_cols: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
+        let records = match Self::read_records(&path, header, &all_cols) {
+            Ok(r) => r,
+            Err(e) => return self.xfer_done(String::new(), e),
+        };
+        let mut files: Vec<String> = Vec::new();
+        for (pairs, _) in records.iter().take(200) {
+            for (k, _) in pairs {
+                if !files.contains(k) {
+                    files.push(k.clone());
+                }
+            }
+        }
+        self.xfer_map = files.iter().map(|f| (f.clone(), all_cols.iter().find(|c| c.eq_ignore_ascii_case(f.trim())).cloned())).collect();
+        self.xfer_targets = std::iter::once("(skip this column)".to_string()).chain(all_cols.iter().cloned()).collect();
+        let preview = records
+            .iter()
+            .take(3)
+            .enumerate()
+            .map(|(i, (pairs, _))| format!("{}: {}", i + 1, pairs.iter().map(|(k, v)| format!("{k}={}", one_line(v))).collect::<Vec<_>>().join(", ")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let total = records.len();
+        self.push_xfer_map();
+        ui(&self.w, move |st| {
+            st.set_xfer_preview(preview.into());
+            st.set_xfer_info(format!("{total} record(s) found. Check the column mapping, then Import.").into());
+            st.set_xfer_error("".into());
+        });
+    }
+
+    fn push_xfer_map(&self) {
+        let files: Vec<String> = self.xfer_map.iter().map(|(f, _)| f.clone()).collect();
+        let sel: Vec<i32> = self.xfer_map.iter().map(|(_, t)| t.as_ref().and_then(|t| self.xfer_targets.iter().position(|x| x == t)).unwrap_or(0) as i32).collect();
+        let targets = self.xfer_targets.clone();
+        ui(&self.w, move |st| {
+            st.set_xfer_map_files(strs(files));
+            st.set_xfer_map_targets(strs(targets));
+            st.set_xfer_map_sel(ModelRc::new(VecModel::from(sel)));
+        });
+    }
+
+    pub(crate) fn xfer_map_pick(&mut self, i: usize, j: usize) {
+        let target = if j == 0 { None } else { self.xfer_targets.get(j).cloned() };
+        if let Some(slot) = self.xfer_map.get_mut(i) {
+            slot.1 = target;
+        }
+    }
+
     pub(crate) async fn run_import_rows(&mut self, path: String, header: bool) {
         let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
         let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
         let all_cols: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
+        let stop_first = self.xfer_stop_first;
         ui(&self.w, |st| {
             st.set_xfer_busy(true);
             st.set_xfer_error("".into());
@@ -240,11 +309,18 @@ impl Worker {
             Ok(r) => r,
             Err(e) => return self.xfer_done(String::new(), e),
         };
-        // Match file columns to table columns ignoring case; unknown ones are reported, not skipped.
-        let resolve = |name: &str| -> Option<String> { table.columns.iter().find(|c| c.name.eq_ignore_ascii_case(name.trim())).map(|c| c.name.clone()) };
+        // The mapping chosen in the dialog wins; without one, names are matched ignoring case.
+        let mapped: std::collections::HashMap<String, Option<String>> = self.xfer_map.iter().cloned().collect();
+        let resolve = |name: &str| -> Result<Option<String>, String> {
+            if let Some(m) = mapped.get(name) {
+                return Ok(m.clone());
+            }
+            table.columns.iter().find(|c| c.name.eq_ignore_ascii_case(name.trim())).map(|c| Some(c.name.clone())).ok_or_else(|| format!("the table has no column “{name}”"))
+        };
         let mongo = self.is_mongo();
         let total = records.len();
         let mut progress = self.xfer_progress();
+        let (mut ok, mut errors): (usize, Vec<String>) = (0, Vec::new());
         for (n, (pairs, raw)) in records.into_iter().enumerate() {
             let result: Result<(), String> = async {
                 let conn = self.conn.as_mut().ok_or("Not connected")?;
@@ -253,24 +329,38 @@ impl Worker {
                 }
                 let mut vals = Vec::new();
                 for (k, v) in pairs {
-                    let col = resolve(&k).ok_or_else(|| format!("the table has no column “{k}”"))?;
-                    vals.push((col, v));
+                    if let Some(col) = resolve(&k)? {
+                        vals.push((col, v));
+                    }
                 }
                 conn.insert_row(&tab.schema, &tab.name, &vals).await.map_err(|e| e.to_string())
             }
             .await;
-            if let Err(e) = result {
-                self.xfer_done(String::new(), format!("Record {} failed: {e}\n{n} record(s) before it were inserted and kept.", n + 1));
-                self.load_active().await;
-                return;
+            match result {
+                Ok(()) => ok += 1,
+                Err(e) if stop_first => {
+                    self.xfer_done(String::new(), format!("Record {} failed: {e}\n{ok} record(s) before it were inserted and kept.", n + 1));
+                    self.load_active().await;
+                    return;
+                }
+                Err(e) => errors.push(format!("record {}: {e}", n + 1)),
             }
             if n % 50 == 0 {
-                progress(format!("Inserted {n} of {total}…"));
+                progress(format!("Processed {n} of {total}…"));
             }
         }
-        self.log_activity(None, &format!("IMPORT {total} rows into {}.{}", tab.schema, tab.name));
-        self.xfer_done(format!("Done: {total} row(s) inserted into {}.", tab.name), String::new());
+        self.log_activity(None, &format!("IMPORT {ok} rows into {}.{}", tab.schema, tab.name));
+        if errors.is_empty() {
+            self.xfer_done(format!("Done: {ok} row(s) inserted into {}.", tab.name), String::new());
+        } else {
+            let report = downloads_dir().join(format!("import-errors-{}.txt", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+            let _ = std::fs::write(&report, errors.join("\n"));
+            let head = errors.iter().take(5).cloned().collect::<Vec<_>>().join("\n");
+            self.xfer_done(
+                format!("{ok} row(s) inserted into {}, {} skipped.", tab.name, errors.len()),
+                format!("{head}{}\nFull report: {}", if errors.len() > 5 { "\n…" } else { "" }, report.display()),
+            );
+        }
         self.load_active().await;
     }
 }
-

@@ -22,6 +22,8 @@ pub enum Cmd {
     // connection manager
     NewConn,
     TxBegin,
+    XferPreview(String, bool),
+    XferMapPick(usize, usize),
     PinResult,
     CompareResult,
     StageToggle,
@@ -492,6 +494,10 @@ pub struct Worker {
     users: Vec<UserInfo>,
     edit_row: Option<EditRowState>,
     xfer_mode: i32,
+    /// Import mapping: (file column, target table column or None to skip).
+    xfer_map: Vec<(String, Option<String>)>,
+    xfer_stop_first: bool,
+    xfer_targets: Vec<String>,
     /// The cell whose "saved ✓" / "!" marker is cleared by the next `ClearFlash`.
     flashed: Vec<(usize, usize)>,
     /// Entries of the database drop-down and the selected one.
@@ -546,6 +552,9 @@ impl Worker {
             users: Vec::new(),
             edit_row: None,
             xfer_mode: 0,
+            xfer_map: Vec::new(),
+            xfer_stop_first: true,
+            xfer_targets: Vec::new(),
             flashed: Vec::new(),
             db_entries: Vec::new(),
             db_idx: -1,
