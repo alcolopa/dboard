@@ -5,6 +5,7 @@ slint::include_modules!();
 
 mod clipboard;
 mod export;
+mod highlight;
 mod suggest;
 mod update;
 mod worker;
@@ -28,6 +29,22 @@ fn main() {
         }};
     }
 
+    // Editor colouring runs synchronously on the UI thread so text never flashes invisible.
+    st.on_highlight(|text| {
+        let toks: Vec<HlToken> = highlight::tokens(text.as_str())
+            .into_iter()
+            .map(|t| HlToken { line: t.line as i32, col: t.col as i32, text: t.text.into(), kind: t.kind as i32 })
+            .collect();
+        slint::ModelRc::new(slint::VecModel::from(toks))
+    });
+    st.on_bracket_match(|text, off| {
+        let v: Vec<i32> = highlight::match_bracket(text.as_str(), off.max(0) as usize)
+            .map(|[a, b]| vec![a.0 as i32, a.1 as i32, b.0 as i32, b.1 as i32])
+            .unwrap_or_default();
+        slint::ModelRc::new(slint::VecModel::from(v))
+    });
+    st.on_count_lines(|t| t.as_str().split('\n').count() as i32);
+    st.on_gutter(|n| (1..=n.max(1)).map(|i| i.to_string()).collect::<Vec<_>>().join("\n").into());
     wire!(on_new_conn, | | Cmd::NewConn);
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));

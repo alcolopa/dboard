@@ -3,6 +3,7 @@ export struct ColInfo { name: string, type-name: string, pk: bool, fk: string, i
 export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string }
 export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
 export struct SessionTab { name: string, color: color, active: bool }
+export struct HlToken { line: int, col: int, text: string, kind: int }
 export struct ErBox { x: length, y: length, w: length, h: length, title: string, body: string, schema: string, name: string }
 export struct MetaRow { label: string, value: string }
 export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool, header: bool }
@@ -240,6 +241,10 @@ export global AppState {
     }
     callback stash-clipboard();
     callback run-selection(string);
+    pure callback highlight(string) -> [HlToken];
+    pure callback bracket-match(string, int) -> [int];
+    pure callback gutter(int) -> string;
+    pure callback count-lines(string) -> int;
     callback copy-text(string);
     callback copy-selection(int, int, int, int, int);
     callback paste-selection(int, int, int, int);
