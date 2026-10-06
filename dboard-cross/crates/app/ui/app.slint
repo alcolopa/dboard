@@ -84,8 +84,8 @@ component Workspace inherits VerticalLayout {
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.plus; hint: "Add row"; primary: true; clicked => { AppState.open-insert(); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.trash; hint: "Delete selected row"; danger: true; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } } }
-            if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { Btn { text: AppState.stage-on ? "Staging: on" : "Staging: off"; clicked => { AppState.stage-toggle(); } } }
-            if AppState.tab-kind == 0 && AppState.pending-count > 0: Slot { Btn { text: "Review " + AppState.pending-count + " change(s)"; primary: true; clicked => { AppState.review-open-request(); } } }
+            if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { Btn { text: AppState.stage-on ? "Edits: on Save" : "Edits: automatic"; clicked => { AppState.stage-toggle(); } } }
+            if AppState.tab-kind == 0 && AppState.pending-count > 0: Slot { Btn { text: "Save " + AppState.pending-count + " change(s)"; primary: true; clicked => { AppState.review-open-request(); } } }
             if (AppState.tab-kind == 0 && AppState.db-type != 2) || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
             if AppState.tab-kind == 0: Slot { Sep { } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
@@ -111,7 +111,7 @@ export component App inherits Window {
     // Closing a dialog destroys its focused input; hand focus back so shortcuts keep working.
     property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
         || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open
-        || AppState.editrow-open || AppState.users-open || AppState.xfer-open || AppState.review-open || AppState.vars-open;
+        || AppState.editrow-open || AppState.users-open || AppState.xfer-open || AppState.review-open || AppState.vars-open || AppState.new-db-open;
     changed any-modal => { AppState.text-focus = 0; if !self.any-modal { fs.focus(); } }
     // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
     property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
@@ -159,6 +159,11 @@ export component App inherits Window {
                 MenuItem { title: (AppState.timeout-secs == 30 ? "✓ " : "") + "30 seconds"; activated => { AppState.set-timeout(30); } }
                 MenuItem { title: (AppState.timeout-secs == 120 ? "✓ " : "") + "2 minutes"; activated => { AppState.set-timeout(120); } }
                 MenuItem { title: (AppState.timeout-secs == 600 ? "✓ " : "") + "10 minutes"; activated => { AppState.set-timeout(600); } }
+            }
+            Menu {
+                title: "Apply Edits";
+                MenuItem { title: (!AppState.save-mode ? "✓ " : "") + "Automatically"; activated => { AppState.set-save-mode(false); } }
+                MenuItem { title: (AppState.save-mode ? "✓ " : "") + "When I press Save"; activated => { AppState.set-save-mode(true); } }
             }
             MenuItem { title: "Audit Log"; enabled: AppState.connected; activated => { AppState.open-audit(); } }
             MenuItem { title: "ER Diagram"; enabled: AppState.connected && AppState.db-type != 2; activated => { AppState.open-er(); } }
@@ -274,6 +279,7 @@ export component App inherits Window {
                             selected => { AppState.switch-database(self.current-index); }
                         }
                     }
+                    if AppState.db-type != 3: Slot { IconBtn { d: Icons.plus; hint: "New database"; clicked => { AppState.new-db-request(); } } }
                     Text {
                         text: AppState.hint != "" ? AppState.hint : AppState.status;
                         color: AppState.hint != "" ? Theme.text : Theme.dim;

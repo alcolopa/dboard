@@ -137,6 +137,14 @@ component TransferDialog inherits Modal {
         }
         if AppState.xfer-preview != "": Text { text: AppState.xfer-preview; color: Theme.dim; font-size: 10px; font-family: "JetBrains Mono"; wrap: word-wrap; }
     }
+    if AppState.xfer-busy && AppState.xfer-progress >= 0: HorizontalLayout {
+        spacing: 8px; height: 14px;
+        Rectangle {
+            horizontal-stretch: 1; height: 8px; y: 3px; border-radius: 4px; background: Theme.panel2; border-width: 1px; border-color: Theme.line;
+            Rectangle { x: 0; width: parent.width * AppState.xfer-progress; height: parent.height; border-radius: 4px; background: Theme.accent; }
+        }
+        Text { text: round(AppState.xfer-progress * 100) + "%"; color: Theme.dim; font-size: 11px; width: 36px; horizontal-alignment: right; }
+    }
     if AppState.xfer-info != "": Text { text: AppState.xfer-info; color: AppState.xfer-busy ? Theme.dim : Theme.ok; wrap: word-wrap; font-size: 12px; }
     if AppState.xfer-error != "": Text { text: AppState.xfer-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
     HorizontalLayout {
@@ -184,8 +192,8 @@ export component Dialogs inherits Rectangle {
     if AppState.review-open: Modal {
         box-width: 640px;
         dismissed => { AppState.review-cancel(); }
-        Title { text: "Review " + AppState.pending-count + " pending change(s)"; }
-        Note { text: "These edits are applied together in one transaction. If any fails, none are kept."; }
+        Title { text: "Save " + AppState.pending-count + " pending change(s)"; }
+        Note { text: "These edits are saved together. If any fails, none are kept. Inside an open transaction they stay uncommitted until you Commit."; }
         ListView {
             height: min(320px, AppState.review-items.length * 46px);
             for it in AppState.review-items: Rectangle {
@@ -202,7 +210,7 @@ export component Dialogs inherits Rectangle {
             spacing: 8px; alignment: end;
             Btn { text: "Discard all"; danger: true; clicked => { AppState.review-discard(); } }
             Btn { text: "Keep editing"; clicked => { AppState.review-cancel(); } }
-            Btn { text: "Apply changes"; primary: true; clicked => { AppState.review-apply(); } }
+            Btn { text: "Save changes"; primary: true; clicked => { AppState.review-apply(); } }
         }
     }
 
@@ -265,6 +273,20 @@ export component Dialogs inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
             Btn { text: "Cancel"; clicked => { AppState.json-cancel(); } }
             Btn { text: "Save"; primary: true; clicked => { AppState.json-save(AppState.json-text); } }
+        }
+    }
+
+    // ---- new database ----
+    if AppState.new-db-open: Modal {
+        box-width: 420px;
+        dismissed => { AppState.new-db-cancel(); }
+        Title { text: "New database"; }
+        Note { text: "Creates an empty database on this server and switches to it. MongoDB creates it when you first write to it."; }
+        EditLine { placeholder-text: "Database name"; text <=> AppState.new-db-name; accepted(t) => { if t != "" { AppState.new-db-submit(t); } } }
+        HorizontalLayout {
+            spacing: 8px; alignment: end;
+            Btn { text: "Cancel"; clicked => { AppState.new-db-cancel(); } }
+            Btn { text: "Create"; primary: true; enabled: AppState.new-db-name != ""; clicked => { AppState.new-db-submit(AppState.new-db-name); } }
         }
     }
 
@@ -379,12 +401,13 @@ export component Dialogs inherits Rectangle {
         dismissed => { AppState.confirm-cancel(); }
         Title { text: AppState.confirm-title; color: Theme.err; }
         Text { text: AppState.confirm-text; color: Theme.text; wrap: word-wrap; font-size: 12px; }
+        if AppState.confirm-force-offer: CheckBox { text: "Force: ignore foreign keys and other integrity checks (also removes what depends on it)"; checked <=> AppState.confirm-force; }
         if AppState.confirm-typing: Note { text: "Type CONFIRM to proceed."; }
-        if AppState.confirm-typing: EditLine { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(); } } }
+        if AppState.confirm-typing: EditLine { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(AppState.confirm-force); } } }
         HorizontalLayout {
             spacing: 8px; alignment: end;
             Btn { text: "Cancel"; clicked => { AppState.confirm-cancel(); } }
-            Btn { text: "Proceed"; danger: true; enabled: !AppState.confirm-typing || AppState.confirm-typed == "CONFIRM"; clicked => { AppState.confirm-run(); } }
+            Btn { text: "Proceed"; danger: true; enabled: !AppState.confirm-typing || AppState.confirm-typed == "CONFIRM"; clicked => { AppState.confirm-run(AppState.confirm-force); } }
         }
     }
 

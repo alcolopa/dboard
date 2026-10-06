@@ -1,5 +1,5 @@
 use crate::admin;
-use crate::dump::{hex_literal, is_binary, is_numeric, sql_value, strip_definer, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
+use crate::dump::{Progress, hex_literal, is_binary, is_numeric, sql_value, strip_definer, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
 use crate::model::*;
 use crate::split::{Splitter, Stmt};
 use crate::sql::{self, Dialect};
@@ -433,7 +433,7 @@ impl My {
 
     // ---- export / import --------------------------------------------------------------------
 
-    pub async fn dump(&mut self, opts: &DumpOptions, tables: &[Table], objects: &[DbObject], out: &mut dyn Write, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+    pub async fn dump(&mut self, opts: &DumpOptions, tables: &[Table], objects: &[DbObject], out: &mut dyn Write, progress: &mut dyn FnMut(Progress)) -> Result<DumpStats> {
         let mut st = DumpStats::default();
         let ver = self.version().await.unwrap_or_default();
         write!(
@@ -444,6 +444,8 @@ impl My {
         schemas.sort();
         schemas.dedup();
         let multi = schemas.len() > 1;
+        let total_tables = tables.iter().filter(|t| t.kind == TableKind::Table).count();
+        let mut done_tables = 0usize;
         for sch in &schemas {
             // A single-database dump must restore into any database name, so drop the source
             // database qualifier (`db`.) from definitions; multi-database dumps USE each one.
@@ -488,7 +490,8 @@ impl My {
                     }
                     w.flush(out)?;
                     st.rows += w.total;
-                    progress(format!("Exported {} ({} rows)", D.qualified(t), w.total));
+                    done_tables += 1;
+                    progress(Progress::at(format!("Exported {} ({} rows)", D.qualified(t), w.total), done_tables, total_tables));
                 }
             }
             if opts.schema {
@@ -513,7 +516,7 @@ impl My {
         Ok(st)
     }
 
-    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
         let mut stats = ImportStats::default();
         let mut sp = Splitter::new(D);
         let mut pending: Vec<Stmt> = Vec::new();
@@ -550,7 +553,7 @@ impl My {
                     }
                 }
                 if last_report.elapsed().as_millis() > 400 {
-                    progress(format!("{} statements run…", stats.statements));
+                    progress(format!("{} statements run…", stats.statements).into());
                     last_report = Instant::now();
                 }
             }

@@ -388,7 +388,7 @@ impl Worker {
             }
             Some(Pending::Truncate(s, n)) => {
                 let res = match self.conn.as_mut() {
-                    Some(conn) => conn.truncate(&s, &n).await,
+                    Some(conn) => conn.truncate_forced(&s, &n, self.force).await,
                     None => return,
                 };
                 match res {
@@ -404,7 +404,7 @@ impl Worker {
             }
             Some(Pending::Drop(s, n)) => {
                 let res = match self.conn.as_mut() {
-                    Some(conn) => conn.drop_table(&s, &n).await,
+                    Some(conn) => if self.force { conn.drop_many(&[(s.clone(), n.clone())], true).await.map(|_| ()) } else { conn.drop_table(&s, &n).await },
                     None => return,
                 };
                 match res {
@@ -419,6 +419,7 @@ impl Worker {
                     Err(e) => self.toast(e.to_string()),
                 }
             }
+            Some(Pending::DropMany(items)) => self.drop_many(items).await,
             Some(Pending::DropUser(i)) => self.user_drop(i).await,
             Some(Pending::Paste(r, c, grid)) => self.apply_paste(r, c, grid).await,
             Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop).await,

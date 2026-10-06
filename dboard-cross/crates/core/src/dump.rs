@@ -5,6 +5,32 @@ use crate::sql::{literal, quote_ident, Dialect};
 use crate::{Error, Result};
 use std::io::Write;
 
+/// One progress report from an export or import: what is happening now and, when known, how far
+/// along the whole job is (0.0 - 1.0).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Progress {
+    pub text: String,
+    pub fraction: Option<f32>,
+}
+
+impl Progress {
+    pub fn at(text: impl Into<String>, done: usize, total: usize) -> Self {
+        Self { text: text.into(), fraction: (total > 0).then(|| (done as f32 / total as f32).clamp(0.0, 1.0)) }
+    }
+}
+
+impl From<String> for Progress {
+    fn from(text: String) -> Self {
+        Self { text, fraction: None }
+    }
+}
+
+impl From<&str> for Progress {
+    fn from(text: &str) -> Self {
+        text.to_string().into()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DumpOptions {
     pub schema: bool,
@@ -45,8 +71,6 @@ pub struct ImportStats {
     pub errors: Vec<String>,
 }
 
-pub type Progress<'a> = &'a mut dyn FnMut(String);
-
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::Db(e.to_string())
@@ -58,9 +82,29 @@ pub fn is_numeric(ty: &str) -> bool {
     ["int", "numeric", "decimal", "float", "double", "real", "serial"].iter().any(|k| t.contains(k)) && !t.contains("interval") && t != "tinyint(1)"
 }
 
+/// Types whose raw bytes must be written as a hex literal. Spatial columns are included: the
+/// server keeps them as SRID + WKB bytes, which only survive a round trip as binary, not text.
 pub fn is_binary(ty: &str) -> bool {
     let t = ty.to_lowercase();
-    t.contains("blob") || t.contains("binary")
+    t.contains("blob")
+        || t.contains("binary")
+        || t.starts_with("bit")
+        || ["geometry", "geomcollection", "point", "linestring", "polygon"].iter().any(|k| t.contains(k))
+}
+
+#[cfg(test)]
+mod binary_tests {
+    use super::is_binary;
+
+    #[test]
+    fn spatial_and_bit_columns_are_dumped_as_hex() {
+        for t in ["geometry", "point", "linestring", "polygon", "multipolygon", "geometrycollection", "bit(8)", "blob", "varbinary(16)"] {
+            assert!(is_binary(t), "{t}");
+        }
+        for t in ["varchar(20)", "int", "json", "datetime"] {
+            assert!(!is_binary(t), "{t}");
+        }
+    }
 }
 
 /// A value as it appears in an `INSERT`: numbers bare, everything else quoted.

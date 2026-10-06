@@ -2,7 +2,7 @@
 # Build a .deb. Run from dboard-cross/ after `cargo build --release -p dboard`.  Usage: build-deb.sh [version] [amd64|arm64]
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-VERSION="${1:-2.0.0}"; VERSION="${VERSION#v}"
+VERSION="${1:-2.0.1}"; VERSION="${VERSION#v}"
 ARCH="${2:-amd64}"
 ROOT="dist/deb/dboard_${VERSION}_${ARCH}"
 rm -rf "$ROOT"; mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps"

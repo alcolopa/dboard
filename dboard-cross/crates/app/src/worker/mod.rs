@@ -7,7 +7,7 @@ use crate::{App, AppState, ColInfo, ConnForm, ConnItem, CtxItem, EditItem, ErBox
 use dboard_core::config::{self, secrets, HistoryEntry, SavedQuery, Settings, Store, Theme as ThemePref, FOLDERS};
 use dboard_core::model::*;
 use dboard_core::sql::Dialect;
-use dboard_core::dump::{DumpOptions, ImportOptions};
+use dboard_core::dump::{DumpOptions, ImportOptions, Progress};
 use dboard_core::edit::EditKind;
 use dboard_core::{mongo, safety, Conn};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel, Weak};
@@ -48,6 +48,7 @@ pub enum Cmd {
     UpdateDownloaded(Result<std::path::PathBuf, String>),
     PickResult(usize),
     TxCommit,
+    SetSaveMode(bool),
     TxRollback,
     ParseConnUrl(String),
     ConnFilter(String),
@@ -113,7 +114,14 @@ pub enum Cmd {
     InsertTemplate(String),
     OpenSaveQuery,
     // dialogs
-    ConfirmRun,
+    ConfirmRun(bool),
+    TreeSelect(usize, i32),
+    TreeClearSel,
+    TreeDropSelected,
+    TreeDropAll,
+    NewDbRequest,
+    NewDbSubmit(String),
+    NewDbCancel,
     ConfirmCancel,
     VarsEdited(usize, String),
     VarsSubmit,
@@ -396,6 +404,8 @@ pub(crate) enum Pending {
     Truncate(String, String),
     Drop(String, String),
     DropUser(usize),
+    /// Tables / views / collections as (schema, name).
+    DropMany(Vec<(String, String)>),
     /// (top-left row, top-left column, values)
     Paste(usize, usize, Vec<Vec<String>>),
     ImportDatabase(String, bool),
@@ -509,6 +519,11 @@ pub struct Worker {
     /// Import mapping: (file column, target table column or None to skip).
     xfer_map: Vec<(String, Option<String>)>,
     xfer_stop_first: bool,
+    /// Tables picked in the sidebar (tree keys) and the one a Shift-click range starts from.
+    tree_sel: HashSet<String>,
+    tree_anchor: Option<usize>,
+    /// "Force" ticked in the confirmation that is being answered.
+    force: bool,
     xfer_targets: Vec<String>,
     /// The cell whose "saved ✓" / "!" marker is cleared by the next `ClearFlash`.
     flashed: Vec<(usize, usize)>,
@@ -566,6 +581,9 @@ impl Worker {
             xfer_mode: 0,
             xfer_map: Vec::new(),
             xfer_stop_first: true,
+            tree_sel: HashSet::new(),
+            tree_anchor: None,
+            force: false,
             xfer_targets: Vec::new(),
             flashed: Vec::new(),
             db_entries: Vec::new(),
@@ -686,6 +704,7 @@ impl Worker {
                     .set_color_scheme(if dark { slint::language::ColorScheme::Dark } else { slint::language::ColorScheme::Light });
                 let st = app.global::<AppState>();
                 st.set_timeout_secs(s.statement_timeout_secs as i32);
+                st.set_save_mode(s.edits_need_save);
                 st.set_backup_hours(s.backup_every_hours as i32);
                 st.set_backup_keep(s.backup_keep as i32);
                 st.set_set_dark(dark);
@@ -768,6 +787,7 @@ impl Worker {
 
 mod connections;
 mod tree;
+mod bulk;
 mod tabs;
 mod editing;
 mod query;

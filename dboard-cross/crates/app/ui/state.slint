@@ -1,6 +1,6 @@
 export struct GridCell { text: string, is-null: bool, state: int }
 export struct ColInfo { name: string, type-name: string, pk: bool, fk: string, is-bool: bool, is-json: bool }
-export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string }
+export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string, selected: bool }
 export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
 export struct SessionTab { name: string, color: color, active: bool }
 export struct HlToken { line: int, col: int, text: string, kind: int }
@@ -147,6 +147,9 @@ export global AppState {
     in property <bool> stage-on;
     in property <int> pending-count;
     in property <bool> review-open;
+    // true: edits wait for Save; false: they are written as you make them
+    in-out property <bool> save-mode;
+    callback set-save-mode(bool);
     in property <[EditItem]> review-items;
     in property <string> review-error;
     callback stage-toggle();
@@ -188,6 +191,17 @@ export global AppState {
 
     // ---- sidebar ----
     in property <[TreeItem]> tree;
+    // Several tables picked with Ctrl/Cmd-click or Shift-click (mode 1 = toggle, 2 = range)
+    in property <int> tree-sel-count;
+    callback tree-select(int, int);
+    callback tree-clear-selection();
+    callback tree-drop-selected();
+    callback tree-drop-all();
+    in property <bool> new-db-open;
+    in-out property <string> new-db-name;
+    callback new-db-request();
+    callback new-db-submit(string);
+    callback new-db-cancel();
     in-out property <string> tree-filter;
     callback filter-tree(string);
     callback tree-click(int);
@@ -336,7 +350,10 @@ export global AppState {
     in property <string> confirm-text;
     in property <bool> confirm-typing;
     in-out property <string> confirm-typed;
-    callback confirm-run();
+    callback confirm-run(bool);
+    // Drop / truncate dialogs offer "force": integrity checks off, dependants removed too.
+    in property <bool> confirm-force-offer;
+    in-out property <bool> confirm-force;
     callback confirm-cancel();
 
     // ---- insert row ----
@@ -432,6 +449,8 @@ export global AppState {
     in-out property <bool> xfer-opt-a: true;
     in-out property <bool> xfer-opt-b: true;
     in property <string> xfer-info;
+    // 0..1 while a transfer reports how far it is; negative = unknown
+    in property <float> xfer-progress: -1;
     in property <string> xfer-error;
     in property <bool> xfer-busy;
     callback open-transfer(int);

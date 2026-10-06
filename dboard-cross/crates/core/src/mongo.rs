@@ -2,7 +2,7 @@
 //! top-level keys seen in the fetched documents; `_id` is the key.
 
 use crate::admin;
-use crate::dump::{DumpOptions, DumpStats, ImportOptions, ImportStats};
+use crate::dump::{Progress, DumpOptions, DumpStats, ImportOptions, ImportStats};
 use crate::model::*;
 use crate::{Error, Result};
 use mongodb::bson::{doc, oid::ObjectId, Bson, Document};
@@ -760,7 +760,7 @@ impl Mongo {
     }
 
     /// Line-oriented JSON: one document per line, so import can stream the file.
-    pub async fn dump(&mut self, opts: &DumpOptions, tables: &[Table], out: &mut dyn Write, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+    pub async fn dump(&mut self, opts: &DumpOptions, tables: &[Table], out: &mut dyn Write, progress: &mut dyn FnMut(Progress)) -> Result<DumpStats> {
         let mut st = DumpStats::default();
         writeln!(out, "{{\"format\":\"dboard-mongo-dump\",\"version\":1,\"collections\":[")?;
         let colls: Vec<&Table> = tables.iter().filter(|t| t.kind == TableKind::Collection).collect();
@@ -791,7 +791,7 @@ impl Mongo {
             writeln!(out, "]}}{}", if n + 1 < colls.len() { "," } else { "" })?;
             st.tables += 1;
             st.rows += count;
-            progress(format!("Exported {} ({count} documents)", t.full_name()));
+            progress(Progress::at(format!("Exported {} ({count} documents)", t.full_name()), n + 1, colls.len()));
         }
         writeln!(out, "]}}")?;
         out.flush()?;
@@ -809,7 +809,7 @@ impl Mongo {
     }
 
     /// Restore a dump written by [`Mongo::dump`]. With `target_db`, every collection goes there.
-    pub async fn import(&mut self, reader: &mut dyn BufRead, target_db: Option<&str>, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+    pub async fn import(&mut self, reader: &mut dyn BufRead, target_db: Option<&str>, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
         let mut stats = ImportStats::default();
         let mut cur: Option<(String, String)> = None; // (db, collection)
         let mut batch: Vec<Document> = Vec::new();
@@ -839,7 +839,7 @@ impl Mongo {
                 let (file_db, name, indexes) = h.map_err(|e| Error::Db(format!("Line {line_no}: {e}")))?;
                 let db = target_db.map(str::to_string).unwrap_or(file_db);
                 cur_indexes = indexes;
-                progress(format!("Importing {db}.{name}…"));
+                progress(format!("Importing {db}.{name}…").into());
                 cur = Some((db, name));
                 stats.statements += 1;
                 continue;

@@ -1,6 +1,6 @@
 //! One connection to any supported database, behind a single API.
 
-use crate::dump::{DumpOptions, DumpStats, ImportOptions, ImportStats};
+use crate::dump::{Progress, DumpOptions, DumpStats, ImportOptions, ImportStats};
 use crate::edit::{EditHistory, EditKind, EditRecord};
 use crate::model::*;
 use crate::mongo::Mongo;
@@ -351,6 +351,114 @@ impl Conn {
         self.refresh_metadata().await
     }
 
+    /// Empty a table. `force` switches integrity checks off for the statement (PostgreSQL:
+    /// CASCADE into the tables that reference it) so referenced tables can be emptied too.
+    pub async fn truncate_forced(&mut self, schema: &str, name: &str, force: bool) -> Result<()> {
+        if !force {
+            return self.truncate(schema, name).await;
+        }
+        let t = self.table_owned(schema, name)?;
+        match self.config.db_type {
+            DbType::Postgres => self.execute_query(&format!("{} CASCADE", crate::sql::truncate(crate::sql::Dialect::Pg, &t))).await.map(|_| ()),
+            DbType::Mongo => self.truncate(schema, name).await,
+            _ => {
+                let stmt = if self.config.db_type == DbType::MySql { crate::sql::truncate(crate::sql::Dialect::My, &t) } else { format!("DELETE FROM {}", crate::sql::Dialect::Pg.quote(&t.name)) };
+                self.run_batch(&[stmt], true).await
+            }
+        }
+    }
+
+    /// Run statements in order; with `checks_off` foreign-key checks are disabled around them
+    /// (MySQL, SQLite) and restored afterwards, even when one fails.
+    async fn run_batch(&mut self, stmts: &[String], checks_off: bool) -> Result<()> {
+        let (off, on) = if self.config.db_type == DbType::MySql { ("SET FOREIGN_KEY_CHECKS = 0", "SET FOREIGN_KEY_CHECKS = 1") } else { ("PRAGMA foreign_keys = OFF", "PRAGMA foreign_keys = ON") };
+        let toggle = checks_off && matches!(self.config.db_type, DbType::MySql | DbType::Sqlite);
+        if toggle {
+            self.execute_query(off).await?;
+        }
+        let mut res = Ok(());
+        for s in stmts {
+            if let Err(e) = self.execute_query(s).await {
+                res = Err(e);
+                break;
+            }
+        }
+        if toggle {
+            let _ = self.execute_query(on).await;
+        }
+        res
+    }
+
+    /// Drop several tables / views / collections in one go. Views go first, then tables; the
+    /// tables are dropped together so ones that reference each other do not block. `force`
+    /// also removes whatever still depends on them (PostgreSQL: CASCADE) and switches
+    /// foreign-key checks off (MySQL, SQLite).
+    pub async fn drop_many(&mut self, items: &[(String, String)], force: bool) -> Result<usize> {
+        let mut tables = Vec::new();
+        for (s, n) in items {
+            tables.push(self.table_owned(s, n)?);
+        }
+        tables.sort_by_key(|t| match t.kind {
+            TableKind::View => 0,
+            TableKind::MaterializedView => 1,
+            _ => 2,
+        });
+        let count = tables.len();
+        let res = match self.config.db_type {
+            DbType::Mongo => {
+                let Inner::Mongo(m) = &mut self.inner else { unreachable!() };
+                let mut r = Ok(());
+                for t in &tables {
+                    r = m.drop_table(t).await;
+                    if r.is_err() {
+                        break;
+                    }
+                }
+                r
+            }
+            DbType::Sqlite => {
+                let stmts: Vec<String> = tables.iter().map(|t| crate::sql::drop_table(crate::sql::Dialect::Pg, t).replace(&crate::sql::Dialect::Pg.qualified(t), &crate::sql::Dialect::Pg.quote(&t.name))).collect();
+                self.run_batch(&stmts, force).await
+            }
+            ty => {
+                let d = if ty == DbType::MySql { crate::sql::Dialect::My } else { crate::sql::Dialect::Pg };
+                let mut stmts = Vec::new();
+                for what in ["VIEW", "MATERIALIZED VIEW", "TABLE"] {
+                    let names: Vec<String> = tables
+                        .iter()
+                        .filter(|t| match t.kind {
+                            TableKind::View => what == "VIEW",
+                            TableKind::MaterializedView => what == "MATERIALIZED VIEW",
+                            _ => what == "TABLE",
+                        })
+                        .map(|t| d.qualified(t))
+                        .collect();
+                    if !names.is_empty() {
+                        let tail = if force && ty == DbType::Postgres { " CASCADE" } else { "" };
+                        stmts.push(format!("DROP {what} {}{tail}", names.join(", ")));
+                    }
+                }
+                self.run_batch(&stmts, force).await
+            }
+        };
+        let _ = self.refresh_metadata().await;
+        res.map(|_| count)
+    }
+
+    /// Create an empty database on the server (MongoDB creates one on its first write).
+    pub async fn create_database(&mut self, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(Error::Db("Enter a name for the new database.".into()));
+        }
+        match self.config.db_type {
+            DbType::Postgres => self.execute_query(&format!("CREATE DATABASE {}", crate::sql::quote_ident(name))).await.map(|_| ()),
+            DbType::MySql => self.execute_query(&format!("CREATE DATABASE {}", crate::sql::Dialect::My.quote(name))).await.map(|_| ()),
+            DbType::Sqlite => Err(Error::Db("A SQLite connection is one file; open or create another file as a new connection.".into())),
+            DbType::Mongo => Ok(()),
+        }
+    }
+
     // ---- MongoDB extras ---------------------------------------------------------------
 
     pub async fn document_json(&mut self, schema: &str, name: &str, row: &[Cell]) -> Result<String> {
@@ -463,13 +571,17 @@ impl Conn {
     // ---- export / import --------------------------------------------------------------------
 
     /// Write the whole current database to `path` (SQL script, or line-oriented JSON for MongoDB).
-    pub async fn export_database(&mut self, path: &Path, opts: &DumpOptions, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+    pub async fn export_database(&mut self, path: &Path, opts: &DumpOptions, progress: &mut dyn FnMut(Progress)) -> Result<DumpStats> {
         let part = path.with_extension(format!("{}.part", path.extension().and_then(|e| e.to_str()).unwrap_or("tmp")));
         let file = std::fs::File::create(&part).map_err(|e| Error::Db(format!("Cannot write {}: {e}", path.display())))?;
         let mut out = BufWriter::new(file);
         let (tables, objects) = (self.metadata.tables.clone(), self.metadata.objects.clone());
+        let in_tx = self.in_tx;
         let res = match &mut self.inner {
-            Inner::Pg(d) => d.dump(opts, &mut out, progress).await,
+            Inner::Pg(d) => {
+                d.set_user_tx(in_tx);
+                d.dump(opts, &mut out, progress).await
+            }
             Inner::My(d) => d.dump(opts, &tables, &objects, &mut out, progress).await,
             Inner::Sqlite(d) => d.dump(opts, &mut out, progress).await,
             Inner::Mongo(m) => m.dump(opts, &tables, &mut out, progress).await,
@@ -489,11 +601,25 @@ impl Conn {
     }
 
     /// Run an exported script (or a dboard MongoDB export) against the current database.
-    pub async fn import_database(&mut self, path: &Path, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+    pub async fn import_database(&mut self, path: &Path, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
         let file = std::fs::File::open(path).map_err(|e| Error::Db(format!("Cannot read {}: {e}", path.display())))?;
-        let mut reader = BufReader::new(file);
+        // Progress of an import is how much of the file has been read.
+        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let read = std::rc::Rc::new(std::cell::Cell::new(0u64));
+        let mut reader = BufReader::new(CountingReader { inner: file, count: read.clone() });
+        let mut report = |mut p: Progress| {
+            if size > 0 {
+                p.fraction = Some((read.get() as f32 / size as f32).clamp(0.0, 1.0));
+            }
+            progress(p)
+        };
+        let progress = &mut report;
+        let in_tx = self.in_tx;
         let res = match &mut self.inner {
-            Inner::Pg(d) => d.import(&mut reader, opts, progress).await,
+            Inner::Pg(d) => {
+                d.set_user_tx(in_tx);
+                d.import(&mut reader, opts, progress).await
+            }
             Inner::My(d) => d.import(&mut reader, opts, progress).await,
             Inner::Sqlite(d) => d.import(&mut reader, opts, progress).await,
             Inner::Mongo(m) => {
@@ -503,6 +629,19 @@ impl Conn {
         };
         let _ = self.refresh_metadata().await;
         res
+    }
+}
+
+struct CountingReader<R> {
+    inner: R,
+    count: std::rc::Rc<std::cell::Cell<u64>>,
+}
+
+impl<R: std::io::Read> std::io::Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.count.set(self.count.get() + n as u64);
+        Ok(n)
     }
 }
 

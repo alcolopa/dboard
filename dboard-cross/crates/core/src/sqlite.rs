@@ -1,6 +1,6 @@
 //! SQLite driver (a local file). `database` holds the file path; there are no users or servers.
 
-use crate::dump::{DumpOptions, DumpStats, ImportOptions, ImportStats};
+use crate::dump::{Progress, DumpOptions, DumpStats, ImportOptions, ImportStats};
 use crate::model::*;
 use crate::split::{Splitter, Stmt};
 use crate::sql::{literal, Dialect};
@@ -291,12 +291,13 @@ impl Sqlite {
         Ok(self.path.rsplit(['/', '\\']).next().unwrap_or("main").to_string())
     }
 
-    pub async fn dump(&mut self, opts: &DumpOptions, out: &mut dyn Write, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+    pub async fn dump(&mut self, opts: &DumpOptions, out: &mut dyn Write, progress: &mut dyn FnMut(Progress)) -> Result<DumpStats> {
         let meta = self.metadata().await?;
         let mut stats = DumpStats { tables: 0, rows: 0, objects: 0 };
         writeln!(out, "-- dboard dump\n-- SQLite database {}\n\nPRAGMA foreign_keys = OFF;\nBEGIN TRANSACTION;\n", self.path)?;
-        for t in meta.tables.iter().filter(|t| t.kind == TableKind::Table) {
-            progress(format!("Writing {}…", t.name));
+        let total = meta.tables.iter().filter(|t| t.kind == TableKind::Table).count();
+        for (done, t) in meta.tables.iter().filter(|t| t.kind == TableKind::Table).enumerate() {
+            progress(Progress::at(format!("Writing {}…", t.name), done, total));
             if opts.schema {
                 writeln!(out, "{}\n", self.ddl_text(&t.name)?)?;
             }
@@ -338,7 +339,7 @@ impl Sqlite {
         Ok(format!("{sql};"))
     }
 
-    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
         let mut stats = ImportStats { statements: 0, rows_copied: 0, errors: Vec::new() };
         let mut splitter = Splitter::new(D);
         let mut pending: Vec<Stmt> = Vec::new();
@@ -368,7 +369,7 @@ impl Sqlite {
                 }
             }
             if stats.statements % 200 == 0 {
-                progress(format!("Ran {} statement(s)…", stats.statements));
+                progress(format!("Ran {} statement(s)…", stats.statements).into());
             }
         }
         Ok(stats)

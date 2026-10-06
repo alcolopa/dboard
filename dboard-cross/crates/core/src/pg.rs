@@ -1,5 +1,5 @@
 use crate::admin;
-use crate::dump::{is_numeric, sql_value, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
+use crate::dump::{Progress, is_numeric, sql_value, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
 use crate::model::*;
 use crate::split::{Splitter, Stmt};
 use crate::sql::{self, literal, quote_ident, Dialect};
@@ -16,6 +16,8 @@ pub struct Pg {
     cancel: tokio_postgres::CancelToken,
     /// Set when the session is TLS-encrypted, so a cancel request can be encrypted the same way.
     tls_cfg: Option<ConnectionConfig>,
+    /// The user has a transaction open: export / import must not BEGIN or COMMIT on their behalf.
+    user_tx: bool,
 }
 
 impl Pg {
@@ -40,7 +42,7 @@ impl Pg {
         if c.read_only {
             client.simple_query("SET default_transaction_read_only = on").await?;
         }
-        Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()) })
+        Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()), user_tx: false })
     }
 
     async fn plain(cfg: &Config) -> Result<Client> {
@@ -63,6 +65,10 @@ impl Pg {
     }
 
     /// A handle that can cancel whatever this connection is running, from another task.
+    pub fn set_user_tx(&mut self, on: bool) {
+        self.user_tx = on;
+    }
+
     pub fn canceller(&self) -> crate::driver::Canceller {
         crate::driver::Canceller::Pg { token: self.cancel.clone(), tls: self.tls_cfg.clone() }
     }
@@ -535,7 +541,7 @@ impl Pg {
 
     // ---- export / import --------------------------------------------------------------------
 
-    pub async fn dump(&mut self, opts: &DumpOptions, out: &mut dyn Write, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+    pub async fn dump(&mut self, opts: &DumpOptions, out: &mut dyn Write, progress: &mut dyn FnMut(Progress)) -> Result<DumpStats> {
         const SYS: &str = "n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'";
         let mut st = DumpStats::default();
         let db = self.current_database().await?;
@@ -547,7 +553,7 @@ impl Pg {
         let mut post: Vec<String> = Vec::new(); // run after all data: setvals, refreshes
 
         if opts.schema {
-            progress("Writing schemas, types and sequences…".into());
+            progress(Progress::at("Writing schemas, types and sequences…", 0, 1));
             for r in self.client.query(&format!("SELECT nspname FROM pg_namespace n WHERE {SYS} AND nspname <> 'public' ORDER BY 1"), &[]).await? {
                 writeln!(out, "CREATE SCHEMA IF NOT EXISTS {};", quote_ident(&r.get::<_, String>(0)))?;
             }
@@ -700,7 +706,7 @@ impl Pg {
         st.tables = tables.len();
 
         if opts.data {
-            for (sch, name) in &tables {
+            for (done, (sch, name)) in tables.iter().enumerate() {
                 let key = (sch.clone(), name.clone());
                 let defs: Vec<ColDef> = cols.get(&key).cloned().unwrap_or_default().into_iter().filter(|c| !c.generated).collect();
                 if defs.is_empty() {
@@ -711,7 +717,8 @@ impl Pg {
                 let numeric: Vec<bool> = defs.iter().map(|c| is_numeric(&c.ty)).collect();
                 let names: Vec<String> = defs.iter().map(|c| c.name.clone()).collect();
                 let mut w = InsertWriter::new(D, &q, &names);
-                self.client.batch_execute(&format!("BEGIN; DECLARE dboard_dump NO SCROLL CURSOR FOR SELECT {select} FROM {q}")).await?;
+                let begin = if self.user_tx { "" } else { "BEGIN; " };
+                self.client.batch_execute(&format!("{begin}DECLARE dboard_dump NO SCROLL CURSOR FOR SELECT {select} FROM {q}")).await?;
                 writeln!(out, "\n-- Data for {q}")?;
                 let res: Result<()> = async {
                     loop {
@@ -731,11 +738,11 @@ impl Pg {
                     Ok(())
                 }
                 .await;
-                let _ = self.client.batch_execute("CLOSE dboard_dump; COMMIT").await;
+                let _ = self.client.batch_execute(if self.user_tx { "CLOSE dboard_dump" } else { "CLOSE dboard_dump; COMMIT" }).await;
                 res?;
                 w.flush(out)?;
                 st.rows += w.total;
-                progress(format!("Exported {q} ({} rows)", w.total));
+                progress(Progress::at(format!("Exported {q} ({} rows)", w.total), done + 1, tables.len() + 1));
                 if defs.iter().any(|c| c.identity) {
                     for c in defs.iter().filter(|c| c.identity) {
                         let (qc, qs) = (quote_ident(&c.name), literal(D, &q));
@@ -749,7 +756,7 @@ impl Pg {
         }
 
         if opts.schema {
-            progress("Writing functions, views, indexes and constraints…".into());
+            progress(Progress::at("Writing functions, views, indexes and constraints…", tables.len(), tables.len() + 1));
             for r in self
                 .client
                 .query(
@@ -828,7 +835,7 @@ impl Pg {
         Ok(st)
     }
 
-    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
         use futures_util::SinkExt;
         let mut stats = ImportStats::default();
         let mut sp = Splitter::new(D);
@@ -836,7 +843,8 @@ impl Pg {
         let mut raw = Vec::new();
         let mut in_txn = false;
         if opts.stop_on_error {
-            self.client.batch_execute("BEGIN").await?;
+            // Inside the user's own transaction a savepoint stands in for BEGIN / COMMIT / ROLLBACK.
+            self.client.batch_execute(if self.user_tx { "SAVEPOINT dboard_import" } else { "BEGIN" }).await?;
             in_txn = true;
         }
         let mut last_report = Instant::now();
@@ -872,7 +880,7 @@ impl Pg {
                     let msg = format!("Statement {} failed: {e}\n  {snippet}", stats.statements);
                     if opts.stop_on_error {
                         if in_txn {
-                            let _ = self.client.batch_execute("ROLLBACK").await;
+                            let _ = self.client.batch_execute(if self.user_tx { "ROLLBACK TO SAVEPOINT dboard_import" } else { "ROLLBACK" }).await;
                         }
                         return Err(Error::Db(format!("{msg}\nNothing was imported (the whole import was rolled back).")));
                     }
@@ -881,13 +889,13 @@ impl Pg {
                     }
                 }
                 if last_report.elapsed().as_millis() > 400 {
-                    progress(format!("{} statements run…", stats.statements));
+                    progress(format!("{} statements run…", stats.statements).into());
                     last_report = Instant::now();
                 }
             }
         }
         if in_txn {
-            self.client.batch_execute("COMMIT").await?;
+            self.client.batch_execute(if self.user_tx { "RELEASE SAVEPOINT dboard_import" } else { "COMMIT" }).await?;
         }
         Ok(stats)
     }
