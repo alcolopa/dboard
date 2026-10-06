@@ -147,6 +147,9 @@ export global AppState {
     in property <bool> stage-on;
     in property <int> pending-count;
     in property <bool> review-open;
+    // true: edits wait for Save; false: they are written as you make them
+    in-out property <bool> save-mode;
+    callback set-save-mode(bool);
     in property <[EditItem]> review-items;
     in property <string> review-error;
     callback stage-toggle();

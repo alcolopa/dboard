@@ -15,12 +15,26 @@ impl Worker {
     pub(crate) fn stage_toggle(&mut self) {
         let Some(t) = self.active_mut().filter(|t| t.kind == Kind::Table) else { return };
         if t.stage && !t.staged.is_empty() {
-            return self.toast("Apply or discard the pending changes before turning staging off.");
+            return self.toast("Save or discard the pending changes before switching to automatic edits.");
         }
         t.stage = !t.stage;
         let on = t.stage;
         self.show_active();
-        self.toast(if on { "Staging on: edits wait for your review." } else { "Staging off: edits are saved immediately." });
+        self.toast(if on { "Edits now wait until you press Save." } else { "Edits are now applied immediately." });
+    }
+
+    /// Preference: do edits wait for Save (`on`) or get written as they are made? Open tabs follow,
+    /// except ones that still hold pending changes, which must be saved or discarded first.
+    pub(crate) fn set_save_mode(&mut self, on: bool) {
+        self.settings.edits_need_save = on;
+        self.persist_settings();
+        let (protected, mongo) = (self.protected(), self.is_mongo());
+        for t in self.tabs.iter_mut().filter(|t| t.kind == Kind::Table && t.staged.is_empty()) {
+            t.stage = (on || protected) && !mongo;
+        }
+        ui(&self.w, move |st| st.set_save_mode(on));
+        self.show_active();
+        self.toast(if on { "Edits wait until you press Save." } else { "Edits are applied as you make them." });
     }
 
     /// Queue one edit; the grid shows the new value highlighted as pending.

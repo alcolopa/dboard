@@ -55,6 +55,7 @@ fn main() {
     st.on_stop_query(|| worker::CANCEL.notify_one());
     wire!(on_set_timeout, |s| Cmd::SetTimeout(s.max(0) as u32));
     wire!(on_stage_toggle, | | Cmd::StageToggle);
+    wire!(on_set_save_mode, |on| Cmd::SetSaveMode(on));
     wire!(on_review_open_request, | | Cmd::ReviewOpen);
     wire!(on_review_apply, | | Cmd::ReviewApply);
     wire!(on_review_cancel, | | Cmd::ReviewCancel);

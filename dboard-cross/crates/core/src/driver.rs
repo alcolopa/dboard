@@ -468,8 +468,12 @@ impl Conn {
         let file = std::fs::File::create(&part).map_err(|e| Error::Db(format!("Cannot write {}: {e}", path.display())))?;
         let mut out = BufWriter::new(file);
         let (tables, objects) = (self.metadata.tables.clone(), self.metadata.objects.clone());
+        let in_tx = self.in_tx;
         let res = match &mut self.inner {
-            Inner::Pg(d) => d.dump(opts, &mut out, progress).await,
+            Inner::Pg(d) => {
+                d.set_user_tx(in_tx);
+                d.dump(opts, &mut out, progress).await
+            }
             Inner::My(d) => d.dump(opts, &tables, &objects, &mut out, progress).await,
             Inner::Sqlite(d) => d.dump(opts, &mut out, progress).await,
             Inner::Mongo(m) => m.dump(opts, &tables, &mut out, progress).await,
@@ -492,8 +496,12 @@ impl Conn {
     pub async fn import_database(&mut self, path: &Path, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
         let file = std::fs::File::open(path).map_err(|e| Error::Db(format!("Cannot read {}: {e}", path.display())))?;
         let mut reader = BufReader::new(file);
+        let in_tx = self.in_tx;
         let res = match &mut self.inner {
-            Inner::Pg(d) => d.import(&mut reader, opts, progress).await,
+            Inner::Pg(d) => {
+                d.set_user_tx(in_tx);
+                d.import(&mut reader, opts, progress).await
+            }
             Inner::My(d) => d.import(&mut reader, opts, progress).await,
             Inner::Sqlite(d) => d.import(&mut reader, opts, progress).await,
             Inner::Mongo(m) => {

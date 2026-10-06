@@ -48,6 +48,7 @@ pub enum Cmd {
     UpdateDownloaded(Result<std::path::PathBuf, String>),
     PickResult(usize),
     TxCommit,
+    SetSaveMode(bool),
     TxRollback,
     ParseConnUrl(String),
     ConnFilter(String),
@@ -686,6 +687,7 @@ impl Worker {
                     .set_color_scheme(if dark { slint::language::ColorScheme::Dark } else { slint::language::ColorScheme::Light });
                 let st = app.global::<AppState>();
                 st.set_timeout_secs(s.statement_timeout_secs as i32);
+                st.set_save_mode(s.edits_need_save);
                 st.set_backup_hours(s.backup_every_hours as i32);
                 st.set_backup_keep(s.backup_keep as i32);
                 st.set_set_dark(dark);

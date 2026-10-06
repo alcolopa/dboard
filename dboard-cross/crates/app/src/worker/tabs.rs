@@ -156,7 +156,7 @@ impl Worker {
         let same = self.tabs.iter().filter(|t| t.kind == Kind::Table && t.schema == schema && t.name == name).count();
         let title = if same == 0 { name.to_string() } else { format!("{name} ({})", same + 1) };
         let mut t = Tab::new(Kind::Table, title, self.default_page_size());
-        t.stage = self.protected() && !self.is_mongo();
+        t.stage = (self.protected() || self.settings.edits_need_save) && !self.is_mongo();
         t.schema = schema.into();
         t.name = name.into();
         self.add_tab(t);

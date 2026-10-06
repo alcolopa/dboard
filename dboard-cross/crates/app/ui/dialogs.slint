@@ -184,8 +184,8 @@ export component Dialogs inherits Rectangle {
     if AppState.review-open: Modal {
         box-width: 640px;
         dismissed => { AppState.review-cancel(); }
-        Title { text: "Review " + AppState.pending-count + " pending change(s)"; }
-        Note { text: "These edits are applied together in one transaction. If any fails, none are kept."; }
+        Title { text: "Save " + AppState.pending-count + " pending change(s)"; }
+        Note { text: "These edits are saved together. If any fails, none are kept. Inside an open transaction they stay uncommitted until you Commit."; }
         ListView {
             height: min(320px, AppState.review-items.length * 46px);
             for it in AppState.review-items: Rectangle {
@@ -202,7 +202,7 @@ export component Dialogs inherits Rectangle {
             spacing: 8px; alignment: end;
             Btn { text: "Discard all"; danger: true; clicked => { AppState.review-discard(); } }
             Btn { text: "Keep editing"; clicked => { AppState.review-cancel(); } }
-            Btn { text: "Apply changes"; primary: true; clicked => { AppState.review-apply(); } }
+            Btn { text: "Save changes"; primary: true; clicked => { AppState.review-apply(); } }
         }
     }
 

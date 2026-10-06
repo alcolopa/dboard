@@ -16,6 +16,8 @@ pub struct Pg {
     cancel: tokio_postgres::CancelToken,
     /// Set when the session is TLS-encrypted, so a cancel request can be encrypted the same way.
     tls_cfg: Option<ConnectionConfig>,
+    /// The user has a transaction open: export / import must not BEGIN or COMMIT on their behalf.
+    user_tx: bool,
 }
 
 impl Pg {
@@ -40,7 +42,7 @@ impl Pg {
         if c.read_only {
             client.simple_query("SET default_transaction_read_only = on").await?;
         }
-        Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()) })
+        Ok(Self { cancel: client.cancel_token(), client, tls_cfg: secure.then(|| c.clone()), user_tx: false })
     }
 
     async fn plain(cfg: &Config) -> Result<Client> {
@@ -63,6 +65,10 @@ impl Pg {
     }
 
     /// A handle that can cancel whatever this connection is running, from another task.
+    pub fn set_user_tx(&mut self, on: bool) {
+        self.user_tx = on;
+    }
+
     pub fn canceller(&self) -> crate::driver::Canceller {
         crate::driver::Canceller::Pg { token: self.cancel.clone(), tls: self.tls_cfg.clone() }
     }
@@ -711,7 +717,8 @@ impl Pg {
                 let numeric: Vec<bool> = defs.iter().map(|c| is_numeric(&c.ty)).collect();
                 let names: Vec<String> = defs.iter().map(|c| c.name.clone()).collect();
                 let mut w = InsertWriter::new(D, &q, &names);
-                self.client.batch_execute(&format!("BEGIN; DECLARE dboard_dump NO SCROLL CURSOR FOR SELECT {select} FROM {q}")).await?;
+                let begin = if self.user_tx { "" } else { "BEGIN; " };
+                self.client.batch_execute(&format!("{begin}DECLARE dboard_dump NO SCROLL CURSOR FOR SELECT {select} FROM {q}")).await?;
                 writeln!(out, "\n-- Data for {q}")?;
                 let res: Result<()> = async {
                     loop {
@@ -731,7 +738,7 @@ impl Pg {
                     Ok(())
                 }
                 .await;
-                let _ = self.client.batch_execute("CLOSE dboard_dump; COMMIT").await;
+                let _ = self.client.batch_execute(if self.user_tx { "CLOSE dboard_dump" } else { "CLOSE dboard_dump; COMMIT" }).await;
                 res?;
                 w.flush(out)?;
                 st.rows += w.total;
@@ -836,7 +843,8 @@ impl Pg {
         let mut raw = Vec::new();
         let mut in_txn = false;
         if opts.stop_on_error {
-            self.client.batch_execute("BEGIN").await?;
+            // Inside the user's own transaction a savepoint stands in for BEGIN / COMMIT / ROLLBACK.
+            self.client.batch_execute(if self.user_tx { "SAVEPOINT dboard_import" } else { "BEGIN" }).await?;
             in_txn = true;
         }
         let mut last_report = Instant::now();
@@ -872,7 +880,7 @@ impl Pg {
                     let msg = format!("Statement {} failed: {e}\n  {snippet}", stats.statements);
                     if opts.stop_on_error {
                         if in_txn {
-                            let _ = self.client.batch_execute("ROLLBACK").await;
+                            let _ = self.client.batch_execute(if self.user_tx { "ROLLBACK TO SAVEPOINT dboard_import" } else { "ROLLBACK" }).await;
                         }
                         return Err(Error::Db(format!("{msg}\nNothing was imported (the whole import was rolled back).")));
                     }
@@ -887,7 +895,7 @@ impl Pg {
             }
         }
         if in_txn {
-            self.client.batch_execute("COMMIT").await?;
+            self.client.batch_execute(if self.user_tx { "RELEASE SAVEPOINT dboard_import" } else { "COMMIT" }).await?;
         }
         Ok(stats)
     }
