@@ -24,12 +24,15 @@ impl Worker {
         let (target, items) = match kind {
             "tree" => {
                 let Some(e) = self.tree.get(i) else { return };
-                let items = match e.kind {
+                let n_sel = self.tree_sel.len();
+                let items = if n_sel > 1 && self.tree_sel.contains(&e.key) {
+                    vec![danger(&format!("Drop {n_sel} selected…"), "drop-sel"), sep(), item("Clear selection", "clear-sel")]
+                } else { match e.kind {
                     2 | 5 => vec![item("Open data", "open"), item("Open in new tab", "open-new"), item("Inspect structure", "structure"), item("Query…", "query"), item("Insert row…", "insert"), item("Import rows…", "import"), item("Export data…", "export"), sep(), item("Copy definition", "copy-def"), item("Copy name", "copy"), sep(), danger("Truncate…", "truncate"), danger("Drop…", "drop")],
                     3 | 4 => vec![item("Open data", "open"), item("Open in new tab", "open-new"), item("Inspect structure", "structure"), item("Query…", "query"), item("Export data…", "export"), sep(), item("Copy definition", "copy-def"), item("Copy name", "copy"), sep(), danger("Drop…", "drop")],
                     6 | 7 => vec![item("View definition", "definition"), item("Run in query tab", "run"), item("Copy definition", "copy-def"), item("Copy name", "copy")],
                     _ => vec![item("View definition", "definition"), item("Copy definition", "copy-def"), item("Copy name", "copy")],
-                };
+                } };
                 (CtxTarget::Tree(i), items)
             }
             "session" => {

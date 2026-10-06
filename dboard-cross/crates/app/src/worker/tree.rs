@@ -81,13 +81,19 @@ impl Worker {
             }
         }
         self.tree = entries.iter().map(|e| e.0.clone()).collect();
-        let items: Vec<(String, i32, i32, bool, String)> = entries.into_iter().map(|(e, label, level, open)| (label, level, e.kind, open, e.key)).collect();
+        // Selected tables that are no longer in the tree (dropped, filtered out) fall out of the selection.
+        let keys: HashSet<&String> = self.tree.iter().map(|e| &e.key).collect();
+        self.tree_sel.retain(|k| keys.contains(k));
+        let sel = self.tree_sel.clone();
+        let sel_count = sel.len() as i32;
+        let items: Vec<(String, i32, i32, bool, String, bool)> = entries.into_iter().map(|(e, label, level, open)| (label, level, e.kind, open, e.key.clone(), sel.contains(&e.key))).collect();
         ui(&self.w, move |st| {
             let v: Vec<TreeItem> = items
                 .into_iter()
-                .map(|(label, level, kind, expanded, key)| TreeItem { label: label.into(), level, kind, expanded, key: key.into() })
+                .map(|(label, level, kind, expanded, key, selected)| TreeItem { label: label.into(), level, kind, expanded, key: key.into(), selected })
                 .collect();
             st.set_tree(ModelRc::new(VecModel::from(v)));
+            st.set_tree_sel_count(sel_count);
         });
     }
 

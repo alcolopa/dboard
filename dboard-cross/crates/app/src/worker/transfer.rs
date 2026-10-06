@@ -10,14 +10,21 @@ use super::*;
 pub(crate) type Record = (Vec<(String, String)>, Option<String>);
 
 impl Worker {
-    pub(crate) fn xfer_progress(&self) -> impl FnMut(String) {
+    pub(crate) fn xfer_progress(&self) -> impl FnMut(Progress) {
         let w = self.w.clone();
-        move |m| ui(&w, move |st| st.set_xfer_info(m.into()))
+        move |p| {
+            let f = p.fraction.unwrap_or(-1.0);
+            ui(&w, move |st| {
+                st.set_xfer_info(p.text.into());
+                st.set_xfer_progress(f);
+            })
+        }
     }
 
     pub(crate) fn xfer_done(&self, info: String, error: String) {
         ui(&self.w, move |st| {
             st.set_xfer_busy(false);
+            st.set_xfer_progress(-1.0);
             st.set_xfer_info(info.into());
             st.set_xfer_error(error.into());
         });
@@ -142,6 +149,7 @@ impl Worker {
             st.set_xfer_busy(true);
             st.set_xfer_error("".into());
             st.set_xfer_info("Exporting…".into());
+            st.set_xfer_progress(0.0);
         });
         let mut progress = self.xfer_progress();
         let res = match self.conn.as_mut() {
@@ -163,6 +171,7 @@ impl Worker {
             st.set_xfer_busy(true);
             st.set_xfer_error("".into());
             st.set_xfer_info("Importing…".into());
+            st.set_xfer_progress(0.0);
         });
         let mut progress = self.xfer_progress();
         let res = match self.conn.as_mut() {
@@ -353,7 +362,7 @@ impl Worker {
                 Err(e) => errors.push(format!("record {}: {e}", n + 1)),
             }
             if n % 50 == 0 {
-                progress(format!("Processed {n} of {total}…"));
+                progress(Progress::at(format!("Processed {n} of {total}…"), n, total));
             }
         }
         self.log_activity(None, &format!("IMPORT {ok} rows into {}.{}", tab.schema, tab.name));

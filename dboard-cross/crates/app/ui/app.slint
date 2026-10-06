@@ -111,7 +111,7 @@ export component App inherits Window {
     // Closing a dialog destroys its focused input; hand focus back so shortcuts keep working.
     property <bool> any-modal: AppState.confirm-open || AppState.insert-open || AppState.json-open || AppState.saveq-open
         || AppState.palette-open || AppState.export-open || AppState.settings-open || AppState.ctx-open
-        || AppState.editrow-open || AppState.users-open || AppState.xfer-open || AppState.review-open || AppState.vars-open;
+        || AppState.editrow-open || AppState.users-open || AppState.xfer-open || AppState.review-open || AppState.vars-open || AppState.new-db-open;
     changed any-modal => { AppState.text-focus = 0; if !self.any-modal { fs.focus(); } }
     // Switching screens / tab types destroys whatever widget held focus (login field, editor, filter box).
     property <int> focus-key: AppState.tab-kind * 10 + (AppState.connected ? 1 : 0);
@@ -279,6 +279,7 @@ export component App inherits Window {
                             selected => { AppState.switch-database(self.current-index); }
                         }
                     }
+                    if AppState.db-type != 3: Slot { IconBtn { d: Icons.plus; hint: "New database"; clicked => { AppState.new-db-request(); } } }
                     Text {
                         text: AppState.hint != "" ? AppState.hint : AppState.status;
                         color: AppState.hint != "" ? Theme.text : Theme.dim;

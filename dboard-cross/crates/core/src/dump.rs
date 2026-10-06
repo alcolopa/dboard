@@ -5,6 +5,32 @@ use crate::sql::{literal, quote_ident, Dialect};
 use crate::{Error, Result};
 use std::io::Write;
 
+/// One progress report from an export or import: what is happening now and, when known, how far
+/// along the whole job is (0.0 - 1.0).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Progress {
+    pub text: String,
+    pub fraction: Option<f32>,
+}
+
+impl Progress {
+    pub fn at(text: impl Into<String>, done: usize, total: usize) -> Self {
+        Self { text: text.into(), fraction: (total > 0).then(|| (done as f32 / total as f32).clamp(0.0, 1.0)) }
+    }
+}
+
+impl From<String> for Progress {
+    fn from(text: String) -> Self {
+        Self { text, fraction: None }
+    }
+}
+
+impl From<&str> for Progress {
+    fn from(text: &str) -> Self {
+        text.to_string().into()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DumpOptions {
     pub schema: bool,
@@ -44,8 +70,6 @@ pub struct ImportStats {
     pub rows_copied: u64,
     pub errors: Vec<String>,
 }
-
-pub type Progress<'a> = &'a mut dyn FnMut(String);
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {

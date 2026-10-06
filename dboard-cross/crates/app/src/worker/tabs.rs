@@ -377,6 +377,10 @@ impl Worker {
 
     pub(crate) async fn tree_click(&mut self, i: usize) {
         let Some(e) = self.tree.get(i).cloned() else { return };
+        if !self.tree_sel.is_empty() {
+            self.tree_sel.clear();
+            self.rebuild_tree();
+        }
         match e.kind {
             0 | 1 => {
                 if !self.collapsed.remove(&e.key) {
@@ -406,6 +410,8 @@ impl Worker {
         let Some(e) = self.tree.get(i).cloned() else { return };
         let is_data = (2..=5).contains(&e.kind);
         match action {
+            "drop-sel" => return self.ask_drop_selected(),
+            "clear-sel" => return self.tree_clear_selection(),
             "open" if is_data => self.open_table(&e.schema, &e.name).await,
             "open-new" if is_data => self.open_table_in(&e.schema, &e.name, true).await,
             "structure" if is_data => self.open_structure(&e.schema, &e.name).await,
@@ -481,13 +487,16 @@ impl Worker {
         self.ask_with(p, title, text, false);
     }
 
-    fn ask_with(&mut self, p: Pending, title: String, text: String, typing: bool) {
+    pub(crate) fn ask_with(&mut self, p: Pending, title: String, text: String, typing: bool) {
         let env = self.env.label().to_string();
+        let offer = !self.is_mongo() && matches!(p, Pending::Truncate(..) | Pending::Drop(..) | Pending::DropMany(..));
         self.pending = Some(p);
         ui(&self.w, move |st| {
             st.set_confirm_title(if typing { format!("{title} on {env}") } else { title }.into());
             st.set_confirm_text(text.into());
             st.set_confirm_typing(typing);
+            st.set_confirm_force_offer(offer);
+            st.set_confirm_force(false);
             st.set_confirm_typed("".into());
             st.set_confirm_open(true);
         });

@@ -311,7 +311,22 @@ impl Worker {
                 st.set_saveq_open(true);
             }),
 
-            Cmd::ConfirmRun => self.confirm_run().await,
+            Cmd::ConfirmRun(force) => {
+                self.force = force;
+                self.confirm_run().await;
+            }
+            Cmd::TreeSelect(i, mode) => self.tree_select(i, mode),
+            Cmd::TreeClearSel => self.tree_clear_selection(),
+            Cmd::TreeDropSelected => self.ask_drop_selected(),
+            Cmd::TreeDropAll => self.ask_drop_all(),
+            Cmd::NewDbRequest => {
+                ui(&self.w, |st| {
+                    st.set_new_db_name("".into());
+                    st.set_new_db_open(true);
+                });
+            }
+            Cmd::NewDbCancel => ui(&self.w, |st| st.set_new_db_open(false)),
+            Cmd::NewDbSubmit(name) => self.create_database(name).await,
             Cmd::ConfirmCancel => {
                 self.pending = None;
                 ui(&self.w, |st| st.set_confirm_open(false));

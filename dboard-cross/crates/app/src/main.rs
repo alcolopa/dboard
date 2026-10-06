@@ -176,7 +176,14 @@ fn main() {
     wire!(on_load_saved, |i| Cmd::LoadSaved(i as usize));
     wire!(on_delete_saved, |i| Cmd::DeleteSaved(i as usize));
     wire!(on_clear_history, | | Cmd::ClearHistory);
-    wire!(on_confirm_run, | | Cmd::ConfirmRun);
+    wire!(on_confirm_run, |f| Cmd::ConfirmRun(f));
+    wire!(on_tree_select, |i, m| Cmd::TreeSelect(i as usize, m));
+    wire!(on_tree_clear_selection, | | Cmd::TreeClearSel);
+    wire!(on_tree_drop_selected, | | Cmd::TreeDropSelected);
+    wire!(on_tree_drop_all, | | Cmd::TreeDropAll);
+    wire!(on_new_db_request, | | Cmd::NewDbRequest);
+    wire!(on_new_db_submit, |n| Cmd::NewDbSubmit(n.to_string()));
+    wire!(on_new_db_cancel, | | Cmd::NewDbCancel);
     wire!(on_confirm_cancel, | | Cmd::ConfirmCancel);
     wire!(on_insert_field_edited, |i, v| Cmd::InsertFieldEdited(i as usize, v.to_string()));
     wire!(on_insert_submit, | | Cmd::InsertSubmit);

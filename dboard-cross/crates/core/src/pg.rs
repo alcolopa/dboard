@@ -1,5 +1,5 @@
 use crate::admin;
-use crate::dump::{is_numeric, sql_value, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
+use crate::dump::{Progress, is_numeric, sql_value, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
 use crate::model::*;
 use crate::split::{Splitter, Stmt};
 use crate::sql::{self, literal, quote_ident, Dialect};
@@ -541,7 +541,7 @@ impl Pg {
 
     // ---- export / import --------------------------------------------------------------------
 
-    pub async fn dump(&mut self, opts: &DumpOptions, out: &mut dyn Write, progress: &mut dyn FnMut(String)) -> Result<DumpStats> {
+    pub async fn dump(&mut self, opts: &DumpOptions, out: &mut dyn Write, progress: &mut dyn FnMut(Progress)) -> Result<DumpStats> {
         const SYS: &str = "n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'";
         let mut st = DumpStats::default();
         let db = self.current_database().await?;
@@ -553,7 +553,7 @@ impl Pg {
         let mut post: Vec<String> = Vec::new(); // run after all data: setvals, refreshes
 
         if opts.schema {
-            progress("Writing schemas, types and sequences…".into());
+            progress(Progress::at("Writing schemas, types and sequences…", 0, 1));
             for r in self.client.query(&format!("SELECT nspname FROM pg_namespace n WHERE {SYS} AND nspname <> 'public' ORDER BY 1"), &[]).await? {
                 writeln!(out, "CREATE SCHEMA IF NOT EXISTS {};", quote_ident(&r.get::<_, String>(0)))?;
             }
@@ -706,7 +706,7 @@ impl Pg {
         st.tables = tables.len();
 
         if opts.data {
-            for (sch, name) in &tables {
+            for (done, (sch, name)) in tables.iter().enumerate() {
                 let key = (sch.clone(), name.clone());
                 let defs: Vec<ColDef> = cols.get(&key).cloned().unwrap_or_default().into_iter().filter(|c| !c.generated).collect();
                 if defs.is_empty() {
@@ -742,7 +742,7 @@ impl Pg {
                 res?;
                 w.flush(out)?;
                 st.rows += w.total;
-                progress(format!("Exported {q} ({} rows)", w.total));
+                progress(Progress::at(format!("Exported {q} ({} rows)", w.total), done + 1, tables.len() + 1));
                 if defs.iter().any(|c| c.identity) {
                     for c in defs.iter().filter(|c| c.identity) {
                         let (qc, qs) = (quote_ident(&c.name), literal(D, &q));
@@ -756,7 +756,7 @@ impl Pg {
         }
 
         if opts.schema {
-            progress("Writing functions, views, indexes and constraints…".into());
+            progress(Progress::at("Writing functions, views, indexes and constraints…", tables.len(), tables.len() + 1));
             for r in self
                 .client
                 .query(
@@ -835,7 +835,7 @@ impl Pg {
         Ok(st)
     }
 
-    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(String)) -> Result<ImportStats> {
+    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
         use futures_util::SinkExt;
         let mut stats = ImportStats::default();
         let mut sp = Splitter::new(D);
@@ -889,7 +889,7 @@ impl Pg {
                     }
                 }
                 if last_report.elapsed().as_millis() > 400 {
-                    progress(format!("{} statements run…", stats.statements));
+                    progress(format!("{} statements run…", stats.statements).into());
                     last_report = Instant::now();
                 }
             }

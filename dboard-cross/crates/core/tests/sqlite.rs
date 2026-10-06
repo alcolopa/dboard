@@ -112,3 +112,25 @@ async fn sqlite_read_only_and_missing_files() {
     assert!(err.contains("No file"), "{err}");
     let _ = std::fs::remove_file(&path);
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn sqlite_force_drop_ignores_foreign_keys() {
+    let path = temp("force");
+    std::fs::write(&path, b"").unwrap();
+    let mut d = Conn::connect(cfg(&path), "").await.unwrap();
+    d.execute_query("CREATE TABLE a (id INTEGER PRIMARY KEY)").await.unwrap();
+    d.execute_query("CREATE TABLE b (id INTEGER PRIMARY KEY, a_id INTEGER REFERENCES a(id))").await.unwrap();
+    d.execute_query("INSERT INTO a VALUES (1)").await.unwrap();
+    d.execute_query("INSERT INTO b VALUES (1, 1)").await.unwrap();
+    d.refresh_metadata().await.unwrap();
+    // emptying the referenced table is refused without force and allowed with it
+    assert!(d.truncate("main", "a").await.is_err());
+    d.truncate_forced("main", "a", true).await.unwrap();
+    let items = vec![("main".to_string(), "a".to_string()), ("main".to_string(), "b".to_string())];
+    assert_eq!(d.drop_many(&items, true).await.unwrap(), 2);
+    assert!(d.table("main", "a").is_none() && d.table("main", "b").is_none());
+    // checks are back on afterwards
+    d.execute_query("CREATE TABLE p (id INTEGER PRIMARY KEY)").await.unwrap();
+    d.execute_query("CREATE TABLE c (p_id INTEGER REFERENCES p(id))").await.unwrap();
+    assert!(d.execute_query("INSERT INTO c VALUES (99)").await.is_err());
+}
