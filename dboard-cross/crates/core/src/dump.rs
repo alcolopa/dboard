@@ -82,9 +82,29 @@ pub fn is_numeric(ty: &str) -> bool {
     ["int", "numeric", "decimal", "float", "double", "real", "serial"].iter().any(|k| t.contains(k)) && !t.contains("interval") && t != "tinyint(1)"
 }
 
+/// Types whose raw bytes must be written as a hex literal. Spatial columns are included: the
+/// server keeps them as SRID + WKB bytes, which only survive a round trip as binary, not text.
 pub fn is_binary(ty: &str) -> bool {
     let t = ty.to_lowercase();
-    t.contains("blob") || t.contains("binary")
+    t.contains("blob")
+        || t.contains("binary")
+        || t.starts_with("bit")
+        || ["geometry", "geomcollection", "point", "linestring", "polygon"].iter().any(|k| t.contains(k))
+}
+
+#[cfg(test)]
+mod binary_tests {
+    use super::is_binary;
+
+    #[test]
+    fn spatial_and_bit_columns_are_dumped_as_hex() {
+        for t in ["geometry", "point", "linestring", "polygon", "multipolygon", "geometrycollection", "bit(8)", "blob", "varbinary(16)"] {
+            assert!(is_binary(t), "{t}");
+        }
+        for t in ["varchar(20)", "int", "json", "datetime"] {
+            assert!(!is_binary(t), "{t}");
+        }
+    }
 }
 
 /// A value as it appears in an `INSERT`: numbers bare, everything else quoted.
