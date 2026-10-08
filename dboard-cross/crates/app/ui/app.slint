@@ -124,8 +124,8 @@ export component App inherits Window {
     MenuBar {
         Menu {
             title: "File";
-            MenuItem { title: "New Connection"; activated => { AppState.connected = false; AppState.new-conn(); } }
-            MenuItem { title: "New Query"; enabled: AppState.connected; activated => { AppState.new-query-tab(); } }
+            MenuItem { title: "New Connection"; shortcut: @keys(Control + N); activated => { AppState.connected = false; AppState.new-conn(); } }
+            MenuItem { title: "New Query"; shortcut: @keys(Control + T); enabled: AppState.connected; activated => { AppState.new-query-tab(); } }
             MenuItem { title: "Back Up Database Now"; enabled: AppState.connected; activated => { AppState.backup-now(); } }
             Menu {
                 title: "Automatic Backups";
@@ -137,10 +137,10 @@ export component App inherits Window {
                 MenuItem { title: (AppState.backup-keep == 7 ? "✓ " : "") + "Keep the last 7"; activated => { AppState.set-backup(AppState.backup-hours, 7); } }
                 MenuItem { title: (AppState.backup-keep == 30 ? "✓ " : "") + "Keep the last 30"; activated => { AppState.set-backup(AppState.backup-hours, 30); } }
             }
-            MenuItem { title: "Close Tab"; enabled: AppState.connected; activated => { AppState.close-tab(-1); } }
-            MenuItem { title: "Reopen Closed Tab"; enabled: AppState.connected; activated => { AppState.reopen-tab(); } }
+            MenuItem { title: "Close Tab"; shortcut: @keys(Control + W); enabled: AppState.connected; activated => { AppState.close-tab(-1); } }
+            MenuItem { title: "Reopen Closed Tab"; shortcut: @keys(Control + Shift + T); enabled: AppState.connected; activated => { AppState.reopen-tab(); } }
             MenuItem { title: "Disconnect"; enabled: AppState.connected; activated => { AppState.disconnect(); } }
-            MenuItem { title: "Quit"; activated => { AppState.quit(); } }
+            MenuItem { title: "Quit"; shortcut: @keys(Control + Q); activated => { AppState.quit(); } }
         }
         Menu {
             title: "Edit";
@@ -149,7 +149,7 @@ export component App inherits Window {
             MenuItem { title: "Copy"; activated => { AppState.edit(1); } }
             MenuItem { title: "Paste"; activated => { AppState.edit(2); } }
             MenuItem { title: "Select All"; activated => { AppState.edit(3); } }
-            MenuItem { title: "Settings…"; activated => { AppState.open-settings(); } }
+            MenuItem { title: "Settings…"; shortcut: @keys(Control + ","); activated => { AppState.open-settings(); } }
         }
         Menu {
             title: "View";
@@ -167,10 +167,10 @@ export component App inherits Window {
             }
             MenuItem { title: "Audit Log"; enabled: AppState.connected; activated => { AppState.open-audit(); } }
             MenuItem { title: "ER Diagram"; enabled: AppState.connected && AppState.db-type != 2; activated => { AppState.open-er(); } }
-            MenuItem { title: "Refresh"; activated => { AppState.refresh(); } }
-            MenuItem { title: "Toggle Inspector"; activated => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
-            MenuItem { title: "Command Palette"; activated => { AppState.open-palette(false); } }
-            MenuItem { title: "Search Objects"; activated => { AppState.open-palette(true); } }
+            MenuItem { title: "Refresh"; shortcut: @keys(Control + R); activated => { AppState.refresh(); } }
+            MenuItem { title: "Toggle Inspector"; shortcut: @keys(Alt + Control + I); activated => { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); } }
+            MenuItem { title: "Command Palette"; shortcut: @keys(Control + K); activated => { AppState.open-palette(false); } }
+            MenuItem { title: "Search Objects"; shortcut: @keys(Control + P); activated => { AppState.open-palette(true); } }
         }
         Menu {
             title: "Help";
@@ -180,8 +180,8 @@ export component App inherits Window {
         }
         Menu {
             title: "Tab";
-            MenuItem { title: "Next Tab"; activated => { AppState.cycle-tab(1); } }
-            MenuItem { title: "Previous Tab"; activated => { AppState.cycle-tab(-1); } }
+            MenuItem { title: "Next Tab"; shortcut: @keys(Control + Tab); activated => { AppState.cycle-tab(1); } }
+            MenuItem { title: "Previous Tab"; shortcut: @keys(Control + Shift + Tab); activated => { AppState.cycle-tab(-1); } }
         }
     }
 
@@ -191,18 +191,9 @@ export component App inherits Window {
         // and Linux and Cmd on macOS (the toolkit maps it), so the same code gives native shortcuts.
         capture-key-pressed(e) => {
             if AppState.connected && e.modifiers.control && !any-modal {
-                if e.text == "k" { AppState.open-palette(false); return accept; }
-                if e.text == "p" { AppState.open-palette(true); return accept; }
-                if (e.text == "t" || e.text == "T") && e.modifiers.shift { AppState.reopen-tab(); return accept; }
-                if e.text == "n" || e.text == "t" { AppState.new-query-tab(); return accept; }
-                if e.text == "w" { AppState.close-tab(-1); return accept; }
-                if e.text == "r" { AppState.refresh(); return accept; }
-                if e.text == "i" && e.modifiers.alt { AppState.inspector-changed(!AppState.inspector-open, AppState.inspector-pinned); return accept; }
-                if e.text == "," { AppState.open-settings(); return accept; }
+                // New connection / query, close, reopen, refresh, settings, quit, palette, inspector and
+                // tab cycling are menu shortcuts (shown in the menus); the menu handles those keys.
                 if e.text == "s" && AppState.tab-kind == 1 { AppState.open-save-query(); return accept; }
-                if e.text == "q" { AppState.quit(); return accept; }
-                if e.text == Key.Tab { AppState.cycle-tab(e.modifiers.shift ? -1 : 1); return accept; }
-                if e.text == Key.Backtab { AppState.cycle-tab(-1); return accept; }
                 if e.text == "1" { AppState.activate-tab(0); return accept; }
                 if e.text == "2" { AppState.activate-tab(1); return accept; }
                 if e.text == "3" { AppState.activate-tab(2); return accept; }
