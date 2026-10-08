@@ -8,6 +8,20 @@ use super::*;
 
 impl Worker {
     pub(crate) fn rebuild_tree(&mut self) {
+        if self.conn.is_none() {
+            return;
+        }
+        // MySQL / MongoDB with "All databases" picked: list nothing until a database is chosen.
+        if self.db_all_entry && self.db_idx == 0 && !self.databases.is_empty() {
+            self.tree.clear();
+            self.tree_sel.clear();
+            ui(&self.w, |st| {
+                st.set_tree(ModelRc::new(VecModel::from(Vec::<TreeItem>::new())));
+                st.set_tree_sel_count(0);
+                st.set_db_needed(true);
+            });
+            return;
+        }
         let Some(conn) = &self.conn else { return };
         let filter = self.tree_filter.to_lowercase();
         let filtering = !filter.is_empty();
@@ -94,6 +108,7 @@ impl Worker {
                 .collect();
             st.set_tree(ModelRc::new(VecModel::from(v)));
             st.set_tree_sel_count(sel_count);
+            st.set_db_needed(false);
         });
     }
 

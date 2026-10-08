@@ -436,6 +436,7 @@ impl Worker {
         self.db_entries = entries;
         self.db_idx = idx as i32;
         self.push_databases();
+        self.rebuild_tree();
     }
 
     pub(crate) async fn switch_database(&mut self, i: usize) {

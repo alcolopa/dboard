@@ -84,6 +84,7 @@ pub fn extension(format: usize) -> &'static str {
         0 => "csv",
         1 => "json",
         3 => "xlsx",
+        4 => "html",
         _ => "sql",
     }
 }
@@ -93,6 +94,7 @@ pub fn format(format: usize, cols: &[ExportCol], rows: &[Vec<Cell>], headers: bo
         0 => csv(cols, rows, headers),
         1 => json(cols, rows),
         3 => tsv(cols, rows, headers), // clipboard form of the Excel export
+        4 => html_page(&[(table.to_string(), cols, rows)]),
         _ => sql_inserts(cols, rows, table, d),
     }
 }
@@ -219,6 +221,59 @@ pub fn sql_inserts(cols: &[ExportCol], rows: &[Vec<Cell>], table: &str, d: Diale
     out
 }
 
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+const HTML_HEAD: &str = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>dboard export</title>\n<style>body{font:14px system-ui,sans-serif;margin:24px;color:#222}h2{margin:28px 0 8px}table{border-collapse:collapse;margin-bottom:8px}th,td{border:1px solid #ccc;padding:4px 8px;text-align:left;vertical-align:top;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}th{background:#f1f3f5}td.null{color:#999;font-style:italic}.count{color:#777;font-size:12px}</style></head><body>\n";
+
+/// Start of an HTML export file.
+pub fn html_start() -> &'static str {
+    HTML_HEAD
+}
+
+/// End of an HTML export file.
+pub fn html_end() -> &'static str {
+    "</body></html>\n"
+}
+
+/// Heading and table header of one table; follow with [`html_rows`] and [`html_table_end`].
+pub fn html_table_start(title: &str, cols: &[ExportCol]) -> String {
+    let head: String = cols.iter().map(|c| format!("<th>{}</th>", html_escape(&c.name))).collect();
+    format!("<h2>{}</h2>\n<table>\n<thead><tr>{head}</tr></thead>\n<tbody>\n", html_escape(title))
+}
+
+pub fn html_rows(rows: &[Vec<Cell>]) -> String {
+    let mut out = String::new();
+    for r in rows {
+        out.push_str("<tr>");
+        for c in r {
+            match c {
+                Some(v) => out.push_str(&format!("<td>{}</td>", html_escape(v))),
+                None => out.push_str("<td class=\"null\">NULL</td>"),
+            }
+        }
+        out.push_str("</tr>\n");
+    }
+    out
+}
+
+pub fn html_table_end(row_count: usize) -> String {
+    format!("</tbody>\n</table>\n<div class=\"count\">{row_count} row(s)</div>\n")
+}
+
+/// A complete HTML page with one table per `(title, columns, rows)` entry.
+pub fn html_page(tables: &[(String, &[ExportCol], &[Vec<Cell>])]) -> String {
+    let mut out = String::from(HTML_HEAD);
+    for (title, cols, rows) in tables {
+        out.push_str(&html_table_start(title, cols));
+        out.push_str(&html_rows(rows));
+        out.push_str(&html_table_end(rows.len()));
+    }
+    out.push_str(html_end());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -291,5 +346,14 @@ mod tests {
         assert!(s.contains("VALUES (2, NULL, 'f');"));
         let q = sql_inserts(&cols()[1..2], &[vec![Some("it's".into())]], "t", Dialect::My);
         assert!(q.contains("'it''s'") && q.contains("`note`"));
+    }
+
+    #[test]
+    fn html_escapes_and_marks_null() {
+        let cols = vec![ExportCol { name: "a<b".into(), type_name: "text".into() }];
+        let rows = vec![vec![Some("x & \"y\"".into())], vec![None]];
+        let h = html_page(&[("t".to_string(), &cols[..], &rows[..])]);
+        assert!(h.contains("<th>a&lt;b</th>") && h.contains("x &amp; &quot;y&quot;") && h.contains("class=\"null\">NULL"));
+        assert!(h.contains("2 row(s)") && h.trim_end().ends_with("</html>"));
     }
 }

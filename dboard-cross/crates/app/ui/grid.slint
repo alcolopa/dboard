@@ -142,7 +142,8 @@ export component DataGrid inherits Rectangle {
         AppState.sel-kind == 3 && r >= min(AppState.sel-r0, AppState.sel-r1) && r <= max(AppState.sel-r0, AppState.sel-r1)
     }
 
-    Flickable {
+    gfl := Flickable {
+        y: 0px; height: parent.height - 14px;
         content-width: max(self.width, 48px + AppState.grid-width);
         content-height: self.height;
         VerticalLayout {
@@ -293,6 +294,41 @@ export component DataGrid inherits Rectangle {
                         anchor: AppState.sel-kind == 1 && r == AppState.sel-r1 && c == AppState.sel-c1;
                         commit(t, n) => { AppState.edit-cell(r, c, t, n); AppState.focus-token += 1; }
                     }
+                }
+            }
+        }
+    }
+    // Always-visible horizontal scrollbar: wheels and trackpads can't always scroll sideways
+    // (a mouse wheel has no horizontal axis), so the grid can always be dragged.
+    hbar := Rectangle {
+        y: parent.height - 14px; height: 14px; background: Theme.panel;
+        property <length> total: max(gfl.width, 48px + AppState.grid-width);
+        property <length> thumb-w: max(30px, self.width * gfl.width / self.total);
+        property <length> travel: max(0px, self.width - self.thumb-w);
+        property <length> range: max(0px, self.total - gfl.width);
+        visible: self.range > 0px;
+        Rectangle {
+            x: hbar.range > 0px ? hbar.travel * (-gfl.content-x) / hbar.range : 0px;
+            y: 3px; height: 8px; width: hbar.thumb-w; border-radius: 4px;
+            background: ht.has-hover || ht.pressed ? Theme.accent : Theme.dim;
+        }
+        ht := TouchArea {
+            property <length> grab-x;
+            property <length> grab-vx;
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    self.grab-x = self.mouse-x;
+                    self.grab-vx = gfl.content-x;
+                    // click on the track (not the thumb): jump there
+                    if self.mouse-x < hbar.travel * (-gfl.content-x) / hbar.range || self.mouse-x > hbar.travel * (-gfl.content-x) / hbar.range + hbar.thumb-w {
+                        gfl.content-x = -min(hbar.range, max(0px, (self.mouse-x - hbar.thumb-w / 2) * hbar.range / max(1px, hbar.travel)));
+                        self.grab-vx = gfl.content-x;
+                    }
+                }
+            }
+            moved => {
+                if hbar.travel > 0px {
+                    gfl.content-x = -min(hbar.range, max(0px, -self.grab-vx + (self.mouse-x - self.grab-x) * hbar.range / hbar.travel));
                 }
             }
         }

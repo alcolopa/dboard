@@ -36,18 +36,17 @@ impl Worker {
         let db = if conn.config.database.is_empty() { conn.config.display_name() } else { conn.config.database.clone() };
         let (title, note, path, a) = match mode {
             0 => {
-                let ext = if mongo { "json" } else { "sql" };
-                let name = format!("{}-{}.{ext}", sanitize(&db), chrono::Local::now().format("%Y%m%d-%H%M%S"));
-                (
-                    format!("Export {db}"),
-                    if mongo {
-                        "Writes every collection (documents and indexes) to one JSON file that this app can import again.".to_string()
-                    } else {
-                        "Writes a SQL script that recreates the database: tables, constraints, indexes, views, routines, triggers and data. It runs on an empty database with this app, psql or mysql.".to_string()
-                    },
-                    downloads_dir().join(name).display().to_string(),
-                    true,
-                )
+                self.xfer_tables = self.selected_tables();
+                self.xfer_format = 0;
+                let labels: Vec<String> = vec![if mongo { "JSON" } else { "SQL script" }.into(), "CSV".into(), "HTML".into()];
+                let scoped = !self.xfer_tables.is_empty();
+                ui(&self.w, move |st| {
+                    st.set_xfer_formats(strs(labels));
+                    st.set_xfer_format(0);
+                    st.set_xfer_scoped(scoped);
+                });
+                let (title, note) = self.xfer_texts(&db, 0);
+                (title, note, self.xfer_default_path(&db, 0), true)
             }
             1 => {
                 let kind = if mongo { "a dboard MongoDB export (.json)" } else { "a SQL script (.sql), including pg_dump and mysqldump files" };
@@ -93,7 +92,8 @@ impl Worker {
         let mongo = self.is_mongo();
         let mut dlg = rfd::AsyncFileDialog::new();
         let picked = if self.xfer_mode == 0 {
-            let ext = if mongo { "json" } else { "sql" };
+            let _ = mongo;
+            let ext = self.xfer_ext(self.xfer_format);
             dlg = dlg.set_title("Save export").add_filter(ext, &[ext]).set_directory(downloads_dir());
             dlg.set_file_name(format!("export.{ext}")).save_file().await
         } else {
@@ -120,7 +120,8 @@ impl Worker {
             return self.xfer_done(String::new(), "This connection is read-only, so nothing can be imported.".into());
         }
         match self.xfer_mode {
-            0 => self.run_export(path, a, b).await,
+            0 if self.xfer_format == 0 && self.xfer_tables.is_empty() => self.run_export(path, a, b).await,
+            0 => self.run_export_tables(path).await,
             1 => {
                 if self.protected() {
                     let env = self.env.label();
@@ -138,6 +139,113 @@ impl Worker {
                     self.run_import_rows(path, a).await;
                 }
             }
+        }
+    }
+
+    fn db_label(&self) -> String {
+        match &self.conn {
+            Some(c) if c.config.database.is_empty() => c.config.display_name(),
+            Some(c) => c.config.database.clone(),
+            None => String::new(),
+        }
+    }
+
+    /// The tables an export covers: the sidebar selection, else every table in the database.
+    fn xfer_table_list(&self) -> Vec<(String, String)> {
+        if !self.xfer_tables.is_empty() {
+            return self.xfer_tables.clone();
+        }
+        self.conn.as_ref().map(|c| c.metadata.tables.iter().map(|t| (t.schema.clone(), t.name.clone())).collect()).unwrap_or_default()
+    }
+
+    /// File extension for an export format (0 script / JSON, 1 CSV, 2 HTML).
+    fn xfer_ext(&self, format: i32) -> &'static str {
+        match format {
+            1 => "csv",
+            2 => "html",
+            _ if self.is_mongo() => "json",
+            _ => "sql",
+        }
+    }
+
+    /// CSV (and MongoDB JSON of picked collections) writes one file per table into a folder.
+    fn xfer_multi_files(&self, format: i32) -> bool {
+        let per_table = format == 1 || (format == 0 && self.is_mongo() && !self.xfer_tables.is_empty());
+        per_table && self.xfer_table_list().len() != 1
+    }
+
+    fn xfer_default_path(&self, db: &str, format: i32) -> String {
+        let tables = self.xfer_table_list();
+        let base = if self.xfer_tables.len() == 1 { sanitize(&self.xfer_tables[0].1) } else { sanitize(db) };
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let name = if self.xfer_multi_files(format) && !tables.is_empty() { format!("{base}-{stamp}") } else { format!("{base}-{stamp}.{}", self.xfer_ext(format)) };
+        downloads_dir().join(name).display().to_string()
+    }
+
+    fn xfer_texts(&self, db: &str, format: i32) -> (String, String) {
+        let mongo = self.is_mongo();
+        let n = self.xfer_tables.len();
+        let title = match n {
+            0 => format!("Export {db}"),
+            1 => format!("Export table {}", self.xfer_tables[0].1),
+            _ => format!("Export {n} tables"),
+        };
+        let what = if n == 0 { "every table".to_string() } else { format!("the {n} selected table(s)") };
+        let note = match format {
+            1 if self.xfer_multi_files(1) => format!("Writes {what} as CSV files (one per table, with a header row) into a new folder. The path below is that folder."),
+            1 => format!("Writes {what} as one CSV file with a header row."),
+            2 => format!("Writes {what} to one HTML file with a table for each."),
+            _ if n > 0 && mongo => format!("Writes {what} as JSON files (one per collection) into a new folder."),
+            _ if n > 0 => format!("Writes {what} as SQL INSERT statements (data only; no structure)."),
+            _ if mongo => "Writes every collection (documents and indexes) to one JSON file that this app can import again.".to_string(),
+            _ => "Writes a SQL script that recreates the database: tables, constraints, indexes, views, routines, triggers and data. It runs on an empty database with this app, psql or mysql.".to_string(),
+        };
+        (title, note)
+    }
+
+    /// The format drop-down changed: keep the path's name but give it the right extension.
+    pub(crate) fn xfer_set_format(&mut self, format: i32, path: String) {
+        self.xfer_format = format;
+        let db = self.db_label();
+        let p = std::path::PathBuf::from(path.trim());
+        let new_path = if path.trim().is_empty() {
+            self.xfer_default_path(&db, format)
+        } else if self.xfer_multi_files(format) {
+            p.with_extension("").display().to_string()
+        } else {
+            p.with_extension(self.xfer_ext(format)).display().to_string()
+        };
+        let (title, note) = self.xfer_texts(&db, format);
+        ui(&self.w, move |st| {
+            st.set_xfer_title(title.into());
+            st.set_xfer_note(note.into());
+            st.set_xfer_path(new_path.into());
+        });
+    }
+
+    /// Export chosen tables (or every table) as CSV, HTML, SQL INSERTs or, for MongoDB, JSON.
+    pub(crate) async fn run_export_tables(&mut self, path: String) {
+        let format = self.xfer_format;
+        let tables = self.xfer_table_list();
+        if tables.is_empty() {
+            return self.xfer_done(String::new(), "There are no tables to export.".into());
+        }
+        ui(&self.w, |st| {
+            st.set_xfer_busy(true);
+            st.set_xfer_error("".into());
+            st.set_xfer_info("Exporting…".into());
+            st.set_xfer_progress(0.0);
+        });
+        let (multi, mongo, dialect) = (self.xfer_multi_files(format), self.is_mongo(), self.dialect());
+        let mut progress = self.xfer_progress();
+        let Some(conn) = self.conn.as_mut() else { return };
+        let res = write_tables(conn, std::path::Path::new(&path), format, &tables, multi, mongo, dialect, &mut progress).await;
+        match res {
+            Ok((n, rows)) => {
+                self.log_activity(None, &format!("EXPORT {n} table(s) to {path}"));
+                self.xfer_done(format!("Done: {n} table(s), {rows} row(s) written to {path}"), String::new());
+            }
+            Err(e) => self.xfer_done(String::new(), e),
         }
     }
 
@@ -379,4 +487,103 @@ impl Worker {
         }
         self.load_active().await;
     }
+}
+
+/// Stream the rows of each table to disk page by page. Returns (tables, rows) written.
+#[allow(clippy::too_many_arguments)]
+async fn write_tables(
+    conn: &mut Conn,
+    target: &std::path::Path,
+    format: i32,
+    tables: &[(String, String)],
+    multi: bool,
+    mongo: bool,
+    d: Dialect,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<(usize, u64), String> {
+    use std::io::{BufWriter, Write};
+    const PAGE: i64 = 2000;
+    let open = |p: &std::path::Path| -> Result<BufWriter<std::fs::File>, String> {
+        if let Some(parent) = p.parent().filter(|x| !x.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent).map_err(|e| format!("Cannot write {}: {e}", p.display()))?;
+        }
+        std::fs::File::create(p).map(BufWriter::new).map_err(|e| format!("Cannot write {}: {e}", p.display()))
+    };
+    let werr = |e: std::io::Error| format!("Cannot write {}: {e}", target.display());
+    let ext = match format {
+        1 => "csv",
+        2 => "html",
+        _ if mongo => "json",
+        _ => "sql",
+    };
+    let mut shared = if multi {
+        std::fs::create_dir_all(target).map_err(|e| format!("Cannot create {}: {e}", target.display()))?;
+        None
+    } else {
+        let mut w = open(target)?;
+        if format == 2 {
+            w.write_all(export::html_start().as_bytes()).map_err(werr)?;
+        }
+        Some(w)
+    };
+    let mut total_rows = 0u64;
+    for (i, (schema, name)) in tables.iter().enumerate() {
+        let label = if schema.is_empty() { name.clone() } else { format!("{schema}.{name}") };
+        progress(Progress::at(format!("Exporting {label}…"), i, tables.len()));
+        let mut own = if multi { Some(open(&target.join(format!("{}.{ext}", sanitize(&label))))?) } else { None };
+        let out = own.as_mut().or(shared.as_mut()).ok_or("no output")?;
+        let qualified = if schema.is_empty() { d.quote(name) } else { format!("{}.{}", d.quote(schema), d.quote(name)) };
+        let page = Page { limit: PAGE, sort_ascending: true, ..Default::default() };
+        let (mut offset, mut count) = (0i64, 0usize);
+        let mut json_rows: Vec<Vec<Cell>> = Vec::new();
+        let mut json_cols: Vec<ExportCol> = Vec::new();
+        loop {
+            let rows = conn.fetch_page(schema, name, &Page { offset, ..page.clone() }).await.map_err(|e| format!("{label}: {e}"))?;
+            let cols: Vec<ExportCol> = rows
+                .columns
+                .iter()
+                .map(|c| ExportCol { name: c.clone(), type_name: conn.table(schema, name).and_then(|t| t.columns.iter().find(|x| &x.name == c)).map(|x| x.type_name.clone()).unwrap_or_default() })
+                .collect();
+            let n = rows.rows.len();
+            if offset == 0 {
+                match format {
+                    1 => {}
+                    2 => out.write_all(export::html_table_start(&label, &cols).as_bytes()).map_err(werr)?,
+                    _ if !mongo => out.write_all(format!("-- {label}\n").as_bytes()).map_err(werr)?,
+                    _ => {}
+                }
+            }
+            match format {
+                1 => out.write_all(export::csv(&cols, &rows.rows, offset == 0).as_bytes()).map_err(werr)?,
+                2 => out.write_all(export::html_rows(&rows.rows).as_bytes()).map_err(werr)?,
+                _ if mongo => {
+                    json_cols = cols;
+                    json_rows.extend(rows.rows);
+                }
+                _ => out.write_all(export::sql_inserts(&cols, &rows.rows, &qualified, d).as_bytes()).map_err(werr)?,
+            }
+            count += n;
+            offset += n as i64;
+            if (n as i64) < PAGE {
+                break;
+            }
+        }
+        match format {
+            2 => out.write_all(export::html_table_end(count).as_bytes()).map_err(werr)?,
+            0 if mongo => out.write_all(export::json(&json_cols, &json_rows).as_bytes()).map_err(werr)?,
+            0 => out.write_all(b"\n").map_err(werr)?,
+            _ => {}
+        }
+        if let Some(w) = own.as_mut() {
+            w.flush().map_err(werr)?;
+        }
+        total_rows += count as u64;
+    }
+    if let Some(mut w) = shared {
+        if format == 2 {
+            w.write_all(export::html_end().as_bytes()).map_err(werr)?;
+        }
+        w.flush().map_err(werr)?;
+    }
+    Ok((tables.len(), total_rows))
 }
