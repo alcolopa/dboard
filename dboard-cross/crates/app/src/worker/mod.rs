@@ -118,6 +118,7 @@ pub enum Cmd {
     TreeSelect(usize, i32),
     TreeClearSel,
     TreeDropSelected,
+    TreeSelectAll,
     TreeDropAll,
     NewDbRequest,
     NewDbSubmit(String),
@@ -164,6 +165,7 @@ pub enum Cmd {
     XferBrowse,
     XferRun { path: String, a: bool, b: bool },
     XferCancel,
+    XferFormat(i32, String),
     Ctx(String, usize, usize, f32, f32),
     CtxPick(String, [i32; 4]),
     CtxClose,
@@ -519,6 +521,10 @@ pub struct Worker {
     /// Import mapping: (file column, target table column or None to skip).
     xfer_map: Vec<(String, Option<String>)>,
     xfer_stop_first: bool,
+    /// Export dialog: 0 SQL script, 1 CSV, 2 HTML.
+    xfer_format: i32,
+    /// Tables picked in the sidebar when the export dialog opened (empty = the whole database).
+    xfer_tables: Vec<(String, String)>,
     /// Tables picked in the sidebar (tree keys) and the one a Shift-click range starts from.
     tree_sel: HashSet<String>,
     tree_anchor: Option<usize>,
@@ -581,6 +587,8 @@ impl Worker {
             xfer_mode: 0,
             xfer_map: Vec::new(),
             xfer_stop_first: true,
+            xfer_format: 0,
+            xfer_tables: Vec::new(),
             tree_sel: HashSet::new(),
             tree_anchor: None,
             force: false,

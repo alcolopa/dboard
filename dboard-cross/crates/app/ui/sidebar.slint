@@ -30,12 +30,18 @@ export component Sidebar inherits Rectangle {
             Slot { IconBtn { d: Icons.refresh; hint: "Refresh tables & metadata (" + Theme.mod + "+R)"; clicked => { AppState.refresh(); } } }
         }
         if AppState.tree.length == 0: Text {
-            text: AppState.tree-filter == "" ? "No tables found." : "No matches.";
-            color: Theme.dim; font-size: 12px;
+            text: AppState.db-needed ? "Pick a database in the top bar to see its tables." : (AppState.tree-filter == "" ? "No tables found." : "No matches.");
+            color: Theme.dim; font-size: 12px; wrap: word-wrap;
+        }
+        if AppState.tree.length > 0 && AppState.tree-sel-count == 0: HorizontalLayout {
+            spacing: 6px;
+            Text { text: "Tick tables to export or drop several"; color: Theme.dim; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+            Btn { text: "Select all"; clicked => { AppState.tree-select-all(); } }
         }
         if AppState.tree-sel-count > 0: HorizontalLayout {
             spacing: 6px;
             Text { text: AppState.tree-sel-count + " selected"; color: Theme.dim; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+            Btn { text: "Export…"; primary: true; clicked => { AppState.open-transfer(0); } }
             Btn { text: "Drop…"; danger: true; clicked => { AppState.tree-drop-selected(); } }
             Btn { text: "Clear"; clicked => { AppState.tree-clear-selection(); } }
         }
@@ -75,6 +81,14 @@ export component Sidebar inherits Rectangle {
                             AppState.ctx("tree", i, 0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
                         }
                     }
+                }
+                // tick box for tables, views and collections: pick several without a modifier key
+                if item.kind >= 2 && item.kind <= 5: Rectangle {
+                    x: 8px; y: 5px; width: 16px; height: 16px; border-radius: 3px;
+                    border-width: 1px; border-color: item.selected ? Theme.accent : Theme.dim;
+                    background: item.selected ? Theme.accent : transparent;
+                    Text { visible: item.selected; text: "✓"; color: white; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { AppState.tree-select(i, 1); } }
                 }
             }
         }

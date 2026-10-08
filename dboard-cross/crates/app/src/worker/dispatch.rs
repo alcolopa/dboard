@@ -288,6 +288,7 @@ impl Worker {
             Cmd::XferBrowse => self.xfer_browse().await,
             Cmd::XferRun { path, a, b } => self.xfer_run(path, a, b).await,
             Cmd::XferCancel => ui(&self.w, |st| st.set_xfer_open(false)),
+            Cmd::XferFormat(f, path) => self.xfer_set_format(f, path),
             Cmd::CellCopy(r, c) => {
                 let text = self.cell_text(r, c).flatten().unwrap_or_default();
                 self.copy_to_clipboard(&text);
@@ -318,6 +319,7 @@ impl Worker {
             Cmd::TreeSelect(i, mode) => self.tree_select(i, mode),
             Cmd::TreeClearSel => self.tree_clear_selection(),
             Cmd::TreeDropSelected => self.ask_drop_selected(),
+            Cmd::TreeSelectAll => self.tree_select_all(),
             Cmd::TreeDropAll => self.ask_drop_all(),
             Cmd::NewDbRequest => {
                 ui(&self.w, |st| {

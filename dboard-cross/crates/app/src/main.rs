@@ -119,6 +119,7 @@ fn main() {
     wire!(on_xfer_browse, | | Cmd::XferBrowse);
     wire!(on_xfer_run, |p, a, b| Cmd::XferRun { path: p.to_string(), a, b });
     wire!(on_xfer_cancel, | | Cmd::XferCancel);
+    wire!(on_xfer_format_changed, |f, p| Cmd::XferFormat(f, p.to_string()));
     st.on_quit(|| {
         let _ = slint::quit_event_loop();
     });
@@ -180,6 +181,7 @@ fn main() {
     wire!(on_tree_select, |i, m| Cmd::TreeSelect(i as usize, m));
     wire!(on_tree_clear_selection, | | Cmd::TreeClearSel);
     wire!(on_tree_drop_selected, | | Cmd::TreeDropSelected);
+    wire!(on_tree_select_all, | | Cmd::TreeSelectAll);
     wire!(on_tree_drop_all, | | Cmd::TreeDropAll);
     wire!(on_new_db_request, | | Cmd::NewDbRequest);
     wire!(on_new_db_submit, |n| Cmd::NewDbSubmit(n.to_string()));

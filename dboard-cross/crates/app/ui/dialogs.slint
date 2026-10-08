@@ -114,8 +114,17 @@ component TransferDialog inherits Modal {
         }
         Btn { text: "Browse…"; enabled: !AppState.xfer-busy; clicked => { AppState.xfer-browse(); } }
     }
-    if AppState.xfer-mode == 0: CheckBox { text: "Structure (tables, views, routines, triggers, indexes)"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
-    if AppState.xfer-mode == 0: CheckBox { text: "Data (all rows)"; checked <=> AppState.xfer-opt-b; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 0: HorizontalLayout {
+        spacing: 8px;
+        Text { text: "Format"; color: Theme.dim; vertical-alignment: center; }
+        ComboBox {
+            model: AppState.xfer-formats; current-index <=> AppState.xfer-format; width: 160px;
+            enabled: !AppState.xfer-busy;
+            selected => { AppState.xfer-format-changed(self.current-index, AppState.xfer-path); }
+        }
+    }
+    if AppState.xfer-mode == 0 && AppState.xfer-format == 0 && !AppState.xfer-scoped: CheckBox { text: "Structure (tables, views, routines, triggers, indexes)"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
+    if AppState.xfer-mode == 0 && AppState.xfer-format == 0 && !AppState.xfer-scoped: CheckBox { text: "Data (all rows)"; checked <=> AppState.xfer-opt-b; enabled: !AppState.xfer-busy; }
     if AppState.xfer-mode == 1: CheckBox { text: "Stop at the first error"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; }
     if AppState.xfer-mode == 2: CheckBox { text: "First CSV row holds the column names"; checked <=> AppState.xfer-opt-a; enabled: !AppState.xfer-busy; toggled => { AppState.xfer-preview-request(AppState.xfer-path, AppState.xfer-opt-a); } }
     if AppState.xfer-mode == 2: CheckBox { text: "Stop at the first bad record (otherwise skip it and write an error report)"; checked <=> AppState.xfer-opt-b; enabled: !AppState.xfer-busy; }

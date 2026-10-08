@@ -196,6 +196,8 @@ export global AppState {
     callback tree-select(int, int);
     callback tree-clear-selection();
     callback tree-drop-selected();
+    callback tree-select-all();
+    in property <bool> db-needed;
     callback tree-drop-all();
     in property <bool> new-db-open;
     in-out property <string> new-db-name;
@@ -396,7 +398,7 @@ export global AppState {
     // ---- export ----
     in property <bool> export-open;
     in property <string> export-info;
-    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT", "Excel (.xlsx)"];
+    in property <[string]> export-formats: ["CSV", "JSON", "SQL INSERT", "Excel (.xlsx)", "HTML"];
     in-out property <int> export-format;
     in-out property <bool> export-headers: true;
     callback export-copy(int, bool);
@@ -463,6 +465,11 @@ export global AppState {
     callback xfer-browse();
     callback xfer-run(string, bool, bool);
     callback xfer-cancel();
+    // export dialog: what to write (script / CSV / HTML) and whether it covers only picked tables
+    in property <[string]> xfer-formats: ["SQL script", "CSV", "HTML"];
+    in-out property <int> xfer-format;
+    in property <bool> xfer-scoped;
+    callback xfer-format-changed(int, string);
 
     // ---- settings ----
     in property <bool> settings-open;

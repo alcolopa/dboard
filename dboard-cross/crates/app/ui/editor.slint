@@ -22,6 +22,16 @@ export component SqlEditor inherits Rectangle {
     property <length> gutter-w: gutter-text.preferred-width + 16px;
     property <[int]> bracket: AppState.bracket-match(ed.text, ed.cursor-position-byte-offset);
     property <[HlToken]> toks: AppState.highlight(ed.text);
+    // The input's own text is transparent (the coloured runs are drawn instead), and a TextInput
+    // draws its caret in the text colour, so the caret is drawn here.
+    property <length> caret-x;
+    property <length> caret-y;
+    property <bool> caret-on: true;
+    Timer {
+        interval: 530ms;
+        running: ed.has-focus;
+        triggered => { root.caret-on = !root.caret-on; }
+    }
 
     probe-w := Text { visible: false; text: "MMMMMMMMMM"; font-family: "JetBrains Mono"; font-size: root.font-size; }
     probe-h := Text { visible: false; text: "M\nM"; font-family: "JetBrains Mono"; font-size: root.font-size; }
@@ -62,6 +72,10 @@ export component SqlEditor inherits Rectangle {
             x: root.gutter-w + root.pad + root.bracket[3] * root.cw; y: root.pad + root.bracket[2] * root.lh;
             width: root.cw; height: root.lh; background: #5b7cfa55; border-radius: 2px;
         }
+        if ed.has-focus && root.caret-on: Rectangle {
+            x: root.gutter-w + root.pad + root.caret-x; y: root.pad + root.caret-y;
+            width: 2px; height: root.lh; background: Theme.text;
+        }
         for t in root.toks: Text {
             x: root.gutter-w + root.pad + t.col * root.cw;
             y: root.pad + t.line * root.lh;
@@ -81,6 +95,7 @@ export component SqlEditor inherits Rectangle {
             edited => { root.edited(self.text); }
             changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
             cursor-position-changed(p) => {
+                root.caret-x = p.x; root.caret-y = p.y; root.caret-on = true;
                 // keep the caret in view
                 if p.y + root.pad < -fl.content-y { fl.content-y = -(p.y + root.pad); }
                 else if p.y + root.lh + root.pad > -fl.content-y + fl.height { fl.content-y = -(p.y + root.lh + root.pad - fl.height); }
