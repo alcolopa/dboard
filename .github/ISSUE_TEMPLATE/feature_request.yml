@@ -1,0 +1,20 @@
+name: Feature request
+description: Explain a workflow dboard could improve.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow and what makes it difficult today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement and alternatives
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Relevant database engine and operating system

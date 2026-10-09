@@ -1,149 +1,104 @@
-# dboard: Fast Native Database Client for macOS, Linux and Windows
+<div align="center">
+  <img src="AppIcon-1024.png" alt="dboard icon" width="80">
+  <h1>dboard</h1>
+  <p><strong>Your databases. One native workspace.</strong></p>
+  <p>Query, inspect and edit PostgreSQL, MySQL / MariaDB, SQLite and MongoDB<br>from a Rust desktop client for macOS, Windows and Linux.</p>
+  <p><a href="https://github.com/alcolopa/dboard/releases/latest">Download</a> · <a href="https://alcolopa.github.io/dboard/">Website</a> · <a href="CONTRIBUTING.md">Contribute</a> · <a href="https://github.com/alcolopa/dboard/issues/new/choose">Feedback</a></p>
+  <p><a href="https://github.com/alcolopa/dboard/actions/workflows/cross.yml"><img src="https://github.com/alcolopa/dboard/actions/workflows/cross.yml/badge.svg" alt="Build and test status"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3860e0" alt="MIT license"></a></p>
+</div>
 
-A production-quality, high-performance native database management application inspired by **Sequel Pro**, reimagined from the ground up for modern developers with the visual polish and ergonomics of **TablePlus**, **DataGrip**, and **Linear**.
+## Why dboard?
 
-Built with **Rust & [Slint](https://slint.dev)**: one codebase and one UI for macOS, Linux and Windows, no web view. Passwords are kept in the OS keyring (macOS Keychain, Windows Credential Manager, Secret Service).
+For developers who need to understand a schema, debug a query, or fix a row without switching between tools. dboard brings browsing, SQL, inline editing and an inspector into one native workspace, built with [Rust](https://www.rust-lang.org/) and [Slint](https://slint.dev/).
 
----
+- **Explore your data.** Browse database objects, inspect table structure and view relationships in an ER diagram.
+- **Get to the answer.** Syntax colors, run selection, execution plans, query history and saved queries.
+- **Edit deliberately.** Immediate cell editing or staged changes you review before applying; read-only connections and environment labels.
+- **Keep work moving.** Multiple connections and tabs, keyboard shortcuts, command palette, imports and exports.
+- **Own your tools.** MIT-licensed source, separate database drivers, and passwords stored through the OS keyring.
 
-## ✨ Highlights & Architecture
+The [developer guide](dboard-cross/README.md) covers features, architecture and platform details. This is an actively developed project: check the limitations below before relying on it for important data.
 
-### ⚡ Critical Feature: Instant Cell Editing (Zero Friction)
-- **No "Apply" / "Save" Button**: Double-click or press `Enter` to edit any cell. When you press `Enter`, `Tab`, or navigate away, the application **immediately executes the required database operation**.
-- **Inline Sync Indicators**:
-  - `Spinner`: Subtle inline indicator while executing async database write.
-  - `Checkmark`: Emerald green checkmark flash confirming persistence.
-  - `Error Badge`: Crimson badge with popover detailing the exact error and offering 1-click **Retry** or **Revert to Original**.
-- **Safe Automatic Writes**:
-  - Automatically identifies primary keys (including composite primary keys).
-  - Employs strict parameterized statements (`$1, $2` for PostgreSQL; `?` for MySQL; `updateOne` for MongoDB).
-  - If a table lacks a primary key or unique identifier, a safety banner notifies you and restricts inline mutations to protect data integrity.
+## Get started
 
-### 🛡️ Production Safety & Safeguards
-- **Environment Classifications**: Visually tag connections as **Production**, **Staging**, **Development**, or **Local**.
-- **Visual Safety Badges**: Production connections feature a bright red indicator and lock shield icon.
-- **Destructive Operation Guards**: Destructive SQL commands (`DROP TABLE`, `TRUNCATE`, `DELETE FROM`) on Production connections require typing confirmation before execution.
-- **macOS Keychain Integration**: Passwords and connection secrets are stored in the OS Keychain and never logged or exposed in plaintext.
+### Download
 
-### ↩️ Edit History & Reversible Undo (`⌘Z`)
-- Local edit history records every single cell update, row insertion, and custom DDL execution.
-- Clear distinction between UI edit undo and actual database rollback.
-- Reverts database operations using inverted parameterized statements.
+Choose the package for your OS and architecture from [GitHub Releases](https://github.com/alcolopa/dboard/releases/latest). Package availability and signing status depend on the release; read its notes.
 
----
+| Platform | Packages |
+| --- | --- |
+| macOS | Apple Silicon or Intel ZIP; move `dboard.app` to Applications |
+| Windows | x64 or ARM64 setup installer |
+| Linux | Debian `.deb`, RPM, Arch x64 package, or x64 / ARM64 `.tar.gz` |
 
-## 🚀 Supported Database Engines
+Saved passwords require macOS Keychain, Windows Credential Manager, or a Secret Service keyring on Linux. Linux file browsing requires an XDG desktop portal; you can also type a path.
 
-1. **PostgreSQL / PGSQL**:
-   - Schemas (`public`, custom schemas)
-   - Tables with primary keys, foreign keys, and column comments
-   - Views & Materialized Views
-   - Stored Functions & Routines (PL/pgSQL)
-   - Sequences & Triggers
-   - `EXPLAIN` and `EXPLAIN ANALYZE` visualizer
-2. **MySQL / MariaDB**:
-   - Databases, tables, views, procedures, functions, and triggers
-   - Backtick escaping and indexed lookup diagnostics
-   - Parameterized statements
-3. **MongoDB**:
-   - Dedicated NoSQL document experience (never forced into a relational SQL grid)
-   - Document Card view, raw JSON editor with syntax and schema validation
-   - Aggregation Pipeline visual builder (`$match`, `$group`, `$sort`, `$project`, `$limit`)
-   - Collection statistics and index inspector
+### Build from source
 
----
+Install the stable Rust toolchain and your platform's compiler. On Debian/Ubuntu, install these GUI dependencies first:
 
-## 🖥️ User Interface Overview
-
-### 1. Three-Pane Developer Layout
-- **Left Sidebar**:
-  - Connection switcher with live status dots (Connected, Connecting, Error).
-  - Live object search filter.
-  - Collapsible tree for Schemas, Tables, Views, Routines, Sequences, and MongoDB Collections.
-  - Right-click context menus (Open Data, Inspect Structure, Query Table, Insert Row, Truncate, Drop, Copy Name).
-- **Center Workspace**:
-  - Multi-tab system with tab icons, pinned tabs, tab duplication, and reopen closed tabs (`⇧⌘T`).
-  - Independent sessions for SQL queries, table data, MongoDB documents, and schema inspectors.
-- **Right Inspector Panel (`⌥⌘I`)**:
-  - **Live Activity Log**: Real-time stream of all executed queries and parameterized updates with millisecond durations.
-  - **Edit History & Undo**: Interactive undo stack with one-click operation revert.
-  - **Database Metadata**: Connection URI, tables count, indexes count, environment safety mode.
-
-### 2. Table Data Browser
-- Spreadsheet-like virtualized grid with column resizing, reordering, and sorting.
-- Type-aware cell renderers & inline editors:
-  - `NULL` badge (1-click NULL toggle button)
-  - Booleans (1-click toggle)
-  - JSON (formatted modal editor with validation)
-  - Foreign keys (target table badges)
-  - Dates and timestamps
-- Visual Condition Filter Builder + raw SQL `WHERE` clause input.
-- Pagination bar with page size selection (25, 50, 100, 500, 1000) and latency timer.
-
-### 3. SQL Query Editor
-- Syntax highlighting and autocomplete suggestions (tables, columns, SQL keywords).
-- Execute query or selection (`⌘↵`).
-- Query execution timer and row counter.
-- Visual `EXPLAIN / EXPLAIN ANALYZE` execution plan tree with cost and timing breakdown.
-- Query History drawer and saved query folders (**Users**, **Analytics**, **Production**, **Debugging**).
-
-### 4. Command Palette (`⌘K`) & Global Search (`⌘P`)
-- **Command Palette (`⌘K`)**: Fuzzy search across commands, tables, saved queries, and connection switching.
-- **Global Object Search (`⌘P`)**: Instant search across all tables, columns, routines, views, and collections.
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
-| :--- | :--- |
-| **`⌘K`** | Open Command Palette |
-| **`⌘P`** | Global Object Search |
-| **`⌘N`** | New SQL Query Tab |
-| **`⌘↵`** | Execute Query / Current Statement |
-| **`⌘W`** | Close Active Tab |
-| **`⇧⌘T`** | Reopen Recently Closed Tab |
-| **`⌘R`** | Refresh Database Metadata |
-| **`⌘Z`** | Undo Most Recent Database Edit |
-| **`⌥⌘I`** | Toggle Context Inspector Panel |
-| **`⌃⌘F`** | Enter / exit full screen (macOS) |
-| **`Double-Click / ↵`** | Edit Cell in Table Grid |
-| **`↵ / Tab / Click outside`** | **Instant Save Cell Edit to Database** |
-
----
-
-## 🧩 Codebase
-
-Everything lives in [`dboard-cross/`](dboard-cross/README.md) (Rust workspace: `core` drivers + `app` Slint UI). It supports PostgreSQL, MySQL/MariaDB and MongoDB. On Linux and Windows use Ctrl where the table above shows ⌘.
-
-## 🌐 Website
-
-A landing page lives in [`docs/`](docs/index.html) and deploys automatically to GitHub Pages via `.github/workflows/pages.yml` whenever `docs/` changes on `main`. One-time setup: in **Settings → Pages**, set **Source** to **GitHub Actions**.
-
-## 📦 Building & Running
-
-### Option 0: Download a Release
-Every push of a `v*` tag (or a manual run of the **Release** workflow) builds on GitHub Actions and attaches to a [GitHub Release](../../releases):
-Every platform ships for both x86_64 and ARM64 (built natively on GitHub runners):
-- **macOS**: `dboard-<tag>-macos-arm64.zip` (Apple Silicon) or `-macos-x86_64.zip` (Intel); drag `dboard.app` to `/Applications`.
-- **Windows**: `dboard-<version>-windows-x86_64-setup.exe` or `-windows-arm64-setup.exe`, a per-user installer (Start menu entry, optional desktop shortcut, uninstaller). Unsigned, so SmartScreen may warn (More info → Run anyway).
-- **Debian / Ubuntu**: `dboard-<version>-linux-amd64.deb` / `-linux-arm64.deb` (`sudo apt install ./dboard-*.deb`).
-- **Fedora / RHEL / openSUSE**: `dboard-<version>-1.x86_64.rpm` / `.aarch64.rpm` (`sudo dnf install ./dboard-*.rpm`).
-- **Arch / Manjaro**: `dboard-<version>-1-x86_64.pkg.tar.zst` (`sudo pacman -U dboard-*.pkg.tar.zst`). Arch on ARM: run `makepkg -si` in `dboard-cross/packaging/arch` (the PKGBUILD supports aarch64).
-- **Any other Linux**: `dboard-<tag>-linux-x86_64.tar.gz` or `-linux-aarch64.tar.gz`, then run `./install.sh` (user-level, adds a launcher and icon; `--uninstall` removes it).
-
-Since the app isn't notarized/signed, macOS Gatekeeper will block the first launch. Either right-click → **Open** and confirm, or run:
-```bash
-xattr -cr /Applications/dboard.app
+```sh
+sudo apt-get install libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcb1-dev libwayland-dev
 ```
 
-### Option 1: Build from source
-Install Rust and Cargo first. On macOS with Homebrew, run `brew install rust`.
-Then, from the repository root:
-
-```bash
-cd dboard-cross
-cargo run --locked -p dboard        # build and open the native desktop app
-cargo build --release -p dboard     # optimised binary
-packaging/macos/bundle.sh           # macOS only: wrap the binary into dboard.app
+```sh
+git clone https://github.com/alcolopa/dboard.git
+cd dboard/dboard-cross
+cargo run --locked -p dboard
 ```
+
+For an optimized binary, run `cargo build --locked --release -p dboard`. See the [developer guide](dboard-cross/README.md#local-macos-builds-and-keychain-access) for persistent local macOS signing and Keychain access.
+
+### Your first connection
+
+1. Create a connection, select an engine, and enter your database details (or choose a SQLite file).
+2. Start with a local or development database. Use a read-only connection for inspection.
+3. Test the connection, connect, and open a table or query tab.
+4. Run SQL with **Ctrl+Enter** (**Cmd+Enter** on macOS). Use **Ctrl/Cmd+K** to discover commands.
+
+**Immediate edits write when confirmed.** Enable staged edits when you want to review pending cell changes before applying them. Destructive-query confirmations and undo do not replace database permissions or backups; undo supports specific edits, not arbitrary SQL rollback.
+
+## Support and current limits
+
+| Engine / platform | Validation recorded in the developer guide |
+| --- | --- |
+| PostgreSQL | End-to-end testing with PostgreSQL 16 |
+| MySQL / MariaDB | End-to-end testing with MariaDB 10.11 |
+| SQLite | Driver and dedicated integration tests in the workspace |
+| MongoDB | Tested and working; MongoDB user management remains unverified |
+| Windows | Built by CI; manual validation still needed |
+
+- Query results display at most 5,000 rows; result exports use loaded data. Grid copying operates on the current page.
+- Database exports are portable scripts, not complete backups of every server object or permission. See the developer guide for exclusions.
+- Imports cannot be cancelled once started.
+- Inline editing without a primary key is supported on PostgreSQL through `ctid`; MySQL tables without a primary key stay read-only.
+
+## Contribute
+
+Useful contributions include reproducible bug reports, testing on Windows or MongoDB user management, documentation improvements, and focused fixes. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and pull request guidance, and [ROADMAP.md](ROADMAP.md) for current priorities.
+
+Report bugs and feature requests through [issues](https://github.com/alcolopa/dboard/issues/new/choose). For vulnerabilities, follow [SECURITY.md](SECURITY.md). Community participation follows our [code of conduct](CODE_OF_CONDUCT.md).
+
+## Repository
+
+| Path | Purpose |
+| --- | --- |
+| [`dboard-cross/crates/core`](dboard-cross/crates/core) | Database drivers, configuration, safety checks and edit history |
+| [`dboard-cross/crates/app`](dboard-cross/crates/app) | Slint UI and application workers |
+| [`dboard-cross/packaging`](dboard-cross/packaging) | Platform installers and app bundles |
+| [`docs`](docs) | GitHub Pages website |
+| [`.github/workflows`](.github/workflows) | Tests, platform builds, releases and Pages deployment |
+
+## Support dboard
+
+If dboard helps your work, you can optionally support development with **USDT on Arbitrum One**.
+
+```text
+0x157F29dF2DF3760A96D8AbeFF9c0c93004Eb0de0
+```
+
+Check the token, network and destination address before sending. The [website donation section](https://alcolopa.github.io/dboard/#donate) includes a copy button. Bug reports, testing and contributions are welcome too.
+
+## License
+
+[MIT](LICENSE). Bundled fonts and third-party dependencies retain their own licenses; font notices are in `dboard-cross/crates/app/ui/fonts/`.

@@ -1,299 +1,541 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>dboard — Database Client for macOS, Windows and Linux</title>
-<meta name="description" content="A fast, native database client for PostgreSQL, MySQL, and MongoDB on macOS, Windows, and Linux, with instant cell editing and production-safety guardrails." />
-<link rel="icon" href="AppIcon-1024.png" />
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dboard — Your databases. One native workspace.</title>
+<meta name="description" content="An open-source native database client for PostgreSQL, MySQL, MariaDB, SQLite and MongoDB. Query, inspect and edit from macOS, Windows or Linux.">
+<meta property="og:title" content="dboard — Your databases. One native workspace.">
+<meta property="og:description" content="Query, inspect and edit your data with an open-source Rust desktop client.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0b0d11">
+<link rel="icon" href="AppIcon-1024.png">
+<script>
+// Apply an explicit preference before paint; absent/invalid storage follows the OS.
+try {
+  var savedTheme = localStorage.getItem('dboard-theme');
+  if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.dataset.theme = savedTheme;
+} catch (_) {}
+</script>
 <style>
-  :root{
-    --bg:#0b0d11;
-    --bg-elev:#12151b;
-    --border:#22262f;
-    --text:#e9edf3;
-    --text-dim:#9aa4b2;
-    --accent:#5b8cff;
-    --accent-2:#7dd6c1;
-    --danger:#ef6a6a;
-    --radius:12px;
-    --maxw:1080px;
-  }
-  @media (prefers-color-scheme: light){
-    :root{
-      --bg:#fafafa;
-      --bg-elev:#ffffff;
-      --border:#e6e8ec;
-      --text:#14171c;
-      --text-dim:#5b6472;
-      --accent:#3860e0;
-      --accent-2:#128a72;
-    }
-  }
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
-  body{
-    background:var(--bg);
-    color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;
-    line-height:1.5;
-  }
-  a{color:var(--accent);text-decoration:none;}
-  a:hover{text-decoration:underline;}
-  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px;}
+:root {
+  --bg:#fafafa;
+  --bg-elev:#fff;
+  --text:#14171c;
+  --text-dim:#5b6472;
+  --accent:#3860e0;
+  --border:#e6e8ec;
+  --radius:14px}
+* {
+  box-sizing:border-box}
+html {
+  scroll-behavior:smooth;
+  scroll-padding-top:90px}
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+a {
+  color:var(--accent);
+  text-underline-offset:4px}
+a:hover {
+  text-decoration:underline}
+a:focus-visible,summary:focus-visible {
+  outline:3px solid #c78a22;
+  outline-offset:5px}
+.wrap {
+  max-width:1160px;
+  margin:auto;
+  padding:0 28px}
+.nav {
+  border-bottom:1px solid var(--border);
+  background:var(--bg)}
+.nav .wrap {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  min-height:80px;
+  gap:24px}
+.brand {
+  display:flex;
+  gap:10px;
+  align-items:center;
+  font-size:23px;
+  font-weight:750;
+  color:var(--text);
+  text-decoration:none}
+.brand img {
+  width:32px;
+  height:32px}
+.nav-links {
+  display:flex;
+  gap:26px;
+  align-items:center}
+.nav-links a {
+  text-decoration:none;
+  font-size:14px}
+.btn {
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  padding:9px 15px;
+  min-height:44px;
+  line-height:1.3;
+  border:1px solid var(--border);
+  border-radius:8px;
+  font-weight:650;
+  text-decoration:none;
+  font-size:14px}
+.btn-primary {
+  background:var(--accent);
+  color:white;
+  border-color:var(--accent)}
+.btn-ghost {
+  background:var(--bg-elev);
+  color:var(--text)}
+.hero {
+  padding:88px 0 62px;
+  display:grid;
+  grid-template-columns:1.15fr 1fr;
+  gap:64px;
+  align-items:center}
+.eyebrow {
+  font:12px/1.5 ui-monospace,monospace;
+  letter-spacing:1.8px;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:650}
+h1 {
+  font-size:clamp(42px,5.4vw,68px);
+  line-height:1.07;
+  letter-spacing:-3px;
+  margin:24px 0}
+h1 span {
+  color:var(--accent)}
+.lede {
+  max-width:550px;
+  font-size:19px;
+  color:var(--text-dim)}
+.cta-row {
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-top:28px}
+.subnote,.note {
+  font-size:13px;
+  color:var(--text-dim)}
+.workspace {
+  background:#0b0d11;
+  border:1px solid #22262f;
+  border-radius:14px;
+  color:#e9edf3;
+  overflow:hidden;
+  box-shadow:0 25px 60px #14171c20;
+  transform:rotate(-1deg);
+  font:12px/1.6 ui-monospace,monospace}
+.bar {
+  padding:12px 16px;
+  border-bottom:1px solid #22262f;
+  display:flex;
+  justify-content:space-between}
+.lights {
+  color:#7da2ff;
+  letter-spacing:4px}
+.sample {
+  display:grid;
+  grid-template-columns:110px 1fr;
+  min-height:270px}
+.sidebar {
+  padding:18px 12px;
+  border-right:1px solid #22262f;
+  color:#9aa4b2}
+.sidebar b {
+  display:block;
+  color:#c5d7ff;
+  padding:8px 0}
+.query {
+  padding:22px 16px}
+.query code {
+  color:#9dbaff;
+  white-space:normal}
+.result {
+  width:100%;
+  border-collapse:collapse;
+  margin-top:22px;
+  font-size:11px}
+.result td,.result th {
+  padding:10px 8px;
+  text-align:left;
+  border-bottom:1px solid #22262f}
+.result th {
+  color:#9aa4b2;
+  font-weight:400}
+.status {
+  padding:10px 16px;
+  border-top:1px solid #22262f;
+  color:#9dbaff}
+.caption {
+  text-align:center;
+  font-size:11px;
+  color:var(--text-dim);
+  margin:14px 0 0}
+.engine-strip {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:24px;
+  padding:24px 0 38px;
+  font:13px ui-monospace,monospace}
+.engine-strip span:first-child {
+  color:var(--text-dim)}
+section.section {
+  padding:72px 0;
+  border-top:1px solid var(--border)}
+.section-head {
+  max-width:650px;
+  margin-bottom:32px}
+h2 {
+  font-size:36px;
+  line-height:1.2;
+  letter-spacing:-1px;
+  margin:12px 0 16px}
+h3 {
+  font-size:19px;
+  line-height:1.4;
+  margin:0 0 12px}
+p {
+  margin:0 0 16px}
+.section-head p,.card p {
+  color:var(--text-dim)}
+.grid {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:18px}
+.card {
+  background:var(--bg-elev);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:26px}
+.number {
+  font:12px ui-monospace,monospace;
+  color:var(--accent);
+  display:block;
+  margin-bottom:26px}
+.split {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:64px}
+.dark {
+  background:#0b0d11;
+  color:#e9edf3}
+.dark p {
+  color:#9aa4b2}
+.dark a {
+  color:#9dbaff}
+.dark .eyebrow {
+  color:#9dbaff}
+.dark pre {
+  background:#12151b;
+  border:1px solid #22262f;
+  padding:24px;
+  border-radius:12px;
+  color:#c5d7ff;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  font-size:13px}
+.list {
+  padding:0;
+  list-style:none}
+.list li {
+  padding:14px 0;
+  border-bottom:1px solid #22262f}
+.dl-row {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:auto;
+  padding-top:20px}
+.dl-row .btn {
+  font-size:12px;
+  padding:8px 12px}
+#download .card {
+  display:flex;
+  flex-direction:column}
+#download .detected {
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent)}
+details {
+  border-bottom:1px solid var(--border);
+  padding:20px 0}
+summary {
+  cursor:pointer;
+  font-weight:650}
+details p {
+  max-width:760px;
+  margin:16px 0 0;
+  color:var(--text-dim)}
+footer {
+  padding:32px 0;
+  border-top:1px solid var(--border)}
+footer .wrap {
+  display:flex;
+  justify-content:space-between;
+  gap:24px;
+  flex-wrap:wrap}
+footer p {
+  font-size:13px;
+  color:var(--text-dim)}
+.links {
+  display:flex;
+  gap:20px;
+  font-size:13px}
+.skip {
+  position:absolute;
+  left:16px;
+  top:-80px;
+  background:white;
+  padding:12px;
+  z-index:20}
+.skip:focus {
+  top:8px}
+@media(max-width:900px) {
+  .hero {
+  gap:28px;
+  grid-template-columns:1fr;
+  padding-top:48px}
+.workspace {
+  transform:none}
+.grid {
+  grid-template-columns:1fr}
+.split {
+  grid-template-columns:1fr;
+  gap:24px}
+.nav-links {
+  gap:14px}
+.nav-links .optional {
+  display:none}
+h1 {
+  letter-spacing:-2px}
+.engine-strip {
+  gap:16px}
+}
+@media(max-width:480px) {
+  .wrap {
+  padding:0 18px}
+.nav-links .btn {
+  padding:9px 12px}
+.nav-links .source {
+  display:none}
+.sample {
+  grid-template-columns:90px 1fr}
+.query {
+  padding:18px 10px}
+.result td,.result th {
+  padding:8px 4px}
+.hero {
+  padding-bottom:40px}
+section.section {
+  padding:48px 0}
+h2 {
+  font-size:30px}
+}
+@media(prefers-reduced-motion:reduce) {
+  html {
+  scroll-behavior:auto}
+}
 
-  header.nav{
-    border-bottom:1px solid var(--border);
-    position:sticky;top:0;background:color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter:saturate(180%) blur(10px);
-    z-index:10;
-  }
-  .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;color:var(--text);}
-  .brand img{width:24px;height:24px;border-radius:6px;}
-  .nav-links{display:flex;gap:24px;align-items:center;}
-  .nav-links a{color:var(--text-dim);font-size:14px;font-weight:500;}
-  .nav-links a:hover{color:var(--text);text-decoration:none;}
-  .btn{
-    display:inline-flex;align-items:center;gap:8px;
-    padding:10px 18px;border-radius:8px;
-    font-size:14px;font-weight:600;
-    border:1px solid transparent;
-  }
-  .btn:hover{text-decoration:none;}
-  .btn-primary{background:var(--accent);color:#fff;}
-  .btn-primary:hover{opacity:0.92;}
-  .btn-ghost{border-color:var(--border);color:var(--text);}
-  .btn-ghost:hover{background:var(--bg-elev);}
 
-  .hero{padding:88px 0 64px;text-align:center;}
-  .eyebrow{
-    display:inline-block;font-size:13px;font-weight:600;color:var(--accent-2);
-    background:color-mix(in srgb, var(--accent-2) 14%, transparent);
-    border:1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
-    padding:4px 12px;border-radius:999px;margin-bottom:20px;
+:root { color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:#0b0d11; --bg-elev:#12151b; --text:#e9edf3;
+    --text-dim:#9aa4b2; --accent:#5b8cff; --border:#22262f;
   }
-  h1{font-size:clamp(34px,5vw,56px);line-height:1.08;letter-spacing:-0.02em;margin:0 0 18px;}
-  h1 span{color:var(--accent);}
-  .lede{font-size:19px;color:var(--text-dim);max-width:640px;margin:0 auto 36px;}
-  .cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:14px;}
-  .subnote{font-size:13px;color:var(--text-dim);}
-  .subnote code{background:var(--bg-elev);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;}
-
-  .shot{
-    margin:56px auto 0;max-width:var(--maxw);
-    border-radius:var(--radius);
-    border:1px solid var(--border);
-    background:linear-gradient(180deg, var(--bg-elev), var(--bg));
-    padding:48px 24px;text-align:center;color:var(--text-dim);font-size:14px;
-  }
-
-  .card p+p{margin-top:10px;}
-  .card .note{font-size:13px;}
-  .card code{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:12px;}
-  #download .card{display:flex;flex-direction:column;}
-  #download .card p:last-child{margin-top:auto;padding-top:14px;}
-  section{padding:72px 0;border-top:1px solid var(--border);}
-  .section-head{text-align:center;max-width:600px;margin:0 auto 44px;}
-  .section-head h2{font-size:30px;letter-spacing:-0.01em;margin:0 0 10px;}
-  .section-head p{color:var(--text-dim);margin:0;}
-
-  #download .card.detected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
-  .dl-row{display:flex;flex-wrap:wrap;gap:8px;}
-  .dl-row .btn{font-size:13px;padding:8px 12px;}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
-  @media (max-width:820px){.grid{grid-template-columns:1fr;}}
-  .card{
-    background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
-    padding:24px;
-  }
-  .card .icon{
-    width:36px;height:36px;border-radius:8px;
-    display:flex;align-items:center;justify-content:center;
-    background:color-mix(in srgb, var(--accent) 16%, transparent);
-    color:var(--accent);font-size:18px;margin-bottom:14px;
-  }
-  .card h3{font-size:16px;margin:0 0 8px;}
-  .card p{font-size:14px;color:var(--text-dim);margin:0;}
-
-  .engines{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
-  .pill{
-    border:1px solid var(--border);background:var(--bg-elev);
-    border-radius:999px;padding:10px 20px;font-size:14px;font-weight:600;
-  }
-
-  table.kb{width:100%;border-collapse:collapse;font-size:14px;}
-  table.kb th, table.kb td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);}
-  table.kb th{color:var(--text-dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;}
-  table.kb kbd{
-    background:var(--bg-elev);border:1px solid var(--border);border-bottom-width:2px;
-    border-radius:6px;padding:2px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
-  }
-
-  .safety{
-    display:flex;align-items:flex-start;gap:14px;
-    background:color-mix(in srgb, var(--danger) 10%, var(--bg-elev));
-    border:1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
-    border-radius:var(--radius);padding:20px 22px;
-  }
-  .safety .dot{width:10px;height:10px;border-radius:50%;background:var(--danger);margin-top:6px;flex-shrink:0;}
-  .safety strong{display:block;margin-bottom:4px;}
-  .safety p{margin:0;color:var(--text-dim);font-size:14px;}
-
-  footer{border-top:1px solid var(--border);padding:32px 0;}
-  footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
-  footer p{color:var(--text-dim);font-size:13px;margin:0;}
-  footer .links{display:flex;gap:18px;}
-  footer .links a{color:var(--text-dim);font-size:13px;}
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0b0d11; --bg-elev:#12151b; --text:#e9edf3;
+  --text-dim:#9aa4b2; --accent:#5b8cff; --border:#22262f;
+}
+button, select { font:inherit; }
+button { cursor:pointer; }
+select { background:var(--bg-elev); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px; font-size:13px; }
+button:focus-visible,select:focus-visible { outline:3px solid var(--accent); outline-offset:4px; }
+.donation-address { display:block; overflow-wrap:anywhere; background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:16px; margin:16px 0; }
+#copy-status { min-height:1.65em; margin-top:12px; }
+@media(max-width:600px) {
+  .nav .wrap { flex-wrap:wrap; gap:12px; padding-top:14px; padding-bottom:14px; }
+  .nav-links { flex-wrap:wrap; gap:10px; }
+  .nav-links .btn { max-width:200px; text-align:center; }
+}
 </style>
 </head>
 <body>
-
+<a href="#main" class="skip">Skip to content</a>
 <header class="nav">
-  <div class="wrap">
-    <div class="brand"><img src="AppIcon-1024.png" alt="" /> dboard</div>
-    <nav class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#engines">Engines</a>
-      <a href="#shortcuts">Shortcuts</a>
-      <a href="#download">Download</a>
-      <a href="https://github.com/alcolopa/dboard" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-primary" id="dl-nav" href="https://github.com/alcolopa/dboard/releases/latest">Download</a>
-    </nav>
-  </div>
+<div class="wrap">
+<a class="brand" href="#main">
+<img src="AppIcon-1024.png" alt="">dboard</a>
+<nav class="nav-links" aria-label="Main navigation">
+<select id="theme" aria-label="Color theme">
+<option value="system">System</option>
+<option value="light">Light</option>
+<option value="dark">Dark</option>
+</select>
+<a class="optional" href="#features">Why dboard</a>
+<a class="optional" href="#opensource">Open source</a>
+<a class="source" href="https://github.com/alcolopa/dboard">GitHub ↗</a>
+<a class="btn btn-primary" id="dl-nav" href="#download">Download</a>
+</nav>
+</div>
 </header>
-
-<main>
-  <section class="hero wrap" style="border-top:none;padding-top:88px;">
-    <span class="eyebrow">macOS · Windows · Linux · Free &amp; Open Source</span>
-    <h1>A native database client<br/>for <span>macOS, Windows and Linux</span></h1>
-    <p class="lede">
-      dboard is a fast, native client for PostgreSQL, MySQL, and MongoDB, inspired by
-      Sequel Pro. Edit data in place, with safeguards that stop you from running a
-      destructive statement against production by accident. Now available on Windows and Linux as well as macOS.
-    </p>
-    <div class="cta-row">
-      <a class="btn btn-primary" id="dl-hero" href="#download">Download</a>
-      <a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">View Source</a>
-    </div>
-    <p class="subnote">macOS 11+ · Windows · Linux · x64 and ARM64</p>
-  </section>
-
-  <div class="wrap">
-    <div class="shot">
-      Three-pane workspace · Connection sidebar · Query editor · Live inspector
-    </div>
-  </div>
-
-  <section id="features">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>Zero-friction editing</h2>
-        <p>No Save button. Every change writes to the database the moment you confirm it.</p>
-      </div>
-      <div class="grid">
-        <div class="card">
-          <div class="icon">⚡</div>
-          <h3>Instant Cell Editing</h3>
-          <p>Double-click or press Enter to edit any cell. Tab, Enter, or click away and the write executes immediately, with inline spinner, checkmark, and error states.</p>
-        </div>
-        <div class="card">
-          <div class="icon">🔑</div>
-          <h3>Safe Automatic Writes</h3>
-          <p>Detects primary keys — including composite keys — and uses strict parameterized statements. Tables without a unique identifier are locked from inline mutation.</p>
-        </div>
-        <div class="card">
-          <div class="icon">↩︎</div>
-          <h3>Reversible Undo</h3>
-          <p>Every cell update, row insert, and DDL execution is recorded. ⌘Z reverts the actual database operation, not just the UI state.</p>
-        </div>
-        <div class="card">
-          <div class="icon">🛡️</div>
-          <h3>Production Guardrails</h3>
-          <p>Tag connections as Production, Staging, Development, or Local. Destructive statements against Production require a typed confirmation.</p>
-        </div>
-        <div class="card">
-          <div class="icon">🔐</div>
-          <h3>Keychain-Backed Secrets</h3>
-          <p>Passwords go into the OS keychain (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) and are never logged or written to disk in plaintext.</p>
-        </div>
-        <div class="card">
-          <div class="icon">🔍</div>
-          <h3>Command Palette &amp; Search</h3>
-          <p>Ctrl/⌘+K for fuzzy command and connection switching, Ctrl/⌘+P for instant global search across tables, columns, routines, and views.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="engines">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>Speaks your database</h2>
-        <p>One client, three engines — each with a UI shaped for how that data actually works.</p>
-      </div>
-      <div class="engines">
-        <span class="pill">PostgreSQL</span>
-        <span class="pill">MySQL / MariaDB</span>
-        <span class="pill">MongoDB</span>
-      </div>
-      <div style="height:36px;"></div>
-      <div class="safety">
-        <span class="dot"></span>
-        <div>
-          <strong>MongoDB gets its own experience.</strong>
-          <p>Document cards, a raw JSON editor with schema validation, and a visual aggregation pipeline builder — never forced into a relational grid.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="shortcuts">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>Built for the keyboard</h2>
-        <p>Every core action has a shortcut. Shown for macOS; on Windows and Linux use Ctrl in place of ⌘.</p>
-      </div>
-      <table class="kb">
-        <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
-        <tbody>
-          <tr><td><kbd>⌘K</kbd></td><td>Open Command Palette</td></tr>
-          <tr><td><kbd>⌘P</kbd></td><td>Global Object Search</td></tr>
-          <tr><td><kbd>⌘N</kbd></td><td>New SQL Query Tab</td></tr>
-          <tr><td><kbd>⌘↵</kbd></td><td>Execute Query / Current Statement</td></tr>
-          <tr><td><kbd>⌘W</kbd></td><td>Close Active Tab</td></tr>
-          <tr><td><kbd>⇧⌘T</kbd></td><td>Reopen Recently Closed Tab</td></tr>
-          <tr><td><kbd>⌘R</kbd></td><td>Refresh Database Metadata</td></tr>
-          <tr><td><kbd>⌘Z</kbd></td><td>Undo Most Recent Database Edit</td></tr>
-          <tr><td><kbd>⌥⌘I</kbd></td><td>Toggle Context Inspector Panel</td></tr>
-          <tr><td><kbd>⌃⇥</kbd></td><td>Next / Previous Tab (⌘1–9 jumps to a tab)</td></tr>
-          <tr><td><kbd>⌘C</kbd> / <kbd>⌘V</kbd></td><td>Copy / Paste Cells, Columns and Rows (⇧⌘C adds the header)</td></tr>
-          <tr><td><kbd>⌘A</kbd></td><td>Select Every Cell</td></tr>
-          <tr><td><kbd>↵</kbd> / <kbd>F2</kbd></td><td>Edit Cell in Table Grid (Tab moves to the next cell)</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section id="download">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>Download</h2>
-        <p>Each tagged version is built by GitHub Actions and attached to the release page.</p>
-      </div>
+<main id="main">
+<div class="wrap">
+<section class="hero">
+<div>
+<span class="eyebrow">Native desktop · MIT licensed</span>
+<h1>Your databases.<br>
+<span>One workspace.</span>
+</h1>
+<p class="lede">Query, inspect and edit your data without switching tools. An open-source database client built with Rust for macOS, Windows and Linux.</p>
+<div class="cta-row">
+<a class="btn btn-primary" id="dl-hero" href="#download">Download dboard</a>
+<a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">Explore the source ↗</a>
+</div>
+<p class="subnote" style="margin-top:16px">Local desktop app. Connect directly to your own databases.</p>
+</div>
+<div>
+<div class="workspace" aria-label="Illustrative query workflow using example data">
+<div class="bar">
+<span class="lights" aria-hidden="true">● ● ●</span>
+<span>dboard / local</span>
+</div>
+<div class="sample">
+<div class="sidebar">Connections<b>● local</b>▾ public<br> &nbsp; users<br> &nbsp; orders<br> &nbsp; products</div>
+<div class="query">
+<code>SELECT name, role<br>FROM users<br>ORDER BY name;</code>
+<table class="result">
+<thead>
+<tr>
+<th>id</th>
+<th>name</th>
+<th>role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Alex</td>
+<td>engineer</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Sam</td>
+<td>designer</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Taylor</td>
+<td>founder</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="status">Query → inspect → edit → review</div>
+</div>
+<p class="caption">Illustrative workflow · example data, not an app screenshot</p>
+</div>
+</section>
+<div class="engine-strip" aria-label="Supported databases">
+<span>CONNECT TO</span>
+<span>PostgreSQL</span>
+<span>MySQL / MariaDB</span>
+<span>SQLite</span>
+<span>MongoDB</span>
+</div>
+</div>
+<section class="section" id="features">
+<div class="wrap">
+<div class="section-head">
+<span class="eyebrow">Less tool switching. More doing.</span>
+<h2>From a question to a data change.</h2>
+<p>For developers who need to understand a schema, debug a query, or fix a row — all in the same workspace.</p>
+</div>
+<div class="grid">
+<article class="card">
+<span class="number">01 / EXPLORE</span>
+<h3>Find your way around.</h3>
+<p>Browse tables and database objects, inspect structure, and view relationships in an ER diagram. Use the command palette to move through your workspace.</p>
+</article>
+<article class="card">
+<span class="number">02 / QUERY</span>
+<h3>Get to the answer.</h3>
+<p>Write SQL with syntax colors, run a selection, inspect an execution plan, and keep useful queries in history or saved folders.</p>
+</article>
+<article class="card">
+<span class="number">03 / EDIT</span>
+<h3>Make changes deliberately.</h3>
+<p>Edit cells in place, or stage edits to review before applying. Environment labels, read-only connections and destructive-query confirmations support careful work.</p>
+</article>
+</div>
+<p class="subnote" style="margin-top:20px">Guardrails support your workflow; database permissions and backups remain essential. Undo covers supported edits, not every SQL statement.</p>
+</div>
+</section>
+<section class="section dark" id="opensource">
+<div class="wrap split">
+<div>
+<span class="eyebrow">Open source, from the first connection</span>
+<h2>Your tools should be yours to understand.</h2>
+<p>dboard is a Rust workspace with a Slint desktop UI and separate database drivers. Read the implementation, run it locally, and help shape what comes next.</p>
+<ul class="list">
+<li>
+<strong>MIT licensed.</strong> Use, modify and redistribute under the license terms.</li>
+<li>
+<strong>Credentials in the OS keyring.</strong> Saved passwords use Keychain, Credential Manager or Secret Service.</li>
+<li>
+<strong>Useful contributions welcome.</strong> Reproductions, platform testing, documentation and focused pull requests.</li>
+</ul>
+<a href="https://github.com/alcolopa/dboard/blob/main/CONTRIBUTING.md">Read the contribution guide →</a>
+</div>
+<div>
+<h3>Build it. Make it better.</h3>
+<pre>
+<code>git clone https://github.com/alcolopa/dboard.git
+cd dboard/dboard-cross
+cargo run --locked -p dboard</code>
+</pre>
+<p class="subnote">Requires Rust and platform build dependencies. See the <a href="https://github.com/alcolopa/dboard/blob/main/dboard-cross/README.md#build--test">developer guide</a> for setup and tests.</p>
+<a href="https://github.com/alcolopa/dboard/issues/new/choose">Report a bug or suggest an improvement →</a>
+</div>
+</div>
+</section>
+<section class="section" id="download">
+<div class="wrap">
+<div class="section-head">
+<span class="eyebrow">Start with your next query</span>
+<h2>Pick your platform.</h2>
+<p>Download a published release, or build from source. Available packages depend on the latest release; every button falls back to GitHub release notes.</p>
+</div>
       <div class="grid">
         <div class="card">
           <h3>macOS</h3>
           <p>Separate builds for Apple Silicon and Intel Macs. Unzip it and drag it to Applications.</p>
-          <p class="note">The build is unsigned. Run <code>xattr -cr dboard.app</code> once to get past Gatekeeper.</p>
-          <p id="dl-mac" class="dl-row"><a class="btn btn-primary" data-arch="arm" data-re="macos-arm64\.zip$" href="https://github.com/alcolopa/dboard/releases/latest">Apple Silicon</a><a class="btn btn-primary" data-arch="x64" data-re="macos-x86_64\.zip$" href="https://github.com/alcolopa/dboard/releases/latest">Intel</a></p>
+          <p class="note">Signing depends on the release. Check its notes before installing; macOS may ask you to approve the first launch.</p>
+          <p id="dl-mac" class="dl-row">
+<a class="btn btn-primary" data-arch="arm" data-re="macos-arm64\.zip$" href="https://github.com/alcolopa/dboard/releases/latest">Apple Silicon</a>
+<a class="btn btn-primary" data-arch="x64" data-re="macos-x86_64\.zip$" href="https://github.com/alcolopa/dboard/releases/latest">Intel</a>
+</p>
         </div>
         <div class="card">
           <h3>Windows</h3>
 <p>Setup installer for x64 and ARM64: Start menu entry, optional desktop shortcut, uninstaller. No runtime to install.</p>
           <p class="note">CI builds this, but it hasn't been tested by hand on Windows yet. Bug reports welcome.</p>
-          <p id="dl-win" class="dl-row"><a class="btn btn-primary" data-arch="x64" data-re="windows-x86_64-setup\.exe$" href="https://github.com/alcolopa/dboard/releases/latest">x64 installer</a><a class="btn btn-primary" data-arch="arm" data-re="windows-arm64-setup\.exe$" href="https://github.com/alcolopa/dboard/releases/latest">ARM64 installer</a></p>
+          <p id="dl-win" class="dl-row">
+<a class="btn btn-primary" data-arch="x64" data-re="windows-x86_64-setup\.exe$" href="https://github.com/alcolopa/dboard/releases/latest">x64 installer</a>
+<a class="btn btn-primary" data-arch="arm" data-re="windows-arm64-setup\.exe$" href="https://github.com/alcolopa/dboard/releases/latest">ARM64 installer</a>
+</p>
         </div>
         <div class="card">
           <h3>Linux</h3>
@@ -310,26 +552,81 @@
           </p>
         </div>
       </div>
-      <p class="subnote" style="text-align:center;margin-top:24px;">
-        One Rust + Slint codebase serves every platform, in <a href="https://github.com/alcolopa/dboard/tree/main/dboard-cross">dboard-cross</a>.
-        SSH tunnels and SQL syntax highlighting are not there yet.
-        Or <a href="https://github.com/alcolopa/dboard#-building--running">build from source</a>.
-      </p>
-    </div>
-  </section>
+
+<p class="subnote" style="margin-top:24px">Check release notes for signing and installation details. <a href="https://github.com/alcolopa/dboard/releases">Browse all releases →</a>
+</p>
+</div>
+</section>
+<section class="section" id="faq">
+<div class="wrap">
+<div class="section-head">
+<span class="eyebrow">Before you connect</span>
+<h2>A few practical details.</h2>
+</div>
+<details>
+<summary>Is dboard free to use?</summary>
+<p>The source is available under the MIT license. You can build it yourself and modify it; third-party dependencies retain their own licenses.</p>
+</details>
+<details>
+<summary>What has been tested?</summary>
+<p>PostgreSQL 16, MariaDB 10.11 and MongoDB have been tested. MongoDB user management has not yet been verified. Windows builds run in CI but have not been manually validated. See the developer guide for current limitations.</p>
+</details>
+<details>
+<summary>Does editing a cell write immediately?</summary>
+<p>In immediate mode, confirming an edit writes to the database. Staged mode lets you review pending cell edits before applying them. Start with a local database and use a read-only connection when you only need to inspect data.</p>
+</details>
+<details>
+<summary>How can I help?</summary>
+<p>Try dboard on your platform, report a reproducible issue using sanitized example data, or submit a focused improvement. The contribution guide explains the repository, setup and checks.</p>
+</details>
+</div>
+</section>
+<section class="section" id="donate">
+<div class="wrap split">
+<div><span class="eyebrow">Support dboard</span><h2>Help keep it moving.</h2>
+<p>If dboard is useful to you, an optional donation supports its development. Bug reports, testing and contributions are welcome too.</p></div>
+<div><h3>Donate USDT on Arbitrum One</h3>
+<p>Send <strong>USDT</strong> using the <strong>Arbitrum One</strong> network to this address:</p>
+<code class="donation-address" id="donation-address">0x157F29dF2DF3760A96D8AbeFF9c0c93004Eb0de0</code>
+<button class="btn btn-primary" id="copy-address" type="button">Copy address</button>
+<p id="copy-status" class="subnote" role="status" aria-live="polite"></p>
+<p class="subnote">Check the token, network and destination address before sending.</p>
+</div></div></section>
 </main>
-
 <footer>
-  <div class="wrap">
-    <p>dboard — a native database client for macOS, Windows and Linux.</p>
-    <div class="links">
-      <a href="https://github.com/alcolopa/dboard">GitHub</a>
-      <a href="https://github.com/alcolopa/dboard/releases">Releases</a>
-      <a href="https://github.com/alcolopa/dboard/issues">Issues</a>
-    </div>
-  </div>
+<div class="wrap">
+<p>dboard · A native workspace for your databases.</p>
+<nav class="links" aria-label="Footer">
+<a href="https://github.com/alcolopa/dboard">GitHub</a>
+<a href="https://github.com/alcolopa/dboard/blob/main/LICENSE">MIT license</a>
+<a href="https://github.com/alcolopa/dboard/blob/main/SECURITY.md">Security</a>
+<a href="#donate">Donate</a>
+</nav>
+</div>
 </footer>
-
+<script>
+(function () {
+  var theme = document.getElementById('theme');
+  theme.value = document.documentElement.dataset.theme || 'system';
+  theme.addEventListener('change', function () {
+    if (theme.value === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme.value;
+    try {
+      if (theme.value === 'system') localStorage.removeItem('dboard-theme');
+      else localStorage.setItem('dboard-theme', theme.value);
+    } catch (_) {}
+  });
+  document.getElementById('copy-address').addEventListener('click', async function () {
+    var status = document.getElementById('copy-status');
+    try {
+      await navigator.clipboard.writeText(document.getElementById('donation-address').textContent.trim());
+      status.textContent = 'Address copied. Use USDT on Arbitrum One.';
+    } catch (_) {
+      status.textContent = 'Could not copy automatically. Select and copy the address above.';
+    }
+  });
+})();
+</script>
 <script>
 (function () {
   var ua = navigator.userAgent || "", plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
@@ -354,7 +651,8 @@
     for (var j = 0; j < mine.length; j++) if (os !== "linux" && arch && mine[j].getAttribute("data-arch") === arch && mine[j].style.display !== "none" && /^https:\/\/github.com\/.*\/download\//.test(mine[j].href)) direct = mine[j].href;
     ["dl-hero", "dl-nav"].forEach(function (id) {
       var el = document.getElementById(id);
-      el.textContent = "Download for " + names[os] + (arch ? (arch === "arm" ? " (ARM64)" : " (x64)") : "");
+      el.textContent = id === "dl-nav" ? "Download" : "Download for " + names[os];
+      el.setAttribute("aria-label", "Download for " + names[os] + (arch ? (arch === "arm" ? " (ARM64)" : " (x64)") : ""));
       el.setAttribute("href", direct || "#download");
     });
   }

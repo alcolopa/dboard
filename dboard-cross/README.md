@@ -1,7 +1,7 @@
 # dboard (macOS, Linux, Windows)
 
 dboard is a single Rust + [Slint](https://slint.dev) codebase that runs on macOS, Linux and Windows.
-No web view, no runtime: one native binary per platform.
+A native desktop UI without a web view. See the [project README](../README.md) for downloads and [contribution guide](../CONTRIBUTING.md) to get involved.
 
 
 ## Layout
@@ -66,18 +66,14 @@ their own Ctrl+C / V / X / A / Z.
 
 ## Not done / known limits
 
-- SSH tunnels; syntax **highlighting** in the SQL editor (Slint's text editor can't colour spans); column reordering;
-  ER diagram.
+- Column reordering; autocomplete assumes you are typing at the end of the text. SSH tunnels, syntax colors and ER diagrams are implemented (see below).
 - Copy / paste work on the rows loaded in the grid (the current page), not the whole table; use Export for that.
 - Exports are portable scripts, not byte-identical backups: owners, grants, comments, partitioning options and
-  PostgreSQL extension-owned objects are not written. Imports cannot be cancelled once started. The MongoDB
-  export / import and the MongoDB user commands are covered by unit tests of the file format but have not been run
-  against a live `mongod`; PostgreSQL 16 and MariaDB 10.11 have been tested end to end.
+  PostgreSQL extension-owned objects are not written. Imports cannot be cancelled once started. MongoDB has been tested and works; MongoDB user management remains unverified. PostgreSQL 16 and MariaDB 10.11 have been tested end to end.
 - Inline editing of tables without a primary key is PostgreSQL-only; MySQL has no exact row id and stays read-only.
 - The file picker on Linux needs the XDG desktop portal; without one *Browse…* does nothing and you can type the path.
-- Autocomplete assumes you are typing at the end of the text.
 - Query results are capped at 5,000 displayed rows; export writes what is loaded.
-- Tested against PostgreSQL 16, MariaDB 10.11 and a MongoDB-wire-compatible server (FerretDB) - not a real `mongod`.
+- Tested against PostgreSQL 16, MariaDB 10.11 and MongoDB.
   Windows is built by CI but has not been run by hand.
 
 ## Build & test
@@ -98,7 +94,7 @@ Linux build dependencies (Debian/Ubuntu): `libfontconfig1-dev libxkbcommon-dev l
 
 - Every cell is fetched as text and edits bind text parameters cast server-side
   (`SET "c" = $1::text::type WHERE "pk" = $2::text::type`), so any type works and PK lookups keep their indexes.
-- Tables without a primary key, and views, are read-only. Browsing orders by primary key so edited rows don't jump.
+- MySQL tables without a primary key and views are read-only; PostgreSQL tables can use `ctid` for inline editing. Browsing orders by primary key when available.
 - The right-click menu is drawn in-window (the toolkit's native menu doesn't appear on every Linux backend).
 
 ## Newer features
