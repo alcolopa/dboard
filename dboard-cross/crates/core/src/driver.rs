@@ -72,6 +72,24 @@ pub struct Conn {
 
 impl Conn {
     pub async fn connect(config: ConnectionConfig, password: &str) -> Result<Self> {
+        Self::connect_inner(config, password, true).await
+    }
+
+    /// Independent, explicitly scoped connection for user management; no table metadata needed.
+    pub async fn connect_for_access(mut config: ConnectionConfig, password: &str, database: &str) -> Result<Self> {
+        if database.is_empty() {
+            return Err(Error::Db("Choose a database first.".into()));
+        }
+        config.database = database.to_string();
+        let mut conn = Self::connect_inner(config, password, false).await?;
+        // A MongoDB URI can carry its own default database; the explicit picker takes precedence.
+        if let Inner::Mongo(m) = &mut conn.inner {
+            m.use_database(Some(database));
+        }
+        Ok(conn)
+    }
+
+    async fn connect_inner(config: ConnectionConfig, password: &str, metadata: bool) -> Result<Self> {
         let password = crate::creds::resolve(&config, password).await?;
         let password = password.as_str();
         let tunnel = Self::open_tunnel(&config).await?;
@@ -84,7 +102,7 @@ impl Conn {
         };
         let mut c = Self { inner, tunnel, config, metadata: Metadata::default(), history: EditHistory::default(), server_version: String::new(), in_tx: false, timeout_ms: 0 };
         c.server_version = dispatch!(c, d => d.version().await).unwrap_or_default();
-        c.refresh_metadata().await?;
+        if metadata { c.refresh_metadata().await?; }
         Ok(c)
     }
 
@@ -539,6 +557,23 @@ impl Conn {
         dispatch!(self, d => d.list_users().await)
     }
 
+    pub async fn user_access(&mut self, u: &UserInfo) -> Result<UserAccess> {
+        match &mut self.inner {
+            Inner::Pg(d) => d.user_access(u).await,
+            Inner::My(d) => d.user_access(u).await,
+            Inner::Mongo(d) => d.user_access(u).await,
+            _ => Ok(UserAccess { level: -1, ..UserAccess::default() }),
+        }
+    }
+
+    pub async fn set_table_access(&mut self, u: &UserInfo, schema: &str, table: &str, level: AccessLevel) -> Result<()> {
+        match &mut self.inner {
+            Inner::Pg(d) => d.set_table_access(u,schema,table,level).await,
+            Inner::My(d) => d.set_table_access(u,schema,table,level).await,
+            _ => Err(Error::Db("Table access is not supported by this database.".into())),
+        }
+    }
+
     pub async fn user_grants(&mut self, u: &UserInfo) -> Result<Vec<String>> {
         dispatch!(self, d => d.user_grants(u).await)
     }
@@ -649,4 +684,16 @@ impl<R: std::io::Read> std::io::Read for CountingReader<R> {
 pub async fn test_connection(config: ConnectionConfig, password: &str) -> Result<String> {
     let c = Conn::connect(config, password).await?;
     Ok(c.server_version.clone())
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn access_connection_rejects_all_database_scope_before_connecting() {
+        let config = ConnectionConfig::default();
+        let err = Conn::connect_for_access(config, "", "").await.err().expect("empty scope rejected");
+        assert_eq!(err.to_string(), Error::Db("Choose a database first.".into()).to_string());
+    }
 }

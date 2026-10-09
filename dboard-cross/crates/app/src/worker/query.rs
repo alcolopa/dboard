@@ -68,11 +68,11 @@ impl Worker {
     pub(crate) fn query_edited(&mut self, text: String) {
         let mongo = self.is_mongo();
         let enabled = self.settings.autocomplete;
+        let tables = self.conn.as_ref().map(|c| c.metadata.tables.as_slice()).unwrap_or_default();
+        let s = if enabled { suggest::suggest(&text, tables, mongo) } else { Vec::new() };
         if let Some(t) = self.active_mut() {
-            t.query_text = text.clone();
+            t.query_text = text;
         }
-        let tables = self.conn.as_ref().map(|c| c.metadata.tables.clone()).unwrap_or_default();
-        let s = if enabled { suggest::suggest(&text, &tables, mongo) } else { Vec::new() };
         ui(&self.w, move |st| st.set_suggestions(strs(s)));
     }
 
@@ -247,8 +247,12 @@ impl Worker {
     pub(crate) fn pick_result(&mut self, idx: usize) {
         let Some(i) = self.active else { return };
         let t = &mut self.tabs[i];
-        let Some(s) = t.results.get(idx).cloned() else { return };
-        Self::apply_set(t, &s);
+        let Some(s) = t.results.get(idx) else { return };
+        t.cols = s.cols.clone();
+        t.widths = s.widths.clone();
+        t.rows = s.rows.clone();
+        t.page_info = s.info.clone();
+        t.timing = s.timing.clone();
         t.result_idx = idx;
         self.show_active();
     }
@@ -344,7 +348,6 @@ impl Worker {
         } else {
             self.new_query_tab(sql);
         }
-        ui(&self.w, |st| st.set_drawer_open(false));
     }
 
     pub(crate) fn save_query_submit(&mut self, name: String, folder: usize) {

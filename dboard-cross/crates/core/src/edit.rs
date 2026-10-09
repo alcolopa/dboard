@@ -88,6 +88,19 @@ impl EditHistory {
                 && matches!(&n.kind, EditKind::Update { column: c, .. } if c == column)
         })
     }
+
+    /// Compute the inspector's undo availability in one pass instead of rescanning
+    /// all newer entries for each history row.
+    pub fn blocked_entries(&self) -> Vec<bool> {
+        let mut seen = std::collections::HashSet::new();
+        let mut blocked = vec![false; self.stack.len()];
+        for (i, r) in self.stack.iter().enumerate().rev() {
+            if let EditKind::Update { column, .. } = &r.kind {
+                blocked[i] = !seen.insert((&r.schema, &r.table, &r.key, column));
+            }
+        }
+        blocked
+    }
 }
 
 #[cfg(test)]
@@ -124,5 +137,21 @@ mod tests {
         assert!(h.blocked_by_newer(0));
         assert!(!h.blocked_by_newer(2));
         assert_eq!(h.remove(1).unwrap().column(), Some("other"));
+    }
+
+    #[test]
+    fn batch_undo_availability_matches_individual_checks() {
+        let mut h = EditHistory::default();
+        for i in 0..500 {
+            let mut r = rec(if i % 2 == 0 { "a" } else { "b" }, "changed");
+            r.schema = format!("schema{}", i % 3);
+            r.table = format!("table{}", i % 5);
+            r.key = vec![Some((i % 7).to_string()), None];
+            if i % 11 == 0 { r.kind = EditKind::Delete { row: vec![], doc: None }; }
+            h.push(r);
+        }
+        assert_eq!(h.blocked_entries(), (0..h.len()).map(|i| h.blocked_by_newer(i)).collect::<Vec<_>>());
+        h.remove(400);
+        assert_eq!(h.blocked_entries(), (0..h.len()).map(|i| h.blocked_by_newer(i)).collect::<Vec<_>>());
     }
 }

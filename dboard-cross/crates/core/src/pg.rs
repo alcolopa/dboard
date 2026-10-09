@@ -84,85 +84,98 @@ impl Pg {
 
     pub async fn metadata(&mut self) -> Result<Metadata> {
         const SYS: &str = "n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'";
-        let tables = self
-            .client
-            .query(
-                format!(
-                    "SELECT n.nspname, c.relname, c.relkind::text, c.reltuples::bigint, pg_total_relation_size(c.oid) \
-                     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
-                     WHERE c.relkind IN ('r','p','v','m') AND {SYS} ORDER BY n.nspname, c.relname"
+        let tables = async {
+            self
+                .client
+                .query(
+                    format!(
+                        "SELECT n.nspname, c.relname, c.relkind::text, c.reltuples::bigint, pg_total_relation_size(c.oid) \
+                         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
+                         WHERE c.relkind IN ('r','p','v','m') AND {SYS} ORDER BY n.nspname, c.relname"
+                    )
+                    .as_str(),
+                    &[],
                 )
-                .as_str(),
-                &[],
-            )
-            .await?;
-        let cols = self
-            .client
-            .query(
-                format!(
-                    "SELECT n.nspname, c.relname, a.attname, format_type(a.atttypid, NULL), NOT a.attnotnull, \
-                            coalesce(a.attnum = ANY (i.indkey), false), pg_get_expr(d.adbin, d.adrelid) \
-                     FROM pg_attribute a \
-                     JOIN pg_class c ON c.oid = a.attrelid \
-                     JOIN pg_namespace n ON n.oid = c.relnamespace \
-                     LEFT JOIN pg_index i ON i.indrelid = c.oid AND i.indisprimary \
-                     LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum \
-                     WHERE a.attnum > 0 AND NOT a.attisdropped AND c.relkind IN ('r','p','v','m') AND {SYS} \
-                     ORDER BY n.nspname, c.relname, a.attnum"
+                .await
+        };
+        let cols = async {
+            self
+                .client
+                .query(
+                    format!(
+                        "SELECT n.nspname, c.relname, a.attname, format_type(a.atttypid, NULL), NOT a.attnotnull, \
+                                coalesce(a.attnum = ANY (i.indkey), false), pg_get_expr(d.adbin, d.adrelid) \
+                         FROM pg_attribute a \
+                         JOIN pg_class c ON c.oid = a.attrelid \
+                         JOIN pg_namespace n ON n.oid = c.relnamespace \
+                         LEFT JOIN pg_index i ON i.indrelid = c.oid AND i.indisprimary \
+                         LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum \
+                         WHERE a.attnum > 0 AND NOT a.attisdropped AND c.relkind IN ('r','p','v','m') AND {SYS} \
+                         ORDER BY n.nspname, c.relname, a.attnum"
+                    )
+                    .as_str(),
+                    &[],
                 )
-                .as_str(),
-                &[],
-            )
-            .await?;
-        let fks = self
-            .client
-            .query(
-                "SELECT n.nspname, c.relname, a.attname, fn.nspname || '.' || fc.relname || '(' || fa.attname || ')' \
-                 FROM pg_constraint k \
-                 JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace \
-                 JOIN pg_class fc ON fc.oid = k.confrelid JOIN pg_namespace fn ON fn.oid = fc.relnamespace \
-                 CROSS JOIN LATERAL unnest(k.conkey, k.confkey) AS u(ck, fk) \
-                 JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.ck \
-                 JOIN pg_attribute fa ON fa.attrelid = k.confrelid AND fa.attnum = u.fk \
-                 WHERE k.contype = 'f'",
-                &[],
-            )
-            .await?;
-        let idx = self
-            .client
-            .query("SELECT schemaname, tablename, indexdef FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema')", &[])
-            .await?;
-        let objs = self
-            .client
-            .query(
-                format!(
-                    "SELECT n.nspname, p.proname, p.prokind::text, pg_get_function_identity_arguments(p.oid) \
-                     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
-                     WHERE p.prokind IN ('f','p') AND {SYS} \
-                       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e') \
-                     UNION ALL \
-                     SELECT n.nspname, c.relname, 'S', '' FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
-                     WHERE c.relkind = 'S' AND {SYS} \
-                       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'i') \
-                     UNION ALL \
-                     SELECT n.nspname, t.tgname, 'T', c.relname FROM pg_trigger t \
-                     JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace \
-                     WHERE NOT t.tgisinternal AND {SYS} \
-                     UNION ALL \
-                     SELECT n.nspname, t.typname, 'Y', t.typtype::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace \
-                     WHERE t.typtype IN ('e','d') AND {SYS} \
-                     UNION ALL \
-                     SELECT schemaname, indexname, 'I', tablename FROM pg_indexes \
-                     WHERE schemaname NOT IN ('pg_catalog','information_schema') AND schemaname NOT LIKE 'pg_toast%' \
-                     UNION ALL \
-                     SELECT n.nspname, e.extname, 'X', e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace \
-                     WHERE {SYS} \
-                     ORDER BY 1, 2"
+                .await
+        };
+        let fks = async {
+            self
+                .client
+                .query(
+                    "SELECT n.nspname, c.relname, a.attname, fn.nspname || '.' || fc.relname || '(' || fa.attname || ')' \
+                     FROM pg_constraint k \
+                     JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace \
+                     JOIN pg_class fc ON fc.oid = k.confrelid JOIN pg_namespace fn ON fn.oid = fc.relnamespace \
+                     CROSS JOIN LATERAL unnest(k.conkey, k.confkey) AS u(ck, fk) \
+                     JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.ck \
+                     JOIN pg_attribute fa ON fa.attrelid = k.confrelid AND fa.attnum = u.fk \
+                     WHERE k.contype = 'f'",
+                    &[],
                 )
-                .as_str(),
-                &[],
-            )
-            .await?;
+                .await
+        };
+        let idx = async {
+            self
+                .client
+                .query("SELECT schemaname, tablename, indexdef FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema')", &[])
+                .await
+        };
+        let objs = async {
+            self
+                .client
+                .query(
+                    format!(
+                        "SELECT n.nspname, p.proname, p.prokind::text, pg_get_function_identity_arguments(p.oid) \
+                         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
+                         WHERE p.prokind IN ('f','p') AND {SYS} \
+                           AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e') \
+                         UNION ALL \
+                         SELECT n.nspname, c.relname, 'S', '' FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
+                         WHERE c.relkind = 'S' AND {SYS} \
+                           AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'i') \
+                         UNION ALL \
+                         SELECT n.nspname, t.tgname, 'T', c.relname FROM pg_trigger t \
+                         JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace \
+                         WHERE NOT t.tgisinternal AND {SYS} \
+                         UNION ALL \
+                         SELECT n.nspname, t.typname, 'Y', t.typtype::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace \
+                         WHERE t.typtype IN ('e','d') AND {SYS} \
+                         UNION ALL \
+                         SELECT schemaname, indexname, 'I', tablename FROM pg_indexes \
+                         WHERE schemaname NOT IN ('pg_catalog','information_schema') AND schemaname NOT LIKE 'pg_toast%' \
+                         UNION ALL \
+                         SELECT n.nspname, e.extname, 'X', e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace \
+                         WHERE {SYS} \
+                         ORDER BY 1, 2"
+                    )
+                    .as_str(),
+                    &[],
+                )
+                .await
+        };
+
+        // Independent catalog reads can be pipelined over the same connection.
+        let (tables, cols, fks, idx, objs) = tokio::try_join!(tables, cols, fks, idx, objs)?;
 
         let mut out: Vec<Table> = tables
             .iter()
@@ -249,13 +262,15 @@ impl Pg {
     /// `SHOW`, `EXPLAIN`, `RETURNING` and multi-statement input all work. Returns the last
     /// result set, or the affected-row count if none returned rows.
     pub async fn query(&mut self, sql_text: &str) -> Result<Rows> {
+        use futures_util::TryStreamExt;
         use tokio_postgres::SimpleQueryMessage as M;
         let started = Instant::now();
-        let msgs = self.client.simple_query(sql_text).await?;
+        let msgs = self.client.simple_query_raw(sql_text).await?;
+        futures_util::pin_mut!(msgs);
         let mut columns: Vec<String> = Vec::new();
         let mut rows: Vec<Vec<Cell>> = Vec::new();
         let mut affected: Option<u64> = None;
-        for m in msgs {
+        while let Some(m) = msgs.try_next().await? {
             match m {
                 M::RowDescription(d) => {
                     columns = d.iter().map(|c| c.name().to_string()).collect();
@@ -455,6 +470,37 @@ impl Pg {
                 UserInfo { name: r.get(0), origin: String::new(), summary: tags.join(" · ") }
             })
             .collect())
+    }
+
+    pub async fn user_access(&mut self, u: &UserInfo) -> Result<UserAccess> {
+        let actor = self.client.query_one("SELECT rolsuper, current_user = $1 FROM pg_roles WHERE rolname = current_user", &[&u.name]).await?;
+        // Superusers can replace all database grants; ownership/CREATEROLE alone cannot.
+        let manage: bool = actor.get(0);
+        let rows = self.client.query("SELECT n.nspname, c.relname, has_table_privilege($1,c.oid,'SELECT'), has_table_privilege($1,c.oid,'INSERT') AND has_table_privilege($1,c.oid,'UPDATE') AND has_table_privilege($1,c.oid,'DELETE'), has_table_privilege($1,c.oid,'TRUNCATE') AND has_table_privilege($1,c.oid,'REFERENCES') AND has_table_privilege($1,c.oid,'TRIGGER'), has_table_privilege($1,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' ORDER BY 1,2", &[&u.name]).await?;
+        let tables: Vec<_> = rows.iter().map(|r| {
+            let read: bool = r.get(2); let write: bool = r.get(3); let full: bool = r.get(4); let any: bool = r.get(5);
+            let level = if read && write && full { 3 } else if read && write && !full { 2 } else if read && !any { 1 } else if !read && !any { 0 } else { -1 };
+            (r.get::<_,String>(0), r.get::<_,String>(1), level)
+        }).collect();
+        let db = self.client.query_one("SELECT has_database_privilege($1,current_database(),'CONNECT'), has_database_privilege($1,current_database(),'CREATE')", &[&u.name]).await?;
+        let level = if tables.is_empty() { -1 } else { let l=tables[0].2; if tables.iter().all(|t|t.2==l) && (l==0 || db.get::<_,bool>(0)) && (l!=3 || db.get::<_,bool>(1)) { l } else { -1 } };
+        Ok(UserAccess { level, tables, manage, password: manage || actor.get::<_,bool>(1) })
+    }
+
+    pub async fn set_table_access(&mut self, u: &UserInfo, schema: &str, table: &str, level: AccessLevel) -> Result<()> {
+        let t = format!("{}.{}", quote_ident(schema), quote_ident(table));
+        let user = quote_ident(&u.name);
+        let privs = match level { AccessLevel::None => None, AccessLevel::ReadOnly => Some("SELECT"), AccessLevel::ReadWrite => Some("SELECT, INSERT, UPDATE, DELETE"), AccessLevel::Full => Some("ALL PRIVILEGES") };
+        let mut sql = format!("REVOKE ALL ON TABLE {t} FROM {user};");
+        if let Some(p) = privs {
+            let db = self.current_database().await?;
+            sql.push_str(&format!("GRANT CONNECT ON DATABASE {} TO {user}; GRANT USAGE ON SCHEMA {} TO {user}; GRANT {p} ON TABLE {t} TO {user};", quote_ident(&db), quote_ident(schema)));
+        }
+        if let Err(e) = self.client.batch_execute(&format!("BEGIN; {sql} COMMIT;")).await {
+            let _ = self.client.batch_execute("ROLLBACK").await;
+            return Err(e.into());
+        }
+        Ok(())
     }
 
     pub async fn user_grants(&mut self, u: &UserInfo) -> Result<Vec<String>> {

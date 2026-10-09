@@ -17,22 +17,23 @@ impl Worker {
 
     /// Write one cell. On success the grid shows the new value; on failure it is left unchanged.
     pub(crate) async fn try_edit_cell(&mut self, r: usize, c: usize, text: String, null: bool) -> Result<bool, String> {
-        let Some(tab) = self.active_tab().cloned() else { return Ok(false) };
+        let Some(tab) = self.active_tab() else { return Ok(false) };
         if self.read_only() {
             return Err("This connection is read-only.".into());
         }
         if tab.kind != Kind::Table || !tab.editable {
             return Err("This table cannot be edited.".into());
         }
-        if !(tab.stage && !self.is_mongo()) && !self.hook_gate(&format!("UPDATE {}.{} SET {}", tab.schema, tab.name, tab.cols.get(c).map(|c| c.name.as_str()).unwrap_or(""))) {
+        let (Some(col), Some(row)) = (tab.cols.get(c).cloned(), tab.rows.get(r).cloned()) else { return Ok(false) };
+        let (schema, name, staged) = (tab.schema.clone(), tab.name.clone(), tab.stage && !self.is_mongo());
+        if !staged && !self.hook_gate(&format!("UPDATE {}.{} SET {}", schema, name, col.name)) {
             return Ok(false);
         }
-        let (Some(col), Some(row)) = (tab.cols.get(c).cloned(), tab.rows.get(r).cloned()) else { return Ok(false) };
         let new: Cell = if null { None } else { Some(text) };
         if row.get(c) == Some(&new) {
             return Ok(false); // unchanged
         }
-        if tab.stage && !self.is_mongo() {
+        if staged {
             self.stage_edit(r, c, new);
             return Ok(true);
         }
@@ -42,13 +43,13 @@ impl Worker {
         self.set_cell(r, c, new.clone(), 1);
         self.flashed.push((r, c));
         let res = match self.conn.as_mut() {
-            Some(conn) => conn.edit_cell(&tab.schema, &tab.name, &row, &col.name, new.clone()).await,
+            Some(conn) => conn.edit_cell(&schema, &name, &row, &col.name, new.clone()).await,
             None => return Ok(false),
         };
         match res {
             Ok(()) => {
                 self.set_cell(r, c, new, 2);
-                self.log_activity(None, &format!("UPDATE {}.{} SET {}", tab.schema, tab.name, col.name));
+                self.log_activity(None, &format!("UPDATE {}.{} SET {}", schema, name, col.name));
                 self.push_inspector();
                 self.schedule_clear();
                 Ok(true)
@@ -181,7 +182,7 @@ impl Worker {
                 self.edit_cell(r, c, value, false).await;
             }
             JsonTarget::Doc(row) => {
-                let Some(tab) = self.active_tab().cloned() else { return };
+                let Some(tab) = self.active_tab().map(Tab::request_snapshot) else { return };
                 let res = match self.conn.as_mut() {
                     Some(conn) => conn.replace_document(&tab.schema, &tab.name, &row, &text).await,
                     None => return,
@@ -200,7 +201,7 @@ impl Worker {
                 }
             }
             JsonTarget::NewDoc => {
-                let Some(tab) = self.active_tab().cloned() else { return };
+                let Some(tab) = self.active_tab().map(Tab::request_snapshot) else { return };
                 let res = match self.conn.as_mut() {
                     Some(conn) => conn.insert_document(&tab.schema, &tab.name, &text).await,
                     None => return,
@@ -225,7 +226,7 @@ impl Worker {
         if !self.is_mongo() {
             return;
         }
-        let (Some(tab), Some(row)) = (self.active_tab().cloned(), self.active_tab().and_then(|t| t.rows.get(r).cloned())) else { return };
+        let (Some(tab), Some(row)) = (self.active_tab().map(Tab::request_snapshot), self.active_tab().and_then(|t| t.rows.get(r).cloned())) else { return };
         let res = match self.conn.as_mut() {
             Some(conn) => conn.document_json(&tab.schema, &tab.name, &row).await,
             None => return,
@@ -249,7 +250,7 @@ impl Worker {
         if self.refuse_if_read_only() {
             return;
         }
-        let Some(tab) = self.active_tab().cloned() else { return };
+        let Some(tab) = self.active_tab().map(Tab::request_snapshot) else { return };
         if tab.kind != Kind::Table {
             return;
         }
@@ -290,7 +291,7 @@ impl Worker {
 
     /// Jump to the last page. SQL engines count the rows exactly; MongoDB uses its estimate.
     pub(crate) async fn last_page(&mut self) {
-        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).map(Tab::request_snapshot) else { return };
         let dialect = self.dialect();
         let limit = tab.page.limit.max(1);
         let total: Option<i64> = if self.is_mongo() {
@@ -321,7 +322,7 @@ impl Worker {
         if self.refuse_if_read_only() {
             return;
         }
-        let Some(tab) = self.active_tab().cloned() else { return };
+        let Some(tab) = self.active_tab().map(Tab::request_snapshot) else { return };
         let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
         let vals: Vec<(String, String)> = table
             .columns
@@ -368,7 +369,7 @@ impl Worker {
             Some(Pending::Query(sql)) => self.run_sql(sql).await,
             Some(Pending::Explain(sql, a)) => self.run_explain(sql, a).await,
             Some(Pending::DeleteRow(r)) => {
-                let (Some(tab), Some(row)) = (self.active_tab().cloned(), self.active_tab().and_then(|t| t.rows.get(r).cloned())) else { return };
+                let (Some(tab), Some(row)) = (self.active_tab().map(Tab::request_snapshot), self.active_tab().and_then(|t| t.rows.get(r).cloned())) else { return };
                 if !self.hook_gate(&format!("DELETE FROM {}.{}", tab.schema, tab.name)) {
                     return;
                 }

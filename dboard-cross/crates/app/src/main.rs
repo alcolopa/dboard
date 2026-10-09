@@ -20,6 +20,34 @@ use slint::ComponentHandle;
 use tokio::sync::mpsc::unbounded_channel;
 use worker::{Cmd, Worker};
 
+struct SyntaxCache {
+    text: slint::SharedString,
+    analysis: highlight::Analysis,
+    tokens: Option<Vec<HlToken>>,
+}
+
+impl SyntaxCache {
+    fn update(&mut self, text: slint::SharedString) {
+        if self.text != text {
+            self.analysis = highlight::Analysis::new(text.as_str());
+            self.text = text;
+            self.tokens = None;
+        }
+    }
+
+    fn visible_tokens(&mut self, first: i32, last: i32) -> Vec<HlToken> {
+        if self.tokens.is_none() {
+            self.tokens = Some(self.analysis.tokens().into_iter()
+                .map(|t| HlToken { line: t.line as i32, col: t.col as i32, text: t.text.into(), kind: t.kind as i32 })
+                .collect());
+        }
+        let tokens = self.tokens.as_ref().unwrap();
+        let start = tokens.partition_point(|t| t.line < first);
+        let end = tokens.partition_point(|t| t.line <= last);
+        tokens[start..end.max(start)].to_vec()
+    }
+}
+
 fn main() {
     let app = App::new().expect("create window");
     let (tx, mut rx) = unbounded_channel::<Cmd>();
@@ -34,21 +62,33 @@ fn main() {
     }
 
     // Editor colouring runs synchronously on the UI thread so text never flashes invisible.
-    st.on_highlight(|text| {
-        let toks: Vec<HlToken> = highlight::tokens(text.as_str())
-            .into_iter()
-            .map(|t| HlToken { line: t.line as i32, col: t.col as i32, text: t.text.into(), kind: t.kind as i32 })
-            .collect();
-        slint::ModelRc::new(slint::VecModel::from(toks))
+    let syntax = std::rc::Rc::new(std::cell::RefCell::new(SyntaxCache {
+        text: "".into(), analysis: highlight::Analysis::new(""), tokens: None,
+    }));
+    let highlight_syntax = syntax.clone();
+    st.on_highlight(move |text, first, last| {
+        let mut cache = highlight_syntax.borrow_mut();
+        cache.update(text);
+        slint::ModelRc::new(slint::VecModel::from(cache.visible_tokens(first, last)))
     });
-    st.on_bracket_match(|text, off| {
-        let v: Vec<i32> = highlight::match_bracket(text.as_str(), off.max(0) as usize)
+    st.on_bracket_match(move |text, off| {
+        let mut cache = syntax.borrow_mut();
+        cache.update(text);
+        let v: Vec<i32> = cache.analysis.match_bracket(off.max(0) as usize)
             .map(|[a, b]| vec![a.0 as i32, a.1 as i32, b.0 as i32, b.1 as i32])
             .unwrap_or_default();
         slint::ModelRc::new(slint::VecModel::from(v))
     });
     st.on_count_lines(|t| t.as_str().split('\n').count() as i32);
-    st.on_gutter(|n| (1..=n.max(1)).map(|i| i.to_string()).collect::<Vec<_>>().join("\n").into());
+    st.on_gutter(|n| {
+        use std::fmt::Write;
+        let mut gutter = String::new();
+        for i in 1..=n.max(1) {
+            if i > 1 { gutter.push('\n'); }
+            let _ = write!(gutter, "{i}");
+        }
+        gutter.into()
+    });
     wire!(on_vars_edited, |i, v| Cmd::VarsEdited(i.max(0) as usize, v.to_string()));
     wire!(on_vars_submit, | | Cmd::VarsSubmit);
     wire!(on_vars_cancel, | | Cmd::VarsCancel);
@@ -73,6 +113,7 @@ fn main() {
     wire!(on_col_filter, |c, t| Cmd::ColFilter(c.max(0) as usize, t.to_string()));
     wire!(on_goto_fk, |r, c| Cmd::GotoFk(r.max(0) as usize, c.max(0) as usize));
     wire!(on_open_er, | | Cmd::OpenEr);
+    wire!(on_export_er, | | Cmd::ExportEr);
     wire!(on_er_open, |s, n| Cmd::ErOpen(s.to_string(), n.to_string()));
     wire!(on_check_updates, | | Cmd::CheckUpdates);
     wire!(on_open_link, |u| Cmd::OpenLink(u.to_string()));
@@ -109,9 +150,10 @@ fn main() {
     wire!(on_editrow_submit, | | Cmd::EditRowSubmit);
     wire!(on_editrow_cancel, | | Cmd::EditRowCancel);
     wire!(on_open_users, | | Cmd::OpenUsers);
-    wire!(on_user_select, |i| Cmd::UserSelect(i.max(0) as usize));
-    wire!(on_user_create, |n, h, p, l, a| Cmd::UserCreate { name: n.to_string(), host: h.to_string(), password: p.to_string(), level: l, admin: a });
-    wire!(on_user_set_level, |i, l| Cmd::UserSetLevel(i.max(0) as usize, l));
+    wire!(on_user_select, |i, d| Cmd::UserSelect(i.max(0) as usize, d.to_string()));
+    wire!(on_user_create, |n, h, p, l, a, d| Cmd::UserCreate { name: n.to_string(), host: h.to_string(), password: p.to_string(), level: l, admin: a, database: d.to_string() });
+    wire!(on_user_set_level, |i, l, d| Cmd::UserSetLevel(i.max(0) as usize, l, d.to_string()));
+    wire!(on_user_set_table, |i, l, d, t| Cmd::UserSetTable(i.max(0) as usize, l, d.to_string(), t.max(0) as usize));
     wire!(on_user_password, |i, p| Cmd::UserPassword(i.max(0) as usize, p.to_string()));
     wire!(on_user_drop, |i| Cmd::UserDrop(i.max(0) as usize));
     wire!(on_users_close, | | Cmd::UsersClose);
@@ -249,7 +291,14 @@ fn main() {
                 });
             }
             w.restore_sessions().await;
-            while let Some(cmd) = rx.recv().await {
+            let mut pending = None;
+            loop {
+                let next = match pending.take() { Some(cmd) => Some(cmd), None => rx.recv().await };
+                let Some(mut cmd) = next else { break };
+                while let Ok(next) = rx.try_recv() {
+                    if cmd.superseded_by(&next) { cmd = next; }
+                    else { pending = Some(next); break; }
+                }
                 w.handle(cmd).await;
             }
         });
@@ -261,6 +310,73 @@ fn main() {
 #[cfg(test)]
 mod ui_tests {
     use super::*;
+
+    #[test]
+    fn syntax_viewport_limits_items_and_invalidates_after_editing() {
+        let mut cache = SyntaxCache { text: "".into(), analysis: highlight::Analysis::new(""), tokens: None };
+        cache.update("SELECT 1\n".repeat(10_000).into());
+        let visible = cache.visible_tokens(9000, 9002);
+        assert_eq!(visible.len(), 6);
+        assert!(visible.iter().all(|t| (9000..=9002).contains(&t.line)));
+        assert!(cache.visible_tokens(20_000, 20_010).is_empty());
+        cache.update("UPDATE t".into());
+        assert!(cache.visible_tokens(9000, 9002).is_empty());
+        assert_eq!(cache.visible_tokens(0, 0)[0].text.as_str(), "UPDATE");
+    }
+
+    #[test]
+    fn lazy_grid_editor_focuses_commits_and_can_be_reopened() {
+        use slint::{ModelRc, VecModel};
+        use slint::platform::{Key, WindowEvent};
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().unwrap();
+        app.window().set_size(slint::PhysicalSize::new(1200, 800));
+        let st = app.global::<AppState>();
+        st.set_connected(true);
+        st.set_tab_kind(0);
+        st.set_editable(true);
+        st.set_cols(ModelRc::new(VecModel::from(vec![ColInfo { name: "name".into(), ..Default::default() }])));
+        st.set_col_widths(ModelRc::new(VecModel::from(vec![200.0])));
+        st.set_grid_width(200.0);
+        let row = ModelRc::new(VecModel::from(vec![GridCell { text: "original".into(), ..Default::default() }]));
+        st.set_rows(ModelRc::new(VecModel::from(vec![row.clone()])));
+        let saved = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = saved.clone();
+        st.on_edit_cell(move |r, c, text, null| sink.borrow_mut().push((r, c, text.to_string(), null)));
+        app.show().unwrap();
+        slint::platform::update_timers_and_animations();
+        // Requesting an edit must create the previously absent input and select its value.
+        for value in ["first", "second"] {
+            st.invoke_request_edit(0, 0);
+            slint::platform::update_timers_and_animations();
+            for c in value.chars() {
+                let text: slint::SharedString = c.to_string().into();
+                app.window().dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+                app.window().dispatch_event(WindowEvent::KeyReleased { text });
+            }
+            app.window().dispatch_event(WindowEvent::KeyPressed { text: Key::Return.into() });
+            app.window().dispatch_event(WindowEvent::KeyReleased { text: Key::Return.into() });
+            assert_eq!(saved.borrow().last(), Some(&(0, 0, value.into(), false)));
+            slint::Model::set_row_data(&row, 0, GridCell { text: value.into(), ..Default::default() });
+        }
+        assert_eq!(saved.borrow().len(), 2, "each edit commits exactly once");
+    }
+
+    #[test]
+    fn users_dialog_supports_database_selection_and_create_view() {
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().expect("window builds");
+        let st = app.global::<AppState>();
+        assert_eq!(st.get_user_db_index(), -1);
+        st.set_user_databases(slint::ModelRc::new(slint::VecModel::from(vec!["reports".into(), "sales".into()])));
+        st.set_users_open(true);
+        st.set_user_db_index(1);
+        st.set_user_create_open(true);
+        app.window().show().unwrap();
+        assert_eq!(slint::Model::row_data(&st.get_user_databases(), st.get_user_db_index() as usize).unwrap(), "sales");
+        assert!(st.get_user_create_open());
+        app.window().hide().unwrap();
+    }
 
     /// The whole window builds headlessly and the state bindings the worker relies on behave.
     #[test]
@@ -295,6 +411,26 @@ mod ui_tests {
         app.window().dispatch_event(WindowEvent::KeyPressed { text: Key::Escape.into() });
         app.window().dispatch_event(WindowEvent::KeyReleased { text: Key::Escape.into() });
         assert!(closed.get(), "Escape must dismiss the dialog");
+    }
+
+    #[test]
+    fn edit_menu_routes_selection_undo_and_redo_to_focused_text() {
+        i_slint_backend_testing::init_no_event_loop();
+        let app = App::new().unwrap();
+        let st = app.global::<AppState>();
+        st.set_text_focus(1);
+        for kind in [3, 4, 5] {
+            let before = st.get_edit_seq();
+            st.invoke_edit(kind);
+            assert_eq!(st.get_edit_kind(), kind);
+            assert_eq!(st.get_edit_seq(), before + 1);
+        }
+        st.set_text_focus(0);
+        let undone = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = undone.clone();
+        st.on_undo(move || flag.set(true));
+        st.invoke_edit(4);
+        assert!(undone.get());
     }
 
     #[test]

@@ -53,8 +53,8 @@ No web view, no runtime: one native binary per platform.
   saved queries in folders. MongoDB: `db.coll.find({...}).sort({...}).limit(n)`, `aggregate([...])`, stage templates,
   whole-document JSON editor.
 - **Safety**: destructive statements on Production/Staging require typing `CONFIRM`.
-- **Also**: structure + DDL view, routine definitions, inspector (activity log, changes, metadata; **pin** it to dock it
-  and keep it open across restarts, otherwise it floats over the workspace and closes when you click away),
+- **Also**: structure + DDL view, routine definitions, inspector (activity log, changes, metadata, query history and saved queries; **pin** it to
+  keep it open across restarts, otherwise it closes when you click away; both modes reserve workspace space),
   Ctrl+K command palette, Ctrl+P object/column search, CSV / JSON / SQL export of results, light and dark themes.
 
 Keyboard (`Cmd` replaces `Ctrl` on macOS; the toolkit maps it, so the same shortcuts work natively everywhere):
@@ -107,6 +107,7 @@ Linux build dependencies (Debian/Ubuntu): `libfontconfig1-dev libxkbcommon-dev l
 - **Safety**: Production banner, read-only connections (the session itself is read-only on PostgreSQL / MySQL / SQLite), staged edits you review as old → new and apply in one transaction, transaction mode (Begin / Commit / Rollback), Stop button and a statement timeout (View → Query Timeout), and a local audit log of every write (View → Audit Log, stored in `audit.log` in the config folder).
 - **Connections**: several open at once as tabs (reopened on launch), grouped by environment, SSH tunnel through your system `ssh`, TLS CA / client certificates, paste a `postgres://` / `mysql://` URL, SQLite files.
 - **Password references**: the password field accepts `env:NAME`, `op://vault/item/field` (1Password CLI), `aws-rds-iam[:region]` (AWS CLI) or `gcloud-sql-iam` (gcloud CLI), resolved each time you connect.
+- **ER diagrams**: use **Export diagram…** in the diagram footer to save the complete canvas as an SVG image.
 - **Data**: import wizard with column mapping, preview and an error report; generate sample rows (database menu); pin a result and compare against it; export to CSV / JSON / SQL / Excel; ER diagram; schema diff (right-click a connection tab); plan view that flags the slowest node.
 - **Backups**: File → Back Up Database Now, and File → Automatic Backups (every hour / 6 h / daily while dboard is open, keeping the newest 3 / 7 / 30) into `Downloads/dboard-backups/<connection>/`.
 - **Hooks**: Help → Edit Hooks File… opens `hooks.json` in the config folder:
@@ -117,3 +118,20 @@ Linux build dependencies (Debian/Ubuntu): `libfontconfig1-dev libxkbcommon-dev l
 
   Events: `before_write` (a non-zero exit blocks the write and its output is shown), `after_write`, `on_connect`, `on_disconnect`. The command gets a JSON object on stdin (`event`, `connection`, `environment`, `database`, `statement`) and the same values as `DBOARD_*` environment variables. A hooks file that does not parse blocks writes rather than silently disabling your policy.
 - **macOS releases** are signed and notarized when the repository has the secrets listed in `.github/workflows/release.yml`.
+
+### Local macOS builds and Keychain access
+
+Use a persistent local signing identity to keep Keychain authorization across updates:
+
+```sh
+packaging/macos/setup-local-signing.sh # once: private key is stored in Keychain
+packaging/macos/run-local.sh           # build and reopen the signed app
+```
+
+The local app stays at `target/local/dboard.app` and uses `com.alcolopa.dboard`.
+When switching from an ad-hoc build, macOS may ask once for each existing saved
+password; choose **Always Allow** to authorize the new signed identity. Keychain
+can still prompt when it is locked or its access policy changes. Launch subsequent
+builds through `run-local.sh`; `cargo run` launches an ad-hoc binary with a different
+identity. The local certificate is for development and does not provide Developer ID
+notarization. The bundler automatically reuses it when no release identity is supplied.

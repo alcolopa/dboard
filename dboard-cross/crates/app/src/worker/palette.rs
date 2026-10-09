@@ -20,22 +20,28 @@ pub(crate) const COMMANDS: [(&str, &str, &str); 14] = [
     ("export-db", "Export database…", ""),
     ("import-db", "Import database…", ""),
     ("import-rows", "Import rows into the open table…", ""),
-    ("history", "Show history, saved queries and changes", ""),
+    ("history", "Show query history and saved queries", ""),
 ];
+
+fn add_palette_candidate(scored: &mut Vec<(i32, PaletteItem, PaletteAction)>, score: Option<i32>, make: impl FnOnce() -> (String, String, &'static str, PaletteAction)) {
+    if let Some(s) = score {
+        let pos = scored.partition_point(|(old, _, _)| *old >= s);
+        if pos >= 50 { return; }
+        let (title, subtitle, kind, a) = make();
+        scored.insert(pos, (s, PaletteItem { title: title.into(), subtitle: subtitle.into(), kind: kind.into() }, a));
+        scored.truncate(50);
+    }
+}
 
 impl Worker {
     pub(crate) fn build_palette(&mut self, q: &str) {
         let Some(conn) = &self.conn else { return };
-        let mut scored: Vec<(i32, PaletteItem, PaletteAction)> = Vec::new();
+        let query = q.to_lowercase();
+        let mut scored: Vec<(i32, PaletteItem, PaletteAction)> = Vec::with_capacity(51);
         // Stable order for equal scores (e.g. an empty query): keep insertion order.
-        let mut add = |score: Option<i32>, title: String, subtitle: String, kind: &str, a: PaletteAction| {
-            if let Some(s) = score {
-                scored.push((s, PaletteItem { title: title.into(), subtitle: subtitle.into(), kind: kind.into() }, a));
-            }
-        };
         if !self.palette_search {
             for (id, title, key) in COMMANDS {
-                add(suggest::fuzzy(q, title), title.to_string(), key.to_string(), "command", PaletteAction::Command(id));
+                add_palette_candidate(&mut scored, suggest::fuzzy_lower(&query, title), || (title.to_string(), key.to_string(), "command", PaletteAction::Command(id)));
             }
         }
         for t in &conn.metadata.tables {
@@ -46,29 +52,30 @@ impl Worker {
                 TableKind::MaterializedView => "materialized view",
                 TableKind::Collection => "collection",
             };
-            add(suggest::fuzzy(q, &label), label.clone(), t.estimated_rows.map(|n| format!("~{n} rows")).unwrap_or_default(), kind, PaletteAction::OpenTable(t.schema.clone(), t.name.clone()));
+            add_palette_candidate(&mut scored, suggest::fuzzy_lower(&query, &label), || (label.clone(), t.estimated_rows.map(|n| format!("~{n} rows")).unwrap_or_default(), kind, PaletteAction::OpenTable(t.schema.clone(), t.name.clone())));
             if self.palette_search && !q.is_empty() {
                 for c in &t.columns {
                     let full = format!("{}.{}", t.name, c.name);
-                    add(suggest::fuzzy(q, &full), full, format!("{} · {}", t.full_name(), c.type_name), "column", PaletteAction::Column(t.schema.clone(), t.name.clone()));
+                    add_palette_candidate(&mut scored, suggest::fuzzy_lower(&query, &full), || (full.clone(), format!("{} · {}", label, c.type_name), "column", PaletteAction::Column(t.schema.clone(), t.name.clone())));
                 }
             }
         }
         for o in &conn.metadata.objects {
             let label = format!("{}.{}", o.schema, o.name);
-            let sub = if o.detail.is_empty() || o.kind == ObjectKind::Type { String::new() } else { o.detail.clone() };
-            add(suggest::fuzzy(q, &label), label, sub, o.kind.label(), PaletteAction::Object(o.clone()));
+            add_palette_candidate(&mut scored, suggest::fuzzy_lower(&query, &label), || {
+                let sub = if o.detail.is_empty() || o.kind == ObjectKind::Type { String::new() } else { o.detail.clone() };
+                (label.clone(), sub, o.kind.label(), PaletteAction::Object(o.clone()))
+            });
         }
         if !self.palette_search {
             for (i, s) in self.saved.iter().enumerate() {
-                add(suggest::fuzzy(q, &s.name), s.name.clone(), s.folder.clone(), "saved query", PaletteAction::Saved(i));
+                add_palette_candidate(&mut scored, suggest::fuzzy_lower(&query, &s.name), || (s.name.clone(), s.folder.clone(), "saved query", PaletteAction::Saved(i)));
             }
             for c in &self.connections {
-                add(suggest::fuzzy(q, &c.display_name()), format!("Switch to {}", c.display_name()), c.host.clone(), "connection", PaletteAction::Connection(c.id.clone()));
+                let name = c.display_name();
+                add_palette_candidate(&mut scored, suggest::fuzzy_lower(&query, &name), || (format!("Switch to {name}"), c.host.clone(), "connection", PaletteAction::Connection(c.id.clone())));
             }
         }
-        scored.sort_by(|a, b| b.0.cmp(&a.0)); // stable: ties keep insertion order
-        scored.truncate(50);
         let (items, actions): (Vec<_>, Vec<_>) = scored.into_iter().map(|(_, i, a)| (i, a)).unzip();
         self.palette = actions;
         let parts: Vec<(String, String, String)> = items.into_iter().map(|i| (i.title.to_string(), i.subtitle.to_string(), i.kind.to_string())).collect();
@@ -115,7 +122,10 @@ impl Worker {
                 "export-db" => self.open_transfer(0),
                 "import-db" => self.open_transfer(1),
                 "import-rows" => self.open_transfer(2),
-                "history" => ui(&self.w, |st| st.set_drawer_open(true)),
+                "history" => {
+                    ui(&self.w, |st| st.set_inspector_tab(3));
+                    self.inspector_changed(true, self.settings.inspector_pinned);
+                }
                 _ => {}
             },
             PaletteAction::OpenTable(s, n) | PaletteAction::Column(s, n) => self.open_table(&s, &n).await,
@@ -160,13 +170,14 @@ impl Worker {
     pub(crate) fn push_inspector(&self) {
         let Some(conn) = &self.conn else { return };
         let entries = conn.history.entries();
+        let blocked = conn.history.blocked_entries();
         let show = |v: &Cell| v.as_deref().map(|s| one_line(s).chars().take(24).collect::<String>()).unwrap_or_else(|| "NULL".into());
         let log: Vec<(String, String, bool)> = entries
             .iter()
             .enumerate()
             .rev()
             .map(|(i, r)| {
-                let can_undo = !conn.history.blocked_by_newer(i);
+                let can_undo = !blocked[i];
                 match &r.kind {
                     EditKind::Update { column, old, new } => (
                         format!("{}.{}   {} → {}", r.table, column, show(old), show(new)),
@@ -291,6 +302,28 @@ impl Worker {
         }
         let n = self.connections.len();
         ui(&self.w, move |st| st.set_set_info(format!("Removed saved passwords for {n} connection(s).").into()));
+    }
+}
+
+#[cfg(test)]
+mod ranking_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_palette_matches_stable_full_sort_and_skips_unused_items() {
+        let mut scored = Vec::new();
+        let mut expected = Vec::new();
+        for i in 0..2000 {
+            let score = (i * 17) % 23;
+            expected.push((score, i.to_string()));
+            add_palette_candidate(&mut scored, Some(score), || (i.to_string(), String::new(), "command", PaletteAction::Command("refresh")));
+        }
+        expected.sort_by(|a, b| b.0.cmp(&a.0));
+        expected.truncate(50);
+        let actual: Vec<_> = scored.iter().map(|(score, item, _)| (*score, item.title.to_string())).collect();
+        assert_eq!(actual, expected);
+        add_palette_candidate(&mut scored, None, || panic!("nonmatches must not allocate items"));
+        add_palette_candidate(&mut scored, Some(-1), || panic!("results below the top 50 must not allocate items"));
     }
 }
 

@@ -364,7 +364,7 @@ impl Worker {
         if self.xfer_mode != 2 || path.is_empty() || self.is_mongo() {
             return;
         }
-        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).map(Tab::request_snapshot) else { return };
         let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
         let all_cols: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
         let records = match Self::read_records(&path, header, &all_cols) {
@@ -416,7 +416,7 @@ impl Worker {
     }
 
     pub(crate) async fn run_import_rows(&mut self, path: String, header: bool) {
-        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else { return };
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).map(Tab::request_snapshot) else { return };
         let Some(table) = self.conn.as_ref().and_then(|c| c.table(&tab.schema, &tab.name)).cloned() else { return };
         let all_cols: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
         if !self.hook_gate(&format!("IMPORT rows into {}.{} from {path}", tab.schema, tab.name)) {

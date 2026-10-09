@@ -41,6 +41,7 @@ pub enum Cmd {
     ColFilter(usize, String),
     GotoFk(usize, usize),
     OpenEr,
+    ExportEr,
     ErOpen(String, String),
     CheckUpdates,
     OpenLink(String),
@@ -154,9 +155,10 @@ pub enum Cmd {
     ClearCredentials,
     // users & access
     OpenUsers,
-    UserSelect(usize),
-    UserCreate { name: String, host: String, password: String, level: i32, admin: bool },
-    UserSetLevel(usize, i32),
+    UserSelect(usize, String),
+    UserCreate { name: String, host: String, password: String, level: i32, admin: bool, database: String },
+    UserSetLevel(usize, i32, String),
+    UserSetTable(usize, i32, String, usize),
     UserPassword(usize, String),
     UserDrop(usize),
     UsersClose,
@@ -172,6 +174,21 @@ pub enum Cmd {
     // internal
     ClearFlash,
     ClearToast(u64),
+}
+
+impl Cmd {
+    /// Only adjacent transient updates can replace one another. Actions and writes
+    /// remain ordering barriers so edits cannot cross a tab or session switch.
+    pub(crate) fn superseded_by(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::QueryEdited(_), Self::QueryEdited(_))
+            | (Self::FilterTree(_), Self::FilterTree(_))
+            | (Self::PaletteChanged(_), Self::PaletteChanged(_))
+            | (Self::ConnFilter(_), Self::ConnFilter(_)) => true,
+            (Self::ColResized(a, _), Self::ColResized(b, _)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 // -------------------------------------------------------------------------------------------
@@ -275,6 +292,27 @@ pub(crate) struct ResultSet {
 }
 
 impl Tab {
+    /// Request context without cloning loaded rows, saved results or staging history.
+    fn request_snapshot(&self) -> Self {
+        Self {
+            schema: self.schema.clone(), name: self.name.clone(), obj: self.obj.clone(),
+            page: self.page.clone(), editable: self.editable, stage: self.stage,
+            ..Self::new(self.kind, self.title.clone(), self.page.limit)
+        }
+    }
+
+    /// Only the data used to display a tab crosses the UI boundary.
+    fn display_snapshot(&self) -> Self {
+        Self {
+            filter_text: self.filter_text.clone(), query_text: self.query_text.clone(),
+            cols: self.cols.clone(), widths: self.widths.clone(), rows: self.rows.clone(),
+            banner: self.banner.clone(), banner_err: self.banner_err,
+            page_info: self.page_info.clone(), timing: self.timing.clone(), ddl: self.ddl.clone(),
+            result_idx: self.result_idx, er: self.er.clone(), col_filters: self.col_filters.clone(),
+            ..self.request_snapshot()
+        }
+    }
+
     fn new(kind: Kind, title: impl Into<String>, page_size: i64) -> Self {
         Self {
             kind,
@@ -380,8 +418,25 @@ fn when(secs: u64) -> String {
 }
 
 fn one_line(s: &str) -> String {
-    let l: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    if l.chars().count() > 120 { format!("{}…", l.chars().take(120).collect::<String>()) } else { l }
+    let mut out = String::with_capacity(123);
+    let mut n = 0;
+    let mut space = false;
+    for c in s.chars() {
+        if c.is_whitespace() {
+            space = n > 0;
+            continue;
+        }
+        if space {
+            if n == 120 { out.push('…'); return out; }
+            out.push(' ');
+            n += 1;
+            space = false;
+        }
+        if n == 120 { out.push('…'); return out; }
+        out.push(c);
+        n += 1;
+    }
+    out
 }
 
 fn downloads_dir() -> std::path::PathBuf {
@@ -688,10 +743,20 @@ impl Worker {
             None => format!("{}  {}", hms(), one_line(what)),
         };
         self.audit(what);
-        self.activity.insert(0, line);
+        self.activity.insert(0, line.clone());
         self.activity.truncate(500);
-        let a = self.activity.clone();
-        ui(&self.w, move |st| st.set_activity(strs(a)));
+        ui(&self.w, move |st| {
+            use slint::Model;
+            let activity = st.get_activity();
+            if let Some(model) = activity.as_any().downcast_ref::<VecModel<SharedString>>() {
+                model.insert(0, line.into());
+                while model.row_count() > 500 { model.remove(model.row_count() - 1); }
+            } else {
+                let mut rows: Vec<_> = activity.iter().take(499).collect();
+                rows.insert(0, line.into());
+                st.set_activity(ModelRc::new(VecModel::from(rows)));
+            }
+        });
     }
 
     // ---------------------------------------------------------------------------------------
@@ -752,15 +817,12 @@ impl Worker {
 
     fn push_connections(&self) {
         let sel = self.form_id_hint();
-        let mut list = self.connections.clone();
-        let q = self.conn_filter.clone();
-        if !q.is_empty() {
-            list.retain(|c| format!("{} {} {}", c.display_name(), c.host, c.environment.label()).to_lowercase().contains(&q));
-        }
+        let q = &self.conn_filter;
+        let mut list: Vec<_> = self.connections.iter().filter(|c| {
+            q.is_empty() || format!("{} {} {}", c.display_name(), c.host, c.environment.label()).to_lowercase().contains(q)
+        }).collect();
         // Grouped by environment (Production first), most recently used first within a group.
-        list.sort_by(|a, b| {
-            a.environment.index().cmp(&b.environment.index()).then(b.last_used.cmp(&a.last_used)).then(a.display_name().to_lowercase().cmp(&b.display_name().to_lowercase()))
-        });
+        list.sort_by_cached_key(|c| (c.environment.index(), std::cmp::Reverse(c.last_used), c.display_name().to_lowercase()));
         let mut items: Vec<(String, String, String, u32, bool, bool)> = Vec::new();
         let mut last_env = None;
         for c in &list {
@@ -811,3 +873,41 @@ mod users;
 mod transfer;
 mod dispatch;
 mod context;
+
+#[cfg(test)]
+mod performance_regressions {
+    use super::*;
+
+    #[test]
+    fn transient_commands_keep_action_and_column_boundaries() {
+        assert!(Cmd::QueryEdited("a".into()).superseded_by(&Cmd::QueryEdited("ab".into())));
+        assert!(!Cmd::QueryEdited("a".into()).superseded_by(&Cmd::RunQuery("a".into())));
+        assert!(!Cmd::FilterTree("a".into()).superseded_by(&Cmd::QueryEdited("b".into())));
+        assert!(Cmd::ColResized(2, 100.0).superseded_by(&Cmd::ColResized(2, 200.0)));
+        assert!(!Cmd::ColResized(2, 100.0).superseded_by(&Cmd::ColResized(3, 200.0)));
+    }
+
+    #[test]
+    fn previews_preserve_whitespace_unicode_and_truncation() {
+        for s in ["", " a\t b\n", "é\u{2003}one", &"é".repeat(120), &"x".repeat(121), &format!("{}   x", "x".repeat(119))] {
+            let old = s.split_whitespace().collect::<Vec<_>>().join(" ");
+            let expected = if old.chars().count() > 120 { format!("{}…", old.chars().take(120).collect::<String>()) } else { old };
+            assert_eq!(one_line(s), expected);
+        }
+    }
+
+    #[test]
+    fn tab_snapshots_exclude_hidden_result_and_staging_data() {
+        let mut t = Tab::new(Kind::Query, "query", 100);
+        t.rows = vec![vec![Some("shown".into())]];
+        t.src_rows = t.rows.clone();
+        t.staged = vec![Staged { orig: t.rows[0].clone(), c: 0, col: "x".into(), new: None }];
+        t.results = vec![ResultSet { label: "r".into(), cols: vec![], widths: vec![], rows: t.rows.clone(), info: "".into(), timing: "".into() }];
+        let display = t.display_snapshot();
+        assert_eq!(display.rows, t.rows);
+        assert!(display.results.is_empty() && display.staged.is_empty() && display.src_rows.is_empty());
+        let request = t.request_snapshot();
+        assert!(request.rows.is_empty() && request.results.is_empty());
+        assert_eq!(request.page.limit, t.page.limit);
+    }
+}

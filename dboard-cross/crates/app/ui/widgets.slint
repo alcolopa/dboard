@@ -1,6 +1,7 @@
+import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { LineEdit, TextEdit } from "std-widgets.slint";
+import { LineEdit, ScrollView } from "std-widgets.slint";
 
 export component Btn inherits Rectangle {
     in property <string> text;
@@ -89,6 +90,8 @@ export component Modal inherits Rectangle {
 
 // Stroke icons (24x24 grid) drawn as vector paths, so they follow the theme and need no image files.
 export global Icons {
+    out property <string> table: "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z M3 9h18 M3 15h18 M9 9v12";
+    out property <string> folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z";
     out property <string> undo: "M1 4v6h6 M3.51 15a9 9 0 1 0 2.13-9.36L1 10";
     out property <string> history: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z M12 7v5l3 2";
     out property <string> database: "M3 5c0-1.66 4.03-3 9-3s9 1.34 9 3-4.03 3-9 3-9-1.34-9-3Z M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3 M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5";
@@ -183,19 +186,88 @@ export component Sep inherits Rectangle {
 
 // Text inputs that respond to the native Edit menu (Cut / Copy / Paste / Select All) while focused.
 export component EditLine inherits LineEdit {
+    min-width: 0px;
     changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
     changed edit-seq => { if self.has-focus { self.run-edit(AppState.edit-kind); } }
     property <int> edit-seq: AppState.edit-seq;
     function run-edit(k: int) {
-        if k == 0 { self.cut(); } else if k == 1 { self.copy(); } else if k == 2 { self.paste(); } else { self.select-all(); }
+        if k == 0 { self.cut(); } else if k == 1 { self.copy(); } else if k == 2 { self.paste(); } else if k == 3 { self.select-all(); } else if k == 4 { self.undo(); } else if k == 5 { self.redo(); }
     }
 }
 
-export component EditArea inherits TextEdit {
-    changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
-    changed edit-seq => { if self.has-focus { self.run-edit(AppState.edit-kind); } }
+// The grid's lightweight inputs participate in the native Edit menu too.
+export component EditInput inherits TextInput {
+    callback focus-lost();
+    selection-foreground-color: Theme.text;
+    selection-background-color: Theme.text-selection;
+    changed has-focus => {
+        AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1));
+        if !self.has-focus { root.focus-lost(); }
+    }
     property <int> edit-seq: AppState.edit-seq;
-    function run-edit(k: int) {
-        if k == 0 { self.cut(); } else if k == 1 { self.copy(); } else if k == 2 { self.paste(); } else { self.select-all(); }
+    changed edit-seq => {
+        if self.has-focus {
+            if AppState.edit-kind == 0 { self.cut(); }
+            else if AppState.edit-kind == 1 { self.copy(); }
+            else if AppState.edit-kind == 2 { self.paste(); }
+            else if AppState.edit-kind == 3 { self.select-all(); }
+            else if AppState.edit-kind == 4 { self.undo(); }
+            else if AppState.edit-kind == 5 { self.redo(); }
+        }
+    }
+}
+
+export component EditArea inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <bool> read-only <=> input.read-only;
+    in property <length> font-size: 13px;
+    in property <string> font-family: "Inter";
+    out property <bool> has-focus: input.has-focus;
+    forward-focus: input;
+    background: Theme.panel2;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+    border-width: 1px;
+    border-radius: 5px;
+    public function copy() { input.copy(); }
+    public function cut() { input.cut(); }
+    public function paste() { input.paste(); }
+    public function select-all() { input.select-all(); }
+    public function undo() { input.undo(); }
+    public function redo() { input.redo(); }
+    scroll := ScrollView {
+        x: 8px; y: 8px; width: parent.width - 16px; height: parent.height - 16px;
+        content-width: max(self.visible-width, input.preferred-width);
+        content-height: max(self.visible-height, input.preferred-height);
+        input := EditInput {
+            width: scroll.content-width; height: scroll.content-height;
+            font-family: root.font-family; font-size: root.font-size;
+            color: Theme.text; single-line: false; wrap: no-wrap;
+            page-height: scroll.visible-height;
+            cursor-position-changed(p) => {
+                if p.y < -scroll.content-y { scroll.content-y = -p.y; }
+                else if p.y + root.font-size * 1.5 > -scroll.content-y + scroll.visible-height {
+                    scroll.content-y = -(p.y + root.font-size * 1.5 - scroll.visible-height);
+                }
+                if p.x < -scroll.content-x { scroll.content-x = -p.x; }
+                else if p.x + 8px > -scroll.content-x + scroll.visible-width {
+                    scroll.content-x = -(p.x + 8px - scroll.visible-width);
+                }
+            }
+        }
+    }
+}
+
+/// Keep every action reachable when the row exceeds the available width.
+export component Toolbar inherits ScrollView {
+    min-width: 0px; min-height: 0px;
+    vertical-stretch: 0;
+    vertical-scrollbar-policy: always-off;
+    horizontal-scrollbar-policy: as-needed;
+    content-width: max(self.visible-width, row.min-width);
+    content-height: self.visible-height;
+    row := HorizontalLayout {
+        width: root.content-width; height: root.visible-height;
+        padding-left: 8px; padding-right: 8px; spacing: 4px;
+        @children
     }
 }

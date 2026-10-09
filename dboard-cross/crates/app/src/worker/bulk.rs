@@ -21,20 +21,20 @@ impl Worker {
             }
             self.tree_anchor = Some(i);
         }
-        self.rebuild_tree();
+        self.push_tree_selection();
     }
 
     /// Every table, view and collection currently listed in the sidebar.
     pub(crate) fn tree_select_all(&mut self) {
         let keys: Vec<String> = self.tree.iter().filter(|t| (2..=5).contains(&t.kind)).map(|t| t.key.clone()).collect();
         self.tree_sel.extend(keys);
-        self.rebuild_tree();
+        self.push_tree_selection();
     }
 
     pub(crate) fn tree_clear_selection(&mut self) {
         self.tree_sel.clear();
         self.tree_anchor = None;
-        self.rebuild_tree();
+        self.push_tree_selection();
     }
 
     pub(crate) fn selected_tables(&self) -> Vec<(String, String)> {

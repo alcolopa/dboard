@@ -66,6 +66,7 @@ impl Worker {
                 }
             }
             Cmd::OpenEr => self.open_er().await,
+            Cmd::ExportEr => self.export_er().await,
             Cmd::ErOpen(s, n) => self.open_table(&s, &n).await,
             Cmd::ColFilter(c, text) if self.active_tab().is_some_and(|t| t.kind == Kind::Pinned) => {
                 if let Some(t) = self.active_mut() {
@@ -273,9 +274,10 @@ impl Worker {
                 ui(&self.w, |st| st.set_editrow_open(false));
             }
             Cmd::OpenUsers => self.open_users().await,
-            Cmd::UserSelect(i) => self.user_select(i).await,
-            Cmd::UserCreate { name, host, password, level, admin } => self.user_create(name, host, password, level, admin).await,
-            Cmd::UserSetLevel(i, l) => self.user_set_level(i, l).await,
+            Cmd::UserSelect(i, d) => self.user_select(i, &d).await,
+            Cmd::UserCreate { name, host, password, level, admin, database } => self.user_create(name, host, password, level, admin, database).await,
+            Cmd::UserSetLevel(i, l, d) => self.user_set_level(i, l, d).await,
+            Cmd::UserSetTable(i, l, d, t) => self.user_set_table(i, l, d, t).await,
             Cmd::UserPassword(i, pw) => self.user_password(i, pw).await,
             Cmd::UserDrop(i) => {
                 if let Some(u) = self.users.get(i) {

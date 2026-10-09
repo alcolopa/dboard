@@ -1,16 +1,15 @@
 import { LineEdit, ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState, TreeItem } from "state.slint";
-import { Icons, IconBtn, Slot, EditLine, EditArea, Btn } from "widgets.slint";
+import { Icons, Icon, IconBtn, Slot, EditLine, EditArea, Btn } from "widgets.slint";
 
 component KindBadge inherits Rectangle {
     in property <int> kind;
     width: 16px; height: 16px; border-radius: 3px;
-    background: kind == 2 ? #3b82f6 : kind == 3 ? #a855f7 : kind == 4 ? #ec4899 : kind == 5 ? #10b981 : kind == 6 ? #f59e0b : kind == 7 ? #f97316
-        : kind == 9 ? #ef4444 : kind == 10 ? #06b6d4 : kind == 11 ? #84cc16 : kind == 12 ? #14b8a6 : kind == 13 ? #8b5cf6 : #64748b;
+    background: Theme.panel2;
     Text {
         text: kind == 2 ? "T" : kind == 3 ? "V" : kind == 4 ? "M" : kind == 5 ? "C" : kind == 6 ? "ƒ" : kind == 7 ? "P" : kind == 9 ? "R" : kind == 10 ? "Y" : kind == 11 ? "I" : kind == 12 ? "E" : kind == 13 ? "X" : "#";
-        color: white; font-size: 9px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center;
+        color: Theme.dim; font-size: 9px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center;
     }
 }
 
@@ -33,17 +32,30 @@ export component Sidebar inherits Rectangle {
             text: AppState.db-needed ? "Pick a database in the top bar to see its tables." : (AppState.tree-filter == "" ? "No tables found." : "No matches.");
             color: Theme.dim; font-size: 12px; wrap: word-wrap;
         }
-        if AppState.tree.length > 0 && AppState.tree-sel-count == 0: HorizontalLayout {
+        if AppState.tree-sel-count > 0: VerticalLayout {
             spacing: 6px;
-            Text { text: "Tick tables to export or drop several"; color: Theme.dim; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-            Btn { text: "Select all"; clicked => { AppState.tree-select-all(); } }
-        }
-        if AppState.tree-sel-count > 0: HorizontalLayout {
-            spacing: 6px;
-            Text { text: AppState.tree-sel-count + " selected"; color: Theme.dim; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-            Btn { text: "Export…"; primary: true; clicked => { AppState.open-transfer(0); } }
-            Btn { text: "Drop…"; danger: true; clicked => { AppState.tree-drop-selected(); } }
-            Btn { text: "Clear"; clicked => { AppState.tree-clear-selection(); } }
+            Text {
+                text: AppState.tree-sel-count + " selected";
+                color: Theme.dim; font-size: 12px; overflow: elide;
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Btn {
+                    width: (parent.width - 12px) / 3; pad: 8px;
+                    text: "Export…"; primary: true;
+                    clicked => { AppState.open-transfer(0); }
+                }
+                Btn {
+                    width: (parent.width - 12px) / 3; pad: 8px;
+                    text: "Drop…"; danger: true;
+                    clicked => { AppState.tree-drop-selected(); }
+                }
+                Btn {
+                    width: (parent.width - 12px) / 3; pad: 8px;
+                    text: "Clear";
+                    clicked => { AppState.tree-clear-selection(); }
+                }
+            }
         }
         ListView {
             for item[i] in AppState.tree: root-rect := Rectangle {
@@ -55,14 +67,22 @@ export component Sidebar inherits Rectangle {
 
                 if item.kind <= 1: Text {
                     x: item.kind == 0 ? 4px : 16px;
-                    text: (item.expanded ? "▾ " : "▸ ") + item.label;
+                    text: item.expanded ? "▾" : "▸";
+                    width: 12px;
                     color: item.kind == 0 ? Theme.text : Theme.dim;
                     font-size: item.kind == 0 ? 12px : 11px;
                     font-weight: item.kind == 0 ? 700 : 600;
                     vertical-alignment: center;
-                    overflow: elide; width: parent.width - 8px;
+                    overflow: elide;
                 }
-                if item.kind > 1: KindBadge { x: 30px; y: 5px; kind: item.kind; }
+                if item.kind <= 1: Icon { x: item.kind == 0 ? 20px : 32px; y: 5px; d: Icons.folder; tint: Theme.dim; }
+                if item.kind <= 1: Text {
+                    x: item.kind == 0 ? 42px : 54px; width: parent.width - self.x - 8px;
+                    text: item.label; color: Theme.dim; font-size: 12px; font-weight: 600;
+                    vertical-alignment: center; overflow: elide;
+                }
+                if item.kind >= 2 && item.kind <= 5: Icon { x: 30px; y: 5px; d: Icons.table; tint: Theme.dim; }
+                if item.kind > 5: KindBadge { x: 30px; y: 5px; kind: item.kind; }
                 if item.kind > 1: Text {
                     x: 52px; width: parent.width - 58px;
                     text: item.label; color: Theme.text; overflow: elide; vertical-alignment: center;
@@ -82,14 +102,7 @@ export component Sidebar inherits Rectangle {
                         }
                     }
                 }
-                // tick box for tables, views and collections: pick several without a modifier key
-                if item.kind >= 2 && item.kind <= 5: Rectangle {
-                    x: 8px; y: 5px; width: 16px; height: 16px; border-radius: 3px;
-                    border-width: 1px; border-color: item.selected ? Theme.accent : Theme.dim;
-                    background: item.selected ? Theme.accent : transparent;
-                    Text { visible: item.selected; text: "✓"; color: white; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
-                    TouchArea { clicked => { AppState.tree-select(i, 1); } }
-                }
+
             }
         }
         if AppState.tree.length > 0: Btn { text: "Drop all tables…"; danger: true; clicked => { AppState.tree-drop-all(); } }

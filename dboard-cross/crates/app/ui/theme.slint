@@ -1,19 +1,20 @@
 export global Theme {
     in-out property <bool> dark: true;
     in-out property <length> row-h: 26px;
-    out property <color> bg: dark ? #0f1115 : #f4f5f8;
-    out property <color> panel: dark ? #161922 : #ffffff;
-    out property <color> panel2: dark ? #1d2230 : #eceef3;
-    out property <color> hover: dark ? #1f2431 : #e6e9f0;
-    out property <color> line: dark ? #262b38 : #d9dde6;
-    out property <color> text: dark ? #e6e8ee : #1c2030;
-    out property <color> dim: dark ? #8b91a3 : #667089;
+    out property <color> bg: dark ? #181a1f : #f5f6f8;
+    out property <color> panel: dark ? #202228 : #ffffff;
+    out property <color> panel2: dark ? #282b32 : #f0f2f5;
+    out property <color> hover: dark ? #30343c : #e9edf2;
+    out property <color> line: dark ? #353941 : #dde1e7;
+    out property <color> text: dark ? #eceef2 : #252a33;
+    out property <color> dim: dark ? #a1a7b3 : #697382;
     /// Modifier shown in hints; the app maps Cmd (macOS) and Ctrl (elsewhere) to the same shortcut.
     in property <string> mod: "Ctrl";
-    out property <color> accent: #5b7cfa;
-    out property <color> sel: dark ? #26335a : #dbe4ff;
-    out property <color> ok: #10b981;
-    out property <color> err: #ef4444;
+    out property <color> accent: #6489db;
+    out property <color> text-selection: dark ? #405c91 : #b9cff4;
+    out property <color> sel: dark ? #34435e : #e2ebfa;
+    out property <color> ok: #55b795;
+    out property <color> err: #e77575;
     out property <color> warn: dark ? #f5c46b : #9a6b00;
     out property <color> warn-bg: dark ? #3a2a10 : #fdf1d6;
     out property <color> ok-bg: dark ? #10291f : #d8f5e8;

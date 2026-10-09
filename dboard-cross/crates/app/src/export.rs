@@ -11,17 +11,21 @@ pub struct ExportCol {
 
 /// Tab-separated text as spreadsheets expect it: fields holding a tab, newline or quote are quoted.
 pub fn tsv(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool) -> String {
-    fn field(s: &str) -> String {
-        if s.contains(['\t', '\n', '\r', '"']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
-    }
-    let mut lines: Vec<String> = Vec::with_capacity(rows.len() + 1);
+    let mut out = String::new();
     if headers {
-        lines.push(cols.iter().map(|c| field(&c.name)).collect::<Vec<_>>().join("\t"));
+        for (i, c) in cols.iter().enumerate() {
+            if i > 0 { out.push('\t'); }
+            write_field(&mut out, &c.name, '\t');
+        }
     }
-    for r in rows {
-        lines.push(r.iter().map(|c| c.as_deref().map(field).unwrap_or_default()).collect::<Vec<_>>().join("\t"));
+    for (i, r) in rows.iter().enumerate() {
+        if headers || i > 0 { out.push('\n'); }
+        for (j, c) in r.iter().enumerate() {
+            if j > 0 { out.push('\t'); }
+            write_field(&mut out, c.as_deref().unwrap_or_default(), '\t');
+        }
     }
-    lines.join("\n")
+    out
 }
 
 /// Parse clipboard text copied from a spreadsheet, a terminal or this app (TSV, with optional
@@ -99,11 +103,16 @@ pub fn format(format: usize, cols: &[ExportCol], rows: &[Vec<Cell>], headers: bo
     }
 }
 
-fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n', '\r']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
+fn write_field(out: &mut String, s: &str, separator: char) {
+    if s.contains([separator, '"', '\n', '\r']) {
+        out.push('"');
+        for c in s.chars() {
+            if c == '"' { out.push('"'); }
+            out.push(c);
+        }
+        out.push('"');
     } else {
-        s.to_string()
+        out.push_str(s);
     }
 }
 
@@ -113,6 +122,7 @@ pub fn xlsx(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool, path: &std::p
     let mut wb = Workbook::new();
     let ws = wb.add_worksheet();
     let bold = Format::new().set_bold();
+    let numeric: Vec<bool> = cols.iter().map(|col| is_numeric_type(&col.type_name)).collect();
     let mut r0 = 0u32;
     if headers {
         for (c, col) in cols.iter().enumerate() {
@@ -123,7 +133,7 @@ pub fn xlsx(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool, path: &std::p
     for (r, row) in rows.iter().enumerate() {
         for (c, cell) in row.iter().enumerate() {
             let Some(v) = cell else { continue };
-            let numeric = cols.get(c).is_some_and(|col| is_numeric_type(&col.type_name));
+            let numeric = numeric.get(c).copied().unwrap_or(false);
             match v.parse::<f64>() {
                 Ok(n) if numeric && n.is_finite() => ws.write_number(r0 + r as u32, c as u16, n),
                 _ => ws.write_string(r0 + r as u32, c as u16, v),
@@ -143,11 +153,17 @@ fn is_numeric_type(t: &str) -> bool {
 pub fn csv(cols: &[ExportCol], rows: &[Vec<Cell>], headers: bool) -> String {
     let mut out = String::new();
     if headers {
-        out.push_str(&cols.iter().map(|c| csv_field(&c.name)).collect::<Vec<_>>().join(","));
+        for (i, c) in cols.iter().enumerate() {
+            if i > 0 { out.push(','); }
+            write_field(&mut out, &c.name, ',');
+        }
         out.push_str("\r\n");
     }
     for r in rows {
-        out.push_str(&r.iter().map(|c| c.as_deref().map(csv_field).unwrap_or_default()).collect::<Vec<_>>().join(","));
+        for (i, c) in r.iter().enumerate() {
+            if i > 0 { out.push(','); }
+            write_field(&mut out, c.as_deref().unwrap_or_default(), ',');
+        }
         out.push_str("\r\n");
     }
     out
@@ -162,10 +178,20 @@ fn is_bool(ty: &str) -> bool {
     matches!(ty.to_lowercase().as_str(), "boolean" | "bool" | "tinyint(1)")
 }
 
-fn json_value(v: &str, ty: &str) -> serde_json::Value {
-    use serde_json::Value;
+#[derive(Clone, Copy)]
+enum JsonType { Numeric, Bool, Json, Text }
+
+fn json_type(ty: &str) -> JsonType {
     let t = ty.to_lowercase();
-    if is_numeric(&t) {
+    if is_numeric(&t) { JsonType::Numeric }
+    else if is_bool(&t) { JsonType::Bool }
+    else if matches!(t.as_str(), "json" | "jsonb" | "object" | "array") { JsonType::Json }
+    else { JsonType::Text }
+}
+
+fn json_value(v: &str, ty: JsonType) -> serde_json::Value {
+    use serde_json::Value;
+    if matches!(ty, JsonType::Numeric) {
         if let Ok(n) = v.parse::<i64>() {
             return Value::from(n);
         }
@@ -173,14 +199,14 @@ fn json_value(v: &str, ty: &str) -> serde_json::Value {
             return Value::Number(n);
         }
     }
-    if is_bool(&t) {
+    if matches!(ty, JsonType::Bool) {
         match v {
             "true" | "t" | "1" => return Value::Bool(true),
             "false" | "f" | "0" => return Value::Bool(false),
             _ => {}
         }
     }
-    if matches!(t.as_str(), "json" | "jsonb" | "object" | "array") {
+    if matches!(ty, JsonType::Json) {
         if let Ok(x) = serde_json::from_str(v) {
             return x;
         }
@@ -189,34 +215,48 @@ fn json_value(v: &str, ty: &str) -> serde_json::Value {
 }
 
 pub fn json(cols: &[ExportCol], rows: &[Vec<Cell>]) -> String {
-    let arr: Vec<serde_json::Value> = rows
-        .iter()
-        .map(|r| {
+    use serde::{ser::SerializeSeq, Serializer};
+    let types: Vec<JsonType> = cols.iter().map(|c| json_type(&c.type_name)).collect();
+    let mut out = Vec::new();
+    let result = (|| -> serde_json::Result<()> {
+        let mut serializer = serde_json::Serializer::pretty(&mut out);
+        let mut seq = serializer.serialize_seq(Some(rows.len()))?;
+        for r in rows {
             let mut m = serde_json::Map::new();
-            for (c, v) in cols.iter().zip(r) {
-                m.insert(c.name.clone(), v.as_deref().map(|s| json_value(s, &c.type_name)).unwrap_or(serde_json::Value::Null));
+            for ((c, ty), v) in cols.iter().zip(&types).zip(r) {
+                m.insert(c.name.clone(), v.as_deref().map(|s| json_value(s, *ty)).unwrap_or(serde_json::Value::Null));
             }
-            serde_json::Value::Object(m)
-        })
-        .collect();
-    serde_json::to_string_pretty(&arr).unwrap_or_default()
+            seq.serialize_element(&m)?;
+        }
+        seq.end()
+    })();
+    if result.is_err() { return String::new(); }
+    String::from_utf8(out).unwrap_or_default()
 }
 
 pub fn sql_inserts(cols: &[ExportCol], rows: &[Vec<Cell>], table: &str, d: Dialect) -> String {
+    use std::fmt::Write;
     let names = cols.iter().map(|c| d.quote(&c.name)).collect::<Vec<_>>().join(", ");
+    let numeric: Vec<bool> = cols.iter().map(|c| is_numeric(&c.type_name)).collect();
     let mut out = String::new();
     for r in rows {
-        let vals = cols
-            .iter()
-            .zip(r)
-            .map(|(c, v)| match v {
-                None => "NULL".to_string(),
-                Some(s) if is_numeric(&c.type_name) && s.parse::<f64>().is_ok() => s.clone(),
-                Some(s) => format!("'{}'", s.replace('\'', "''")),
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_str(&format!("INSERT INTO {table} ({names}) VALUES ({vals});\n"));
+        let _ = write!(out, "INSERT INTO {table} ({names}) VALUES (");
+        for (i, (numeric, v)) in numeric.iter().zip(r).enumerate() {
+            if i > 0 { out.push_str(", "); }
+            match v {
+                None => out.push_str("NULL"),
+                Some(s) if *numeric && s.parse::<f64>().is_ok() => out.push_str(s),
+                Some(s) => {
+                    out.push('\'');
+                    for c in s.chars() {
+                        if c == '\'' { out.push('\''); }
+                        out.push(c);
+                    }
+                    out.push('\'');
+                }
+            }
+        }
+        out.push_str(");\n");
     }
     out
 }
@@ -337,6 +377,17 @@ mod tests {
         assert_eq!(v[0]["ok"], true);
         assert_eq!(v[1]["note"], serde_json::Value::Null);
         assert_eq!(v[1]["ok"], false);
+    }
+
+    #[test]
+    fn streaming_json_preserves_pretty_layout_and_nested_values() {
+        let cols = vec![ExportCol { name: "b".into(), type_name: "jsonb".into() }, ExportCol { name: "a".into(), type_name: "text".into() }];
+        let rows = vec![vec![Some("{\"é\":[true,null]}".into()), Some("line\nquote\"".into())], vec![None, Some("".into())]];
+        let expected = serde_json::json!([{ "b": {"é": [true, null]}, "a": "line\nquote\"" }, { "b": null, "a": "" }]);
+        assert_eq!(json(&cols, &rows), serde_json::to_string_pretty(&expected).unwrap());
+        assert_eq!(json(&cols, &[]), "[]");
+        assert_eq!(tsv(&[], &[vec![], vec![]], false), "\n");
+        assert_eq!(csv(&[], &[vec![]], true), "\r\n\r\n");
     }
 
     #[test]

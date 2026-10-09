@@ -7,15 +7,45 @@ component Title inherits Text { font-size: 15px; font-weight: 700; color: Theme.
 component Note inherits Text { color: Theme.dim; font-size: 12px; wrap: word-wrap; }
 
 
+// Access levels are cumulative: Write includes Read, and Full includes both.
+component AccessCheckboxes inherits VerticalLayout {
+    in-out property <int> level: 1;
+    in property <bool> editable: true;
+    spacing: 6px;
+    HorizontalLayout {
+        spacing: 16px;
+        CheckBox {
+            text: "Read";
+            checked: root.level >= 1;
+            enabled: root.editable;
+            toggled => { root.level = root.level >= 1 ? 0 : 1; }
+        }
+        CheckBox {
+            text: "Write";
+            checked: root.level >= 2;
+            enabled: root.editable;
+            toggled => { root.level = root.level >= 2 ? 1 : 2; }
+        }
+        CheckBox {
+            text: "Full access";
+            checked: root.level == 3;
+            enabled: root.editable;
+            toggled => { root.level = root.level == 3 ? 2 : 3; }
+        }
+    }
+    Note { text: "Write includes Read. Full access includes both. Uncheck Read to remove access."; }
+}
+
 component UsersDialog inherits Modal {
-    box-width: 800px;
+    box-width: 860px;
     property <string> nu-name;
     property <string> nu-host: "%";
     property <string> nu-pw;
     property <int> nu-level: 1;
-    property <bool> nu-admin: false;
+    property <bool> advanced: false;
+    property <string> database: AppState.user-db-index >= 0 && AppState.user-db-index < AppState.user-databases.length ? AppState.user-databases[AppState.user-db-index] : "";
     property <string> pw-new;
-    property <int> level-pick: 1;
+    property <int> access-tab: 0;
     dismissed => { AppState.users-close(); }
     HorizontalLayout {
         Title { text: "Users & access"; vertical-alignment: center; }
@@ -24,12 +54,18 @@ component UsersDialog inherits Modal {
     }
     Note { text: AppState.user-scope; }
     HorizontalLayout {
+        spacing: 10px;
+        Text { text: "Database"; color: Theme.text; vertical-alignment: center; }
+        ComboBox { model: AppState.user-databases; current-index <=> AppState.user-db-index; horizontal-stretch: 1; enabled: !AppState.user-busy; selected => { root.pw-new = ""; if AppState.user-sel >= 0 { AppState.user-select(AppState.user-sel, root.database); } } }
+    }
+    if root.database == "": Note { text: "Select a database to grant access."; }
+    HorizontalLayout {
         spacing: 14px;
-        height: 380px;
+        height: 450px;
         // ---- list ----
         VerticalLayout {
             width: 250px; spacing: 6px;
-            Btn { text: "+ Add user"; primary: true; clicked => { AppState.user-create-open = true; AppState.user-info = ""; } }
+            if AppState.user-can-manage: Btn { text: "+ Add user"; primary: true; enabled: !AppState.user-busy; clicked => { root.nu-name = ""; root.nu-pw = ""; root.nu-host = "%"; root.nu-level = 1; root.advanced = false; AppState.user-create-open = true; AppState.user-info = ""; } }
             Rectangle {
                 vertical-stretch: 1; border-width: 1px; border-color: Theme.line; border-radius: 6px; clip: true;
                 ListView {
@@ -41,7 +77,7 @@ component UsersDialog inherits Modal {
                             Text { text: u.name; color: Theme.text; overflow: elide; font-weight: 600; }
                             Text { text: u.detail; color: Theme.dim; font-size: 10px; overflow: elide; }
                         }
-                        ua := TouchArea { clicked => { AppState.user-create-open = false; AppState.user-select(i); } }
+                        ua := TouchArea { enabled: !AppState.user-busy; clicked => { root.pw-new = ""; root.access-tab = 0; root.advanced = false; AppState.user-create-open = false; AppState.user-select(i, root.database); } }
                     }
                 }
             }
@@ -52,16 +88,17 @@ component UsersDialog inherits Modal {
             Text { text: "New user"; font-weight: 700; color: Theme.text; font-size: 14px; }
             Text { text: "User name"; color: Theme.dim; font-size: 11px; }
             EditLine { text <=> root.nu-name; placeholder-text: "e.g. report_reader"; }
-            if AppState.user-is-mysql: Text { text: "Allowed from host (% = anywhere)"; color: Theme.dim; font-size: 11px; }
-            if AppState.user-is-mysql: EditLine { text <=> root.nu-host; }
+            if root.advanced && AppState.user-is-mysql: Text { text: "Allowed from host (% = anywhere)"; color: Theme.dim; font-size: 11px; }
+            if root.advanced && AppState.user-is-mysql: EditLine { text <=> root.nu-host; }
             Text { text: "Password"; color: Theme.dim; font-size: 11px; }
             EditLine { text <=> root.nu-pw; input-type: InputType.password; }
-            Text { text: "Access to the current database"; color: Theme.dim; font-size: 11px; }
-            ComboBox { model: AppState.access-levels; current-index <=> root.nu-level; enabled: !root.nu-admin; }
-            CheckBox { text: AppState.user-is-pg ? "Superuser (can do everything on the server)" : (AppState.user-is-mysql ? "Administrator (all privileges on every database)" : "Root (administrator of the whole server)"); checked <=> root.nu-admin; }
+            Text { text: "Access level"; color: Theme.dim; font-size: 11px; }
+            AccessCheckboxes { level <=> root.nu-level; editable: !AppState.user-busy; }
+            Note { text: root.nu-level == 0 ? "No permissions will be granted." : (root.nu-level == 1 ? "Can view data. Cannot change or delete it." : (root.nu-level == 2 ? "Can view, add, edit and delete data." : "Can manage data and database objects.")); }
+            CheckBox { text: "Advanced options"; checked <=> root.advanced; }
             HorizontalLayout {
                 spacing: 8px;
-                Btn { text: "Create user"; primary: true; enabled: root.nu-name != "" && !AppState.user-busy; clicked => { AppState.user-create(root.nu-name, root.nu-host, root.nu-pw, root.nu-level, root.nu-admin); } }
+                Btn { text: "Create user & save access"; primary: true; enabled: root.nu-name != "" && root.nu-pw != "" && root.database != "" && !AppState.user-busy; clicked => { AppState.user-create(root.nu-name, root.nu-host, root.nu-pw, root.nu-level, false, root.database); root.nu-pw = ""; } }
                 Btn { text: "Cancel"; clicked => { AppState.user-create-open = false; } }
             }
         }
@@ -70,25 +107,41 @@ component UsersDialog inherits Modal {
             horizontal-stretch: 1; spacing: 8px;
             Text { text: AppState.users[AppState.user-sel].name; font-weight: 700; color: Theme.text; font-size: 15px; overflow: elide; }
             Text { text: AppState.users[AppState.user-sel].detail; color: Theme.dim; font-size: 11px; wrap: word-wrap; }
-            Text { text: "What this user can do"; color: Theme.dim; font-size: 11px; }
-            Rectangle {
-                vertical-stretch: 1; border-width: 1px; border-color: Theme.line; border-radius: 6px; clip: true;
-                ListView {
-                    for g in AppState.user-grants: Text { text: g; color: Theme.text; font-size: 11px; wrap: word-wrap; x: 8px; width: parent.width - 16px; }
+            HorizontalLayout {
+                spacing: 6px;
+                Btn { text: "Database access"; primary: root.access-tab == 0; clicked => { root.access-tab = 0; } }
+                if AppState.user-is-pg || AppState.user-is-mysql: Btn { text: "Table access"; primary: root.access-tab == 1; clicked => { root.access-tab = 1; } }
+                Btn { text: "Permissions"; primary: root.access-tab == 2; clicked => { root.access-tab = 2; } }
+            }
+            if root.access-tab == 0: VerticalLayout {
+                spacing: 8px;
+                if AppState.user-level < 0: Note { text: "Current access is custom or differs between tables. Choose a level to replace the database grants."; }
+                AccessCheckboxes { level <=> AppState.user-level; editable: AppState.user-can-manage && !AppState.user-busy; }
+                if AppState.user-can-manage: Btn { text: "Save database access"; primary: true; enabled: root.database != "" && AppState.user-level >= 0 && !AppState.user-busy; clicked => { AppState.user-set-level(AppState.user-sel, AppState.user-level, root.database); } }
+            }
+            if root.access-tab == 1: VerticalLayout {
+                spacing: 8px;
+                ComboBox { model: AppState.user-tables; current-index <=> AppState.user-table-index; enabled: !AppState.user-busy; selected => { AppState.user-table-level = AppState.user-table-levels[AppState.user-table-index]; } }
+                if AppState.user-table-index >= 0: VerticalLayout {
+                    spacing: 8px;
+                    if AppState.user-table-level < 0: Note { text: "This table has custom permissions. Choose a level to replace its direct grants."; }
+                    AccessCheckboxes { level <=> AppState.user-table-level; editable: AppState.user-can-manage && !AppState.user-busy; }
+                    if AppState.user-can-manage: Btn { text: "Save table access"; primary: true; enabled: AppState.user-table-level >= 0 && !AppState.user-busy; clicked => { AppState.user-set-table(AppState.user-sel, AppState.user-table-level, root.database, AppState.user-table-index); } }
                 }
+                Note { text: "The picker shows effective access. Database, ownership and inherited grants can provide broader access than the direct table grants."; }
             }
-            HorizontalLayout {
-                spacing: 8px;
-                Text { text: "Set access to"; color: Theme.text; vertical-alignment: center; }
-                ComboBox { model: AppState.access-levels; current-index <=> root.level-pick; width: 160px; }
-                Btn { text: "Apply"; enabled: !AppState.user-busy; clicked => { AppState.user-set-level(AppState.user-sel, root.level-pick); } }
+            if root.access-tab == 2: Rectangle {
+                vertical-stretch: 1; min-height: 100px; border-width: 1px; border-color: Theme.line; border-radius: 6px; clip: true;
+                ListView { for g in AppState.user-grants: Text { text: g; color: Theme.text; font-size: 11px; wrap: word-wrap; x: 8px; width: parent.width - 16px; } }
             }
-            HorizontalLayout {
+            Rectangle { vertical-stretch: 1; }
+            if AppState.user-can-password: HorizontalLayout {
                 spacing: 8px;
-                EditLine { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; horizontal-stretch: 1; }
+                EditLine { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; horizontal-stretch: 1; enabled: !AppState.user-busy; }
                 Btn { text: "Change password"; enabled: root.pw-new != "" && !AppState.user-busy; clicked => { AppState.user-password(AppState.user-sel, root.pw-new); root.pw-new = ""; } }
-                Btn { text: "Drop user"; danger: true; enabled: !AppState.user-busy; clicked => { AppState.user-drop(AppState.user-sel); } }
             }
+            if AppState.user-can-manage: Btn { text: "Delete user"; danger: true; enabled: !AppState.user-busy; clicked => { AppState.user-drop(AppState.user-sel); } }
+
         }
         if !AppState.user-create-open && (AppState.user-sel < 0 || AppState.user-sel >= AppState.users.length): Rectangle {
             horizontal-stretch: 1;

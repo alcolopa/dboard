@@ -191,35 +191,42 @@ pub fn parse_typed(text: &str, ty: &str) -> std::result::Result<Bson, String> {
     }
 }
 
-fn docs_to_rows(docs: &[Document], first_cols: &[String]) -> (Vec<String>, Vec<Vec<Cell>>, Vec<Column>) {
+fn docs_schema(docs: &[Document], first_cols: &[String]) -> (Vec<String>, Vec<Column>) {
     let mut cols: Vec<String> = first_cols.to_vec();
     if !cols.iter().any(|c| c == "_id") && docs.iter().any(|d| d.contains_key("_id")) {
         cols.insert(0, "_id".into());
     }
-    let mut types: std::collections::HashMap<String, &'static str> = std::collections::HashMap::new();
+    let mut seen: std::collections::HashSet<String> = cols.iter().cloned().collect();
+    let mut types: std::collections::HashMap<&str, &'static str> = std::collections::HashMap::new();
     for d in docs {
         for (k, v) in d {
-            if !cols.contains(k) {
+            if !seen.contains(k) {
+                seen.insert(k.clone());
                 cols.push(k.clone());
             }
-            let e = types.entry(k.clone()).or_insert("null");
+            let e = types.entry(k.as_str()).or_insert("null");
             if *e == "null" {
                 *e = bson_type_name(v);
             }
         }
     }
-    let rows = docs.iter().map(|d| cols.iter().map(|c| d.get(c).and_then(bson_to_cell)).collect()).collect();
     let columns = cols
         .iter()
         .map(|c| Column {
             name: c.clone(),
-            type_name: types.get(c).copied().unwrap_or("string").to_string(),
+            type_name: types.get(c.as_str()).copied().unwrap_or("string").to_string(),
             nullable: c != "_id",
             is_primary_key: c == "_id",
             default: None,
             fk: None,
         })
         .collect();
+    (cols, columns)
+}
+
+fn docs_to_rows(docs: &[Document], first_cols: &[String]) -> (Vec<String>, Vec<Vec<Cell>>, Vec<Column>) {
+    let (cols, columns) = docs_schema(docs, first_cols);
+    let rows = docs.iter().map(|d| cols.iter().map(|c| d.get(c).and_then(bson_to_cell)).collect()).collect();
     (cols, rows, columns)
 }
 
@@ -355,6 +362,7 @@ impl Mongo {
     }
 
     pub async fn metadata(&mut self) -> Result<Metadata> {
+        use futures_util::StreamExt;
         let dbs = match &self.default_db {
             Some(d) => vec![d.clone()],
             None => self
@@ -370,29 +378,39 @@ impl Mongo {
             let d = self.client.database(&db);
             let mut names = d.list_collection_names().await?;
             names.sort();
-            for name in names.into_iter().filter(|n| !n.starts_with("system.")) {
-                let coll = d.collection::<Document>(&name);
-                let mut docs = Vec::new();
-                if let Ok(mut cur) = coll.find(Document::new()).limit(50).await {
-                    while cur.advance().await.unwrap_or(false) {
-                        if let Ok(doc) = cur.deserialize_current() {
-                            docs.push(doc);
+            let collections = futures_util::stream::iter(names.into_iter().filter(|n| !n.starts_with("system.")))
+                .map(|name| {
+                    let d = d.clone();
+                    let db = db.clone();
+                    async move {
+                        let coll = d.collection::<Document>(&name);
+                        let mut docs = Vec::new();
+                        if let Ok(mut cur) = coll.find(Document::new()).limit(50).await {
+                            while cur.advance().await.unwrap_or(false) {
+                                if let Ok(doc) = cur.deserialize_current() {
+                                    docs.push(doc);
+                                }
+                            }
+                        }
+                        let (_, columns) = docs_schema(&docs, &[]);
+                        let estimated_rows = coll.estimated_document_count().await.ok().map(|n| n as i64);
+                        Table {
+                            schema: db,
+                            name,
+                            kind: TableKind::Collection,
+                            columns,
+                            estimated_rows,
+                            size_bytes: None,
+                            indexes: Vec::new(),
+                            keyless_edit: false,
                         }
                     }
-                }
-                let (_, _, columns) = docs_to_rows(&docs, &[]);
-                let estimated_rows = coll.estimated_document_count().await.ok().map(|n| n as i64);
-                tables.push(Table {
-                    schema: db.clone(),
-                    name,
-                    kind: TableKind::Collection,
-                    columns,
-                    estimated_rows,
-                    size_bytes: None,
-                    indexes: Vec::new(),
-                    keyless_edit: false,
-                });
-            }
+                })
+                // Bounded concurrency hides network latency while keeping collection order.
+                .buffered(4)
+                .collect::<Vec<Table>>()
+                .await;
+            tables.extend(collections);
         }
         Ok(Metadata { tables, objects: Vec::new() })
     }
@@ -682,6 +700,36 @@ impl Mongo {
         }
         out.sort_by(|a, b| (&a.origin, &a.name).cmp(&(&b.origin, &b.name)));
         Ok(out)
+    }
+
+    pub async fn user_access(&mut self, u: &UserInfo) -> Result<UserAccess> {
+        let status = self.client.database(ADMIN_DB).run_command(doc! { "connectionStatus": 1, "showPrivileges": true }).await?;
+        let auth = status.get_document("authInfo").ok();
+        let target = self.user_db();
+        let privileges = auth.and_then(|a|a.get_array("authenticatedUserPrivileges").ok());
+        let allowed = |action: &str, db: &str| privileges.is_some_and(|ps| ps.iter().filter_map(|p|p.as_document()).any(|p| {
+            let resource=p.get_document("resource").ok();
+            let scope=resource.is_some_and(|r|r.get_bool("anyResource").unwrap_or(false) || (r.get_str("db").is_ok_and(|d|d.is_empty() || d==db) && r.get_str("collection").is_ok_and(|c|c.is_empty())));
+            scope && p.get_array("actions").is_ok_and(|a|a.iter().any(|a|a.as_str()==Some(action)))
+        }));
+        let manage = ["createUser","dropUser","grantRole","revokeRole"].iter().all(|a|allowed(a,&target) && allowed(a,&u.origin));
+        let own = auth.and_then(|a|a.get_array("authenticatedUsers").ok()).is_some_and(|users|users.iter().filter_map(|u|u.as_document()).any(|a|a.get_str("user").ok()==Some(u.name.as_str()) && a.get_str("db").ok()==Some(u.origin.as_str())));
+        let info = self.client.database(&u.origin).run_command(doc! { "usersInfo": { "user": &u.name, "db": &u.origin } }).await?;
+        let roles = info.get_array("users").ok().and_then(|a|a.first()).and_then(|u|u.as_document()).map(Self::roles_of).unwrap_or_default();
+        let mut level = 0;
+        for (role,db) in roles {
+            let l = match role.as_str() {
+                "root"|"dbOwner" if db==target || role=="root" => 3,
+                "readWrite" if db==target => 2,
+                "read" if db==target => 1,
+                "readAnyDatabase" => 1,
+                "readWriteAnyDatabase" => 2,
+                _ => -1,
+            };
+            if l<0 && db==target { level=-1; break; }
+            level=level.max(l);
+        }
+        Ok(UserAccess { level, tables: Vec::new(), manage, password: allowed("changePassword",&u.origin) || (own && allowed("changeOwnPassword",&u.origin)) })
     }
 
     pub async fn user_grants(&mut self, u: &UserInfo) -> Result<Vec<String>> {

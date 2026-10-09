@@ -6,7 +6,7 @@ APP="${1:-dboard.app}"
 VERSION="${2:-0.1.0}"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp target/release/dboard "$APP/Contents/MacOS/dboard"
+cp "${DBOARD_BINARY:-target/release/dboard}" "$APP/Contents/MacOS/dboard"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,10 +26,22 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 # Ad-hoc sign the whole bundle (no Developer ID needed). Without a sealed signature, Apple Silicon
 # Macs report a downloaded app as "damaged and can't be opened". Gatekeeper still warns (not notarized).
+# Local builds automatically reuse the dedicated identity once it is installed.
+if [ -z "${MACOS_SIGN_IDENTITY:-}" ] && security find-identity -p codesigning | grep -Fq '"dboard Local Development"'; then
+  MACOS_SIGN_IDENTITY="dboard Local Development"
+fi
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
-  # Developer ID signing with the hardened runtime (required for notarization).
-  codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$APP"
+  # Reuse the same identity across releases so Keychain recognizes updated builds.
+  # Self-signed certificates work without a Developer account. Only Developer ID
+  # releases intended for notarization need Apple's secure timestamp service.
+  timestamp_flag="--timestamp=none"
+  if [ "${MACOS_SIGN_TIMESTAMP:-false}" = "true" ]; then
+    timestamp_flag="--timestamp"
+  fi
+  codesign --force --deep --options runtime "$timestamp_flag" --sign "$MACOS_SIGN_IDENTITY" "$APP"
 else
+  echo "Warning: ad-hoc signing changes Keychain identity on every build. Run packaging/macos/setup-local-signing.sh for local updates." >&2
   codesign --force --deep --sign - "$APP"
 fi
+codesign --verify --deep --strict "$APP"
 echo "Built $APP"

@@ -106,6 +106,7 @@ Built with **Rust & [Slint](https://slint.dev)**: one codebase and one UI for ma
 | **`⌘R`** | Refresh Database Metadata |
 | **`⌘Z`** | Undo Most Recent Database Edit |
 | **`⌥⌘I`** | Toggle Context Inspector Panel |
+| **`⌃⌘F`** | Enter / exit full screen (macOS) |
 | **`Double-Click / ↵`** | Edit Cell in Table Grid |
 | **`↵ / Tab / Click outside`** | **Instant Save Cell Edit to Database** |
 
@@ -137,9 +138,12 @@ xattr -cr /Applications/dboard.app
 ```
 
 ### Option 1: Build from source
+Install Rust and Cargo first. On macOS with Homebrew, run `brew install rust`.
+Then, from the repository root:
+
 ```bash
 cd dboard-cross
-cargo run -p dboard                 # run
+cargo run --locked -p dboard        # build and open the native desktop app
 cargo build --release -p dboard     # optimised binary
 packaging/macos/bundle.sh           # macOS only: wrap the binary into dboard.app
 ```

@@ -11,7 +11,7 @@ impl Worker {
         if self.refuse_if_read_only() {
             return;
         }
-        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).cloned() else {
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Table).map(Tab::request_snapshot) else {
             return self.toast("Open a table first, then generate rows into it.");
         };
         if !confirmed && self.protected() {

@@ -41,7 +41,10 @@ impl Worker {
     /// Push the whole active tab (or the empty state) to the UI.
     pub(crate) fn show_active(&self) {
         self.push_tabs();
-        let tab = self.active_tab().cloned();
+        let pend = self.active_tab().map(Self::pending_cells).unwrap_or_default();
+        let labels = self.active_tab().map(|t| t.results.iter().map(|r| r.label.clone()).collect()).unwrap_or_default();
+        let pending_count = self.active_tab().map_or(0, |t| t.staged.len() as i32);
+        let tab = self.active_tab().map(Tab::display_snapshot);
         ui(&self.w, move |st| match tab {
             None => {
                 st.set_draft_open(false);
@@ -61,19 +64,19 @@ impl Worker {
             Some(t) => {
                 let cols: Vec<ColInfo> = t
                     .cols
-                    .iter()
-                    .map(|c| ColInfo { name: c.name.clone().into(), type_name: c.type_name.clone().into(), pk: c.pk, fk: c.fk.clone().into(), is_bool: c.is_bool, is_json: c.is_json })
+                    .into_iter()
+                    .map(|c| ColInfo { name: c.name.into(), type_name: c.type_name.into(), pk: c.pk, fk: c.fk.into(), is_bool: c.is_bool, is_json: c.is_json })
                     .collect();
                 st.set_draft_open(false);
                 st.set_has_next(t.rows.len() as i64 >= t.page.limit);
                 st.set_tab_kind(t.kind as i32);
+                let col_count = cols.len();
                 st.set_cols(ModelRc::new(VecModel::from(cols)));
-                st.set_col_widths(ModelRc::new(VecModel::from(t.widths.clone())));
                 st.set_grid_width(t.widths.iter().sum());
-                let pend = Self::pending_cells(&t);
-                st.set_rows(grid_model(t.rows.iter().enumerate().map(|(ri, r)| r.iter().enumerate().map(|(ci, c)| (c.clone(), if pend.contains(&(ri, ci)) { 4 } else { 0 })).collect()).collect()));
+                st.set_col_widths(ModelRc::new(VecModel::from(t.widths)));
+                st.set_rows(grid_model(t.rows.into_iter().enumerate().map(|(ri, r)| r.into_iter().enumerate().map(|(ci, c)| (c, if pend.contains(&(ri, ci)) { 4 } else { 0 })).collect()).collect()));
                 st.set_stage_on(t.stage);
-                st.set_pending_count(t.staged.len() as i32);
+                st.set_pending_count(pending_count);
                 st.set_row_offset(t.page.offset as i32);
                 st.set_selected_row(-1);
                 st.set_sel_kind(0);
@@ -90,16 +93,18 @@ impl Worker {
                 st.set_ddl_text(t.ddl.into());
                 st.set_page_size_index(PAGE_SIZES.iter().position(|p| *p == t.page.limit).unwrap_or(2) as i32);
                 st.set_suggestions(strs(Vec::new()));
-                st.set_result_labels(strs(t.results.iter().map(|r| r.label.clone()).collect()));
+                st.set_result_labels(strs(labels));
                 let boxes: Vec<ErBox> = t
                     .er
                     .boxes
-                    .iter()
-                    .map(|(x, y, w, h, title, body, schema, name)| ErBox { x: *x, y: *y, w: *w, h: *h, title: title.into(), body: body.into(), schema: schema.into(), name: name.into() })
+                    .into_iter()
+                    .map(|(x, y, w, h, title, body, schema, name)| ErBox { x, y, w, h, title: title.into(), body: body.into(), schema: schema.into(), name: name.into() })
                     .collect();
                 st.set_er_boxes(ModelRc::new(VecModel::from(boxes)));
-                st.set_er_lines(strs(t.er.lines.clone()));
-                st.set_col_filters(strs((0..t.cols.len()).map(|i| t.col_filters.get(i).cloned().unwrap_or_default()).collect()));
+                st.set_er_lines(strs(t.er.lines));
+                let mut filters = t.col_filters;
+                filters.resize(col_count, String::new());
+                st.set_col_filters(strs(filters));
                 st.set_er_width(t.er.size.0);
                 st.set_er_height(t.er.size.1);
                 st.set_result_index(t.result_idx as i32);
@@ -214,7 +219,7 @@ impl Worker {
     /// (Re)load whatever the active tab shows, then repaint.
     pub(crate) async fn load_active(&mut self) {
         let Some(i) = self.active else { return };
-        let tab = self.tabs[i].clone();
+        let tab = self.tabs[i].request_snapshot();
         match tab.kind {
             Kind::Query => {}
             Kind::Table => self.load_table(i, tab).await,
@@ -259,7 +264,7 @@ impl Worker {
                     _ => format!("Rows {from}–{to}"),
                 };
                 let t = &mut self.tabs[i];
-                t.widths = if t.widths.len() == meta.len() && !t.widths.is_empty() { t.widths.clone() } else { auto_widths(&meta, &r.rows) };
+                if t.widths.len() != meta.len() || t.widths.is_empty() { t.widths = auto_widths(&meta, &r.rows); }
                 t.cols = meta;
                 t.rows = r.rows;
                 Self::overlay_staged(t);
@@ -350,19 +355,18 @@ impl Worker {
                 self.show_active();
             }
             "close-others" => {
-                let keep = self.tabs[i].clone();
                 let old = std::mem::take(&mut self.tabs);
-                for t in old.into_iter() {
-                    if t.pinned {
+                for (idx, t) in old.into_iter().enumerate() {
+                    if idx == i {
+                        self.active = Some(self.tabs.len());
+                        self.tabs.push(t);
+                    } else if t.pinned {
                         self.tabs.push(t);
                     } else {
                         self.closed.push(t);
                     }
                 }
-                if !self.tabs.iter().any(|t| t.title == keep.title && t.kind == keep.kind) {
-                    self.tabs.push(keep);
-                }
-                self.active = Some(self.tabs.len() - 1);
+                if self.closed.len() > 20 { self.closed.drain(..self.closed.len() - 20); }
                 self.show_active();
             }
             _ => {}
@@ -512,6 +516,20 @@ impl Worker {
 
 
 impl Worker {
+    pub(crate) async fn export_er(&mut self) {
+        let Some(tab) = self.active_tab().filter(|t| t.kind == Kind::Diagram) else { return };
+        let svg = er_svg(&tab.er);
+        let Some(file) = rfd::AsyncFileDialog::new()
+            .set_title("Export ER diagram")
+            .add_filter("SVG image", &["svg"])
+            .set_file_name("er-diagram.svg")
+            .save_file().await else { return };
+        match std::fs::write(file.path(), svg) {
+            Ok(()) => self.toast(format!("Diagram exported to {}", file.path().display())),
+            Err(e) => self.toast(format!("Could not export diagram: {e}")),
+        }
+    }
+
     /// Open (or refresh) the ER diagram tab for every table of the connected database.
     pub(crate) async fn open_er(&mut self) {
         if self.is_mongo() {
@@ -536,6 +554,28 @@ impl Worker {
         self.active = Some(idx);
         self.show_active();
     }
+}
+
+/// Export the full canvas, including tables outside the visible viewport.
+fn er_svg(layout: &ErLayout) -> String {
+    use std::fmt::Write;
+    fn xml(s: &str) -> String {
+        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+            .replace('"', "&quot;").replace('\'', "&apos;")
+    }
+    let (w, h) = layout.size;
+    let mut svg = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><rect width="100%" height="100%" fill="#f5f6f8"/>"##);
+    for line in &layout.lines {
+        let _ = write!(svg, r##"<path d="{}" fill="none" stroke="#697382" stroke-width="1.2"/>"##, xml(line));
+    }
+    for (x, y, w, h, title, body, _, _) in &layout.boxes {
+        let _ = write!(svg, r##"<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" fill="white" stroke="#dde1e7"/><text x="{}" y="{}" font-family="sans-serif" font-size="12" font-weight="bold" fill="#252a33">{}</text>"##, x + 8.0, y + 17.0, xml(title));
+        for (i, line) in body.lines().enumerate() {
+            let _ = write!(svg, r##"<text x="{}" y="{}" font-family="monospace" font-size="11" fill="#697382" xml:space="preserve">{}</text>"##, x + 8.0, y + 40.0 + i as f32 * 15.0, xml(line));
+        }
+    }
+    svg.push_str("</svg>");
+    svg
 }
 
 /// Grid layout of table boxes with a straight line per foreign key.
@@ -592,6 +632,21 @@ pub(crate) fn er_layout(tables: &[Table]) -> ErLayout {
 
 #[cfg(test)]
 mod er_tests {
+    #[test]
+    fn svg_export_escapes_labels_and_keeps_full_canvas_and_relationships() {
+        let layout = ErLayout {
+            boxes: vec![(20.0, 20.0, 210.0, 70.0, "users<&".into(), "# id\n  a<b".into(), "".into(), "users".into())],
+            lines: vec!["M 230 55 L 300 55".into()],
+            size: (1200.0, 900.0),
+        };
+        let svg = er_svg(&layout);
+        assert!(svg.contains("viewBox=\"0 0 1200 900\""));
+        assert!(svg.contains("users&lt;&amp;"));
+        assert!(svg.contains("a&lt;b"));
+        assert!(svg.contains("M 230 55 L 300 55"));
+        assert!(svg.ends_with("</svg>"));
+    }
+
     use super::*;
 
     fn col(name: &str, pk: bool, fk: Option<&str>) -> Column {

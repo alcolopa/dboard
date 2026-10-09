@@ -28,15 +28,15 @@ impl Worker {
         let matches = |n: &str| !filtering || n.to_lowercase().contains(&filter);
         let mut entries: Vec<(TreeEntry, String, i32, bool)> = Vec::new(); // (entry, label, level, expanded)
 
-        let mut schemas: Vec<String> = conn.metadata.tables.iter().map(|t| t.schema.clone()).chain(conn.metadata.objects.iter().map(|o| o.schema.clone())).collect();
-        schemas.sort();
-        schemas.dedup();
-        for s in schemas {
-            let tables: Vec<&Table> = conn.metadata.tables.iter().filter(|t| t.schema == s && matches(&t.name)).collect();
-            let objects: Vec<&DbObject> = conn.metadata.objects.iter().filter(|o| o.schema == s && matches(&o.name)).collect();
-            if tables.is_empty() && objects.is_empty() {
-                continue;
-            }
+        let mut schemas: std::collections::BTreeMap<&str, (Vec<&Table>, Vec<&DbObject>)> = Default::default();
+        for t in &conn.metadata.tables {
+            if matches(&t.name) { schemas.entry(&t.schema).or_default().0.push(t); }
+        }
+        for o in &conn.metadata.objects {
+            if matches(&o.name) { schemas.entry(&o.schema).or_default().1.push(o); }
+        }
+        for (schema, (tables, objects)) in schemas {
+            let s = schema.to_string();
             let skey = format!("s:{s}");
             let open = filtering || !self.collapsed.contains(&skey);
             let label = if s.is_empty() { "database".to_string() } else { s.clone() };
@@ -109,6 +109,24 @@ impl Worker {
             st.set_tree(ModelRc::new(VecModel::from(v)));
             st.set_tree_sel_count(sel_count);
             st.set_db_needed(false);
+        });
+    }
+
+    /// Selection changes do not change the tree's shape or require rebuilding metadata.
+    pub(crate) fn push_tree_selection(&self) {
+        let selected: Vec<bool> = self.tree.iter().map(|e| self.tree_sel.contains(&e.key)).collect();
+        let count = self.tree_sel.len() as i32;
+        ui(&self.w, move |st| {
+            let model = st.get_tree();
+            for (i, selected) in selected.into_iter().enumerate() {
+                if let Some(mut item) = slint::Model::row_data(&model, i) {
+                    if item.selected != selected {
+                        item.selected = selected;
+                        slint::Model::set_row_data(&model, i, item);
+                    }
+                }
+            }
+            st.set_tree_sel_count(count);
         });
     }
 

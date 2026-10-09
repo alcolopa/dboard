@@ -370,3 +370,12 @@ pub struct Page {
     /// Raw user-supplied WHERE body (SQL) or a JSON filter document (MongoDB).
     pub filter: Option<String>,
 }
+
+/// Effective permissions loaded for the access editor. Unknown/custom levels use -1.
+#[derive(Debug, Default)]
+pub struct UserAccess {
+    pub level: i32,
+    pub tables: Vec<(String, String, i32)>,
+    pub manage: bool,
+    pub password: bool,
+}

@@ -262,15 +262,18 @@ impl My {
         let mut res = self.conn.query_iter(sql_text).await?;
         let columns: Vec<String> =
             res.columns().map(|c| c.iter().map(|c| c.name_str().to_string()).collect()).unwrap_or_default();
-        let rows: Vec<Row> = res.collect().await?;
+        let w = columns.len();
+        let mut rows = Vec::new();
+        while let Some(row) = res.next().await? {
+            rows.push((0..w).map(|i| row.as_ref(i).and_then(value_to_cell)).collect());
+        }
         let affected = res.affected_rows();
         drop(res);
         let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
         if columns.is_empty() {
             return Ok(Rows { columns: vec!["rows affected".into()], rows: vec![vec![Some(affected.to_string())]], duration_ms, total_estimate: None });
         }
-        let w = columns.len();
-        Ok(Rows { columns, rows: rows_to_cells(&rows, w), duration_ms, total_estimate: None })
+        Ok(Rows { columns, rows, duration_ms, total_estimate: None })
     }
 
     async fn exec(&mut self, stmt: &str, params: Vec<Value>) -> Result<u64> {
@@ -398,6 +401,38 @@ impl My {
             .iter()
             .map(|r| UserInfo { name: s(r, 0), origin: s(r, 1), summary: if s(r, 2) == "Y" { "superuser".into() } else { String::new() } })
             .collect())
+    }
+
+    pub async fn user_access(&mut self, u: &UserInfo) -> Result<UserAccess> {
+        let actor: Vec<Row> = self.conn.query("SHOW GRANTS").await?;
+        let manage = actor.iter().filter_map(|r|r.as_ref(0).and_then(value_to_cell)).any(|g| g.starts_with("GRANT ALL PRIVILEGES ON *.* ") && g.contains("WITH GRANT OPTION"));
+        let current: Option<String> = self.conn.query_first("SELECT CURRENT_USER()").await?;
+        let db = self.scope.clone().ok_or_else(||Error::Db("Choose a database first.".into()))?;
+        let grants = self.user_grants(u).await?;
+        let level_for = |scope: &str| -> i32 {
+            let mut privileges = std::collections::HashSet::new();
+            for g in &grants {
+                if let Some((p, rest)) = g.strip_prefix("GRANT ").and_then(|g|g.split_once(" ON ")) {
+                    if rest.starts_with(&format!("{scope} TO ")) || rest.starts_with("*.* TO ") || rest.starts_with(&format!("{}.* TO ", D.quote(&db))) {
+                        for p in p.split(", ") { privileges.insert(p); }
+                    }
+                }
+            }
+            if privileges.contains("ALL PRIVILEGES") { 3 } else if privileges.contains("SELECT") && ["INSERT","UPDATE","DELETE"].iter().all(|p|privileges.contains(p)) { 2 } else if privileges.contains("SELECT") && !["INSERT","UPDATE","DELETE"].iter().any(|p|privileges.contains(p)) { 1 } else if privileges.is_empty() || privileges.iter().all(|p| *p=="USAGE") { 0 } else { -1 }
+        };
+        let rows: Vec<Row> = self.conn.exec("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=? ORDER BY TABLE_NAME", (&db,)).await?;
+        let tables = rows.iter().filter_map(|r|r.as_ref(0).and_then(value_to_cell)).map(|name| { let level=level_for(&format!("{}.{}",D.quote(&db),D.quote(&name))); (db.clone(),name,level) }).collect();
+        Ok(UserAccess { level: level_for(&format!("{}.*",D.quote(&db))), tables, manage, password: manage || current.as_deref()==Some(&format!("{}@{}",u.name,u.origin)) })
+    }
+
+    pub async fn set_table_access(&mut self, u: &UserInfo, schema: &str, table: &str, level: AccessLevel) -> Result<()> {
+        let scope=format!("{}.{}",D.quote(schema),D.quote(table));
+        let account=admin::mysql_account(&u.name,&u.origin);
+        let grants=self.user_grants(u).await?;
+        if grants.iter().any(|g|g.contains(&format!(" ON {scope} TO "))) { self.conn.query_drop(format!("REVOKE ALL PRIVILEGES ON {scope} FROM {account}")).await?; }
+        let p=match level { AccessLevel::None=>None, AccessLevel::ReadOnly=>Some("SELECT"), AccessLevel::ReadWrite=>Some("SELECT, INSERT, UPDATE, DELETE"), AccessLevel::Full=>Some("ALL PRIVILEGES") };
+        if let Some(p)=p { self.conn.query_drop(format!("GRANT {p} ON {scope} TO {account}")).await?; }
+        Ok(())
     }
 
     pub async fn user_grants(&mut self, u: &UserInfo) -> Result<Vec<String>> {

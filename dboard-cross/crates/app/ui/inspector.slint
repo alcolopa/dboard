@@ -3,24 +3,21 @@ import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
 import { Btn, Icons, IconBtn, Icon } from "widgets.slint";
 
+import { HistoryPanel } from "query.slint";
+
 export component Inspector inherits Rectangle {
     width: 320px;
     background: Theme.panel;
     drop-shadow-blur: AppState.inspector-pinned ? 0px : 16px;
     drop-shadow-color: #00000055;
     drop-shadow-offset-x: -4px;
-    TouchArea { } // swallow clicks so a floating inspector does not close itself
+    TouchArea { } // swallow clicks so an unpinned inspector does not close itself
     VerticalLayout {
         HorizontalLayout {
             height: 34px; padding-left: 8px; spacing: 2px;
-            for name[i] in ["Activity", "Changes", "Info"]: Rectangle {
-                width: 62px;
-                Text { text: name; color: AppState.inspector-tab == i ? Theme.text : Theme.dim; font-weight: AppState.inspector-tab == i ? 700 : 400; horizontal-alignment: center; vertical-alignment: center; }
-                Rectangle { y: parent.height - 2px; height: 2px; background: AppState.inspector-tab == i ? Theme.accent : transparent; }
-                TouchArea { clicked => { AppState.inspector-tab = i; } }
-            }
+            Text { text: "Inspector"; color: Theme.text; font-weight: 700; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
-            // Pin: docked and kept open across restarts. Unpinned, it floats over the workspace.
+            // Pin keeps the inspector open across restarts; unpinned closes on an outside click.
             IconBtn {
                 y: 5px; size: 24px; d: Icons.pin; filled: AppState.inspector-pinned; active: AppState.inspector-pinned;
                 hint: AppState.inspector-pinned ? "Unpin inspector" : "Pin inspector";
@@ -29,6 +26,15 @@ export component Inspector inherits Rectangle {
             IconBtn {
                 y: 5px; size: 24px; d: Icons.close; hint: "Close inspector";
                 clicked => { AppState.inspector-changed(false, AppState.inspector-pinned); }
+            }
+        }
+        HorizontalLayout {
+            height: 34px; spacing: 2px;
+            for name[i] in ["Activity", "Changes", "Info", "History"]: Rectangle {
+                horizontal-stretch: 1; min-width: 0px;
+                Text { text: name; color: AppState.inspector-tab == i ? Theme.text : Theme.dim; font-size: 12px; font-weight: AppState.inspector-tab == i ? 700 : 400; horizontal-alignment: center; vertical-alignment: center; }
+                Rectangle { y: parent.height - 2px; height: 2px; background: AppState.inspector-tab == i ? Theme.accent : transparent; }
+                TouchArea { clicked => { AppState.inspector-tab = i; } }
             }
         }
         Rectangle { height: 1px; background: Theme.line; }
@@ -69,6 +75,7 @@ export component Inspector inherits Rectangle {
                 }
             }
         }
+        if AppState.inspector-tab == 3: HistoryPanel { }
         if AppState.inspector-tab == 2: ScrollView {
             VerticalLayout {
                 padding: 14px; spacing: 10px; alignment: start;

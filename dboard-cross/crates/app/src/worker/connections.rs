@@ -571,7 +571,7 @@ impl Worker {
                     // Every open table may show rows the transaction wrote or discarded.
                     let others: Vec<usize> = (0..self.tabs.len()).filter(|i| Some(*i) != self.active && self.tabs[*i].kind == Kind::Table).collect();
                     for i in others {
-                        let tab = self.tabs[i].clone();
+                        let tab = self.tabs[i].request_snapshot();
                         self.load_table(i, tab).await;
                     }
                     self.refresh().await;

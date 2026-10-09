@@ -1,13 +1,13 @@
 import { Palette, ComboBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge, Icons, IconBtn, Slot, Sep, EditLine, EditArea } from "widgets.slint";
+import { Btn, Badge, Icons, IconBtn, Slot, Toolbar, Sep, EditLine, EditArea } from "widgets.slint";
 import { SessionBar } from "sessions.slint";
 import { ConnectionManager } from "connections.slint";
 import { Sidebar } from "sidebar.slint";
 import { TabBar } from "tabs.slint";
 import { DataGrid } from "grid.slint";
-import { QueryEditor, HistoryDrawer } from "query.slint";
+import { QueryEditor } from "query.slint";
 import { Diagram } from "diagram.slint";
 import { Inspector } from "inspector.slint";
 import { Dialogs } from "dialogs.slint";
@@ -59,10 +59,10 @@ component Workspace inherits VerticalLayout {
     }
     // footer
     if AppState.tab-kind >= 0: Rectangle {
-        height: 42px; background: Theme.panel;
+        height: 50px; background: Theme.panel;
         Rectangle { y: 0px; height: 1px; background: Theme.line; }
-        HorizontalLayout {
-            padding-left: 10px; padding-right: 10px; spacing: 4px;
+        Toolbar {
+            width: parent.width; height: parent.height;
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.first; hint: "First page"; enabled: AppState.row-offset > 0; clicked => { AppState.first-page(); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.prev; hint: "Previous page"; enabled: AppState.row-offset > 0; clicked => { AppState.prev-page(); } } }
             if AppState.tab-kind == 0: Slot {
@@ -79,6 +79,7 @@ component Workspace inherits VerticalLayout {
                 color: AppState.hint != "" ? Theme.text : Theme.dim;
                 vertical-alignment: center; font-size: 12px; overflow: elide; horizontal-stretch: 1; min-width: 40px;
             }
+            if AppState.tab-kind == 4: Btn { text: "Export diagram…"; clicked => { AppState.export-er(); } }
             if AppState.tab-kind == 3: Slot { IconBtn { d: Icons.copy; hint: "Copy definition"; clicked => { AppState.copy-text(AppState.ddl-text); } } }
             if AppState.tab-kind == 0 && AppState.db-type == 2: Slot { IconBtn { d: Icons.edit; hint: "Edit document"; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } } }
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
@@ -144,15 +145,22 @@ export component App inherits Window {
         }
         Menu {
             title: "Edit";
-            MenuItem { title: "Undo Last Change"; enabled: AppState.connected && AppState.undo-count > 0; activated => { AppState.undo(); } }
-            MenuItem { title: "Cut"; activated => { AppState.edit(0); } }
-            MenuItem { title: "Copy"; activated => { AppState.edit(1); } }
-            MenuItem { title: "Paste"; activated => { AppState.edit(2); } }
-            MenuItem { title: "Select All"; activated => { AppState.edit(3); } }
+            MenuItem { title: AppState.text-focus > 0 ? "Undo" : "Undo Last Change"; shortcut: @keys(Control + Z); enabled: AppState.text-focus > 0 || (AppState.connected && AppState.undo-count > 0); activated => { AppState.edit(4); } }
+            MenuItem { title: "Redo"; shortcut: @keys(Control + Shift + Z); enabled: AppState.text-focus > 0; activated => { AppState.edit(5); } }
+            MenuItem { title: "Cut"; shortcut: @keys(Control + X); activated => { AppState.edit(0); } }
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); activated => { AppState.edit(1); } }
+            MenuItem { title: "Paste"; shortcut: @keys(Control + V); activated => { AppState.edit(2); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); activated => { AppState.edit(3); } }
             MenuItem { title: "Settings…"; shortcut: @keys(Control + ","); activated => { AppState.open-settings(); } }
         }
         Menu {
             title: "View";
+            MenuItem {
+                title: root.full-screen ? "Exit Full Screen" : "Enter Full Screen";
+                // Slint maps Control to Command and Meta to Control on macOS.
+                shortcut: @keys(Control + Meta + F);
+                activated => { root.full-screen = !root.full-screen; }
+            }
             Menu {
                 title: "Query Timeout";
                 MenuItem { title: (AppState.timeout-secs == 0 ? "✓ " : "") + "Off"; activated => { AppState.set-timeout(0); } }
@@ -253,9 +261,9 @@ export component App inherits Window {
             if AppState.env-label != "Production": Rectangle { height: 2px; background: AppState.env-color; }
             // ---- top bar ----
             Rectangle {
-                height: 44px; background: Theme.panel;
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 8px;
+                height: 52px; background: Theme.panel;
+                Toolbar {
+                    width: parent.width; height: parent.height;
                     Slot {
                         Rectangle {
                             width: envl.preferred-width + 18px; height: 22px; border-radius: 11px; background: AppState.env-color;
@@ -293,7 +301,7 @@ export component App inherits Window {
                     if AppState.in-tx: Slot { Btn { text: "Commit"; primary: true; clicked => { AppState.tx-commit(); } } }
                     if AppState.in-tx: Slot { Btn { text: "Rollback"; danger: true; clicked => { AppState.tx-rollback(); } } }
                     Slot { IconBtn { d: Icons.undo; hint: "Undo last change (" + Theme.mod + "+Z)"; badge: AppState.undo-count; enabled: AppState.undo-count > 0; clicked => { AppState.undo(); } } }
-                    Slot { IconBtn { d: Icons.history; hint: "Query history & saved queries"; active: AppState.drawer-open; clicked => { AppState.drawer-open = !AppState.drawer-open; } } }
+                    Slot { IconBtn { d: Icons.history; hint: "Query history & saved queries"; active: AppState.inspector-open && AppState.inspector-tab == 3; clicked => { AppState.inspector-tab = 3; AppState.inspector-changed(true, AppState.inspector-pinned); } } }
                     Slot {
                         dbbtn := IconBtn {
                             d: Icons.database; hint: "Database tools: users, export, import";
@@ -307,9 +315,15 @@ export component App inherits Window {
             }
             Rectangle {
                 vertical-stretch: 1;
-                // Pinned: docked beside the workspace. Unpinned: floats over it and closes on an outside click.
+                // Reserve space in both modes so the inspector never covers workspace actions.
                 property <bool> docked: AppState.inspector-open && AppState.inspector-pinned;
-                property <length> inspector-w: docked ? 321px : 0px;
+                property <length> inspector-w: AppState.inspector-open ? 321px : 0px;
+                // Blank workspace clicks dismiss the unpinned inspector. Keep this behind
+                // the workspace so buttons, editors and scrollbars receive their own input.
+                if AppState.inspector-open && !AppState.inspector-pinned: TouchArea {
+                    x: 271px; width: parent.width - 271px - parent.inspector-w; height: parent.height;
+                    clicked => { AppState.inspector-changed(false, false); }
+                }
                 Sidebar { x: 0px; width: 270px; height: parent.height; }
                 Rectangle { x: 270px; width: 1px; height: parent.height; background: Theme.line; }
                 Rectangle {
@@ -317,13 +331,6 @@ export component App inherits Window {
                     width: parent.width - 271px - parent.inspector-w;
                     height: parent.height;
                     Workspace { width: parent.width; height: parent.height; }
-                    if AppState.drawer-open: HistoryDrawer {
-                        x: parent.width - self.width; height: parent.height;
-                    }
-                }
-                if AppState.inspector-open && !AppState.inspector-pinned: TouchArea {
-                    x: 271px; width: parent.width - 271px;
-                    clicked => { AppState.inspector-changed(false, false); }
                 }
                 if docked: Rectangle { x: parent.width - 321px; width: 1px; height: parent.height; background: Theme.line; }
                 if AppState.inspector-open: Inspector { x: parent.width - 320px; height: parent.height; }

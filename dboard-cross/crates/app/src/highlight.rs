@@ -91,7 +91,7 @@ fn classify(chars: &[char]) -> Vec<Kind> {
                 i += 1;
             }
             let word: String = chars[start..i].iter().collect();
-            let kind = if KEYWORDS.contains(&word.to_uppercase().as_str()) {
+            let kind = if KEYWORDS.iter().any(|keyword| word.eq_ignore_ascii_case(keyword)) {
                 Kind::Keyword
             } else if chars[i..].iter().find(|c| !c.is_whitespace() || **c == '\n') == Some(&'(') {
                 Kind::Func
@@ -111,9 +111,7 @@ fn classify(chars: &[char]) -> Vec<Kind> {
     k
 }
 
-pub fn tokens(text: &str) -> Vec<Tok> {
-    let chars: Vec<char> = text.chars().collect();
-    let kinds = classify(&chars);
+fn make_tokens(chars: &[char], kinds: &[Kind]) -> Vec<Tok> {
     let mut out: Vec<Tok> = Vec::new();
     let (mut line, mut col) = (0usize, 0usize);
     let mut cur: Option<Tok> = None;
@@ -132,7 +130,7 @@ pub fn tokens(text: &str) -> Vec<Tok> {
         let kind = kinds[i];
         // Strings and comments keep their inner spaces; everything else breaks at whitespace.
         match &mut cur {
-            Some(t) if t.kind == kind && t.line == line && t.col + t.text.chars().count() == col => t.text.push(c),
+            Some(t) if t.kind == kind && t.line == line => t.text.push(c),
             _ => {
                 out.extend(cur.take());
                 cur = Some(Tok { line, col, text: c.to_string(), kind });
@@ -146,71 +144,72 @@ pub fn tokens(text: &str) -> Vec<Tok> {
     out
 }
 
-/// Positions `(line, col)` of the bracket next to `byte_offset` and its partner, if any.
-pub fn match_bracket(text: &str, byte_offset: usize) -> Option<[(usize, usize); 2]> {
-    let chars: Vec<char> = text.chars().collect();
-    let kinds = classify(&chars);
-    // char index for the byte offset
-    let idx = text.char_indices().position(|(b, _)| b >= byte_offset).unwrap_or(chars.len());
-    let is_open = |c: char| matches!(c, '(' | '[' | '{');
-    let is_close = |c: char| matches!(c, ')' | ']' | '}');
-    let candidates = [idx.checked_sub(1), Some(idx)];
-    for at in candidates.into_iter().flatten() {
-        let Some(&c) = chars.get(at) else { continue };
-        if kinds[at] == Kind::Str || kinds[at] == Kind::Comment || !(is_open(c) || is_close(c)) {
-            continue;
-        }
-        let want = match c {
-            '(' => ')',
-            ')' => '(',
-            '[' => ']',
-            ']' => '[',
-            '{' => '}',
-            _ => '{',
-        };
-        let mut depth = 0i32;
-        let found = if is_open(c) {
-            (at + 1..chars.len()).find(|&j| {
-                if kinds[j] == Kind::Str || kinds[j] == Kind::Comment {
-                    return false;
-                }
-                if chars[j] == c {
-                    depth += 1;
-                } else if chars[j] == want {
-                    if depth == 0 {
-                        return true;
-                    }
-                    depth -= 1;
-                }
-                false
-            })
-        } else {
-            (0..at).rev().find(|&j| {
-                if kinds[j] == Kind::Str || kinds[j] == Kind::Comment {
-                    return false;
-                }
-                if chars[j] == c {
-                    depth += 1;
-                } else if chars[j] == want {
-                    if depth == 0 {
-                        return true;
-                    }
-                    depth -= 1;
-                }
-                false
-            })
-        };
-        if let Some(j) = found {
-            let pos = |p: usize| {
-                let before = &chars[..p];
-                let line = before.iter().filter(|c| **c == '\n').count();
-                let col = before.iter().rev().take_while(|c| **c != '\n').count();
-                (line, col)
+/// Lexical analysis shared by highlighting and caret movement. Bracket lookup does not
+/// reclassify the document or scan for a partner on every arrow-key press.
+pub struct Analysis {
+    chars: Vec<char>,
+    kinds: Vec<Kind>,
+    offsets: Vec<usize>,
+    brackets: Vec<Bracket>,
+}
+
+struct Bracket {
+    index: usize,
+    position: (usize, usize),
+    partner: Option<usize>,
+}
+
+impl Analysis {
+    pub fn new(text: &str) -> Self {
+        let (offsets, chars): (Vec<_>, Vec<_>) = text.char_indices().unzip();
+        let kinds = classify(&chars);
+        let mut brackets: Vec<Bracket> = Vec::new();
+        let mut stacks: [Vec<usize>; 3] = Default::default();
+        let (mut line, mut col) = (0, 0);
+        for (i, &c) in chars.iter().enumerate() {
+            let position = (line, col);
+            if c == '\n' { line += 1; col = 0; } else { col += if c == '\t' { 4 } else { 1 }; }
+            if matches!(kinds[i], Kind::Str | Kind::Comment) { continue; }
+            let (stack, open) = match c {
+                '(' => (0, true), ')' => (0, false),
+                '[' => (1, true), ']' => (1, false),
+                '{' => (2, true), '}' => (2, false),
+                _ => continue,
             };
-            return Some([pos(at), pos(j)]);
+            let at = brackets.len();
+            brackets.push(Bracket { index: i, position, partner: None });
+            if open {
+                stacks[stack].push(at);
+            } else if let Some(j) = stacks[stack].pop() {
+                brackets[at].partner = Some(j);
+                brackets[j].partner = Some(at);
+            }
         }
+        Self { chars, kinds, offsets, brackets }
     }
-    None
+
+    pub fn tokens(&self) -> Vec<Tok> {
+        make_tokens(&self.chars, &self.kinds)
+    }
+
+    /// Positions of the bracket next to a byte offset and its partner, if any.
+    pub fn match_bracket(&self, byte_offset: usize) -> Option<[(usize, usize); 2]> {
+        let idx = self.offsets.partition_point(|&b| b < byte_offset);
+        [idx.checked_sub(1), Some(idx)].into_iter().flatten().find_map(|at| {
+            let bracket = &self.brackets[self.brackets.binary_search_by_key(&at, |b| b.index).ok()?];
+            bracket.partner.map(|j| [bracket.position, self.brackets[j].position])
+        })
+    }
+}
+
+#[cfg(test)]
+pub fn tokens(text: &str) -> Vec<Tok> {
+    Analysis::new(text).tokens()
+}
+
+#[cfg(test)]
+pub fn match_bracket(text: &str, byte_offset: usize) -> Option<[(usize, usize); 2]> {
+    Analysis::new(text).match_bracket(byte_offset)
 }
 
 #[cfg(test)]
@@ -253,5 +252,25 @@ mod tests {
         assert_eq!(match_bracket(text, 2), Some([(0, 1), (0, 13)]));
         assert_eq!(match_bracket(text, 14), Some([(0, 13), (0, 1)]));
         assert_eq!(match_bracket("abc", 1), None);
+    }
+
+    #[test]
+    fn cached_brackets_handle_unicode_tabs_comments_and_unmatched_pairs() {
+        let text = "é\tfn([a], '(ignored)') /* { } */\n{x}";
+        let a = Analysis::new(text);
+        let open = text.find('(').unwrap();
+        assert_eq!(a.match_bracket(open + 1), Some([(0, 7), (0, 24)]));
+        let brace = text.rfind('{').unwrap();
+        assert_eq!(a.match_bracket(brace + 1), Some([(1, 0), (1, 2)]));
+        assert_eq!(Analysis::new("(unmatched").match_bracket(1), None);
+        assert_eq!(Analysis::new("'(ignore)' -- []").match_bracket(2), None);
+    }
+
+    #[test]
+    fn long_unicode_tokens_keep_text_and_position() {
+        let word = "é".repeat(20_000);
+        let t = tokens(&format!("SELECT\n\t{word}"));
+        assert_eq!(t[1].text, word);
+        assert_eq!((t[1].line, t[1].col), (1, 4));
     }
 }

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 impl Worker {
     /// Copy the active result into a static tab that stays as it is.
     pub(crate) fn pin_result(&mut self) {
-        let Some(t) = self.active_tab().cloned() else { return };
+        let Some(t) = self.active_tab() else { return };
         if t.rows.is_empty() && t.cols.is_empty() {
             return self.toast("Nothing to pin yet.");
         }
@@ -24,12 +24,11 @@ impl Worker {
 
     /// Diff the active result against the newest pinned one: added and removed rows.
     pub(crate) fn compare_result(&mut self) {
-        let Some(active) = self.active_tab().cloned() else { return };
-        let Some(pinned) = self.tabs.iter().rev().find(|t| t.kind == Kind::Pinned && !t.title.starts_with("Diff")).cloned() else {
+        let Some(active) = self.active_tab() else { return };
+        let Some(pinned) = self.tabs.iter().rev().find(|t| t.kind == Kind::Pinned && !t.title.starts_with("Diff")) else {
             return self.toast("Pin a result first, then run again and compare.");
         };
-        let names = |t: &Tab| t.cols.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
-        if names(&active) != names(&pinned) {
+        if !active.cols.iter().map(|c| &c.name).eq(pinned.cols.iter().map(|c| &c.name)) {
             return self.toast("The columns differ from the pinned result, so they cannot be compared.");
         }
         let (rows, added, removed, same) = diff_rows(&pinned.rows, &active.rows);

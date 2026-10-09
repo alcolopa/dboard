@@ -19,42 +19,43 @@ pub fn trailing_word(text: &str) -> &str {
 
 pub fn suggest(text: &str, tables: &[Table], mongo: bool) -> Vec<String> {
     let word = trailing_word(text);
-    if word.chars().count() < 2 {
+    if word.chars().take(2).count() < 2 {
         return Vec::new();
     }
     let lw = word.to_lowercase();
     let lower_text = text.to_lowercase();
-    let mut out: Vec<String> = Vec::new();
-    let mut push = |s: String| {
-        if s.to_lowercase() != lw && s.to_lowercase().starts_with(&lw) && !out.contains(&s) {
-            out.push(s);
+    let mut out: Vec<String> = Vec::with_capacity(8);
+    let mut push = |s: &str| {
+        let lower = s.to_lowercase();
+        if lower != lw && lower.starts_with(&lw) && !out.iter().any(|v| v == s) {
+            out.push(s.to_string());
         }
+        out.len() == 8
     };
     // Columns of tables already mentioned in the statement, then table names, then keywords.
     for t in tables {
         if lower_text.contains(&t.name.to_lowercase()) {
             for c in &t.columns {
-                push(c.name.clone());
-                push(format!("{}.{}", t.name, c.name));
+                if push(&c.name) { return out; }
+                if push(&format!("{}.{}", t.name, c.name)) { return out; }
             }
         }
     }
     for t in tables {
-        push(t.name.clone());
+        if push(&t.name) { return out; }
     }
     if mongo {
         for t in tables {
-            push(format!("db.{}", t.name));
+            if push(&format!("db.{}", t.name)) { return out; }
         }
         for k in MONGO {
-            push((*k).to_string());
+            if push(k) { return out; }
         }
     } else {
         for k in KEYWORDS {
-            push((*k).to_string());
+            if push(k) { return out; }
         }
     }
-    out.truncate(8);
     out
 }
 
@@ -65,17 +66,23 @@ pub fn apply(text: &str, choice: &str) -> String {
 }
 
 /// Subsequence match score for the palette (higher is better; `None` = no match).
+#[cfg(test)]
 pub fn fuzzy(query: &str, target: &str) -> Option<i32> {
+    fuzzy_lower(&query.to_lowercase(), target)
+}
+
+/// Palette queries are normalized once, rather than once per table or column.
+pub fn fuzzy_lower(query: &str, target: &str) -> Option<i32> {
     if query.is_empty() {
         return Some(0);
     }
-    let (q, t) = (query.to_lowercase(), target.to_lowercase());
-    if let Some(pos) = t.find(&q) {
-        return Some(1000 - pos as i32 - (t.len() - q.len()) as i32);
+    let t = target.to_lowercase();
+    if let Some(pos) = t.find(query) {
+        return Some(1000 - pos as i32 - (t.len() - query.len()) as i32);
     }
     let mut it = t.chars();
     let mut score = 0;
-    for qc in q.chars() {
+    for qc in query.chars() {
         let mut gap = 0;
         loop {
             match it.next() {
@@ -129,6 +136,15 @@ mod tests {
     fn apply_replaces_word() {
         assert_eq!(apply("select * from us", "users"), "select * from users");
         assert_eq!(apply("sel", "SELECT"), "SELECT");
+    }
+
+    #[test]
+    fn suggestions_keep_priority_uniqueness_and_the_eight_item_limit() {
+        let mut t = table();
+        t.columns = (0..2000).map(|i| Column { name: format!("field{i}"), ..t.columns[0].clone() }).collect();
+        let s = suggest("select users fi", &[t.clone(), t], false);
+        assert_eq!(s, (0..8).map(|i| format!("field{i}")).collect::<Vec<_>>());
+        assert_eq!(suggest("se", &[], false).first().map(String::as_str), Some("SELECT"));
     }
 
     #[test]

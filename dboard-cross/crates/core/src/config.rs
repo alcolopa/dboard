@@ -63,8 +63,11 @@ impl Store {
     fn write<T: Serialize>(&self, name: &str, value: &T) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         let tmp = self.dir.join(format!("{name}.tmp"));
-        let text = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
-        std::fs::write(&tmp, text)?;
+        use std::io::Write;
+        let mut writer = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        serde_json::to_writer_pretty(&mut writer, value).map_err(std::io::Error::other)?;
+        writer.flush()?;
+        drop(writer);
         std::fs::rename(&tmp, self.dir.join(name))
     }
 
@@ -97,7 +100,9 @@ impl Store {
     }
 
     pub fn save_connections(&self, list: &[ConnectionConfig]) -> std::io::Result<()> {
-        self.write("connections.json", &ConnectionsFile { version: FORMAT_VERSION, connections: list.to_vec() })
+        #[derive(Serialize)]
+        struct File<'a> { version: u32, connections: &'a [ConnectionConfig] }
+        self.write("connections.json", &File { version: FORMAT_VERSION, connections: list })
     }
 
     // ---- settings --------------------------------------------------------------------
@@ -117,7 +122,9 @@ impl Store {
     }
 
     pub fn save_history(&self, entries: &[HistoryEntry]) -> std::io::Result<()> {
-        self.write("history.json", &HistoryFile { version: FORMAT_VERSION, entries: entries.to_vec() })
+        #[derive(Serialize)]
+        struct File<'a> { version: u32, entries: &'a [HistoryEntry] }
+        self.write("history.json", &File { version: FORMAT_VERSION, entries })
     }
 
     pub fn load_saved_queries(&self) -> Vec<SavedQuery> {
@@ -125,7 +132,9 @@ impl Store {
     }
 
     pub fn save_saved_queries(&self, q: &[SavedQuery]) -> std::io::Result<()> {
-        self.write("saved_queries.json", &SavedFile { version: FORMAT_VERSION, queries: q.to_vec() })
+        #[derive(Serialize)]
+        struct File<'a> { version: u32, queries: &'a [SavedQuery] }
+        self.write("saved_queries.json", &File { version: FORMAT_VERSION, queries: q })
     }
 }
 
@@ -284,11 +293,10 @@ impl Store {
     /// Newest first, at most `limit` entries, across the current and the rotated file.
     pub fn read_audit(&self, limit: usize) -> Vec<AuditEntry> {
         let mut out: Vec<AuditEntry> = Vec::new();
+        if limit == 0 { return out; }
         for name in ["audit.log", "audit.log.1"] {
             let Ok(text) = std::fs::read_to_string(self.dir.join(name)) else { continue };
-            let mut part: Vec<AuditEntry> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-            part.reverse();
-            out.extend(part);
+            out.extend(text.lines().rev().filter_map(|l| serde_json::from_str(l).ok()).take(limit - out.len()));
             if out.len() >= limit {
                 break;
             }
@@ -368,6 +376,7 @@ mod audit_tests {
         let got = s.read_audit(10);
         assert_eq!(got.iter().map(|e| e.text.as_str()).collect::<Vec<_>>(), ["DROP c", "UPDATE b", "INSERT a"]);
         assert_eq!(s.read_audit(2).len(), 2);
+        assert!(s.read_audit(0).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

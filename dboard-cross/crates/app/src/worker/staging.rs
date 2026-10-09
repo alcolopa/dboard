@@ -57,26 +57,33 @@ impl Worker {
     /// After (re)loading a table page, show staged values on the rows they belong to.
     pub(crate) fn overlay_staged(t: &mut Tab) {
         t.orig_rows.clear();
-        let staged = t.staged.clone();
-        for s in &staged {
-            if let Some(idx) = t.rows.iter().position(|r| *r == s.orig) {
-                t.orig_rows.insert(idx, s.orig.clone());
+        if t.staged.is_empty() { return; }
+        {
+            // Reverse insertion preserves the first matching row when duplicates exist.
+            let positions: std::collections::HashMap<&Vec<Cell>, usize> = t.rows.iter().enumerate().rev().map(|(i, r)| (r, i)).collect();
+            for s in &t.staged {
+                if let Some(&idx) = positions.get(&s.orig) {
+                    t.orig_rows.entry(idx).or_insert_with(|| s.orig.clone());
+                }
             }
         }
-        for (idx, orig) in t.orig_rows.clone() {
-            let mut row = orig.clone();
-            for s in staged.iter().filter(|s| s.orig == orig) {
-                row[s.c] = s.new.clone();
+        let mut edits: std::collections::HashMap<&Vec<Cell>, Vec<&Staged>> = Default::default();
+        for s in &t.staged { edits.entry(&s.orig).or_default().push(s); }
+        for (idx, orig) in &t.orig_rows {
+            if let Some(changes) = edits.get(orig) {
+                for s in changes { t.rows[*idx][s.c] = s.new.clone(); }
             }
-            t.rows[idx] = row;
         }
     }
 
     pub(crate) fn pending_cells(t: &Tab) -> HashSet<(usize, usize)> {
         let mut out = HashSet::new();
+        if t.staged.is_empty() { return out; }
+        let mut edits: std::collections::HashMap<&Vec<Cell>, Vec<usize>> = Default::default();
+        for s in &t.staged { edits.entry(&s.orig).or_default().push(s.c); }
         for (idx, orig) in &t.orig_rows {
-            for s in t.staged.iter().filter(|s| &s.orig == orig) {
-                out.insert((*idx, s.c));
+            if let Some(columns) = edits.get(orig) {
+                out.extend(columns.iter().map(|c| (*idx, *c)));
             }
         }
         out
@@ -121,7 +128,8 @@ impl Worker {
 
     pub(crate) async fn review_apply(&mut self) {
         let Some(i) = self.active else { return };
-        let tab = self.tabs[i].clone();
+        let mut tab = self.tabs[i].request_snapshot();
+        tab.staged = self.tabs[i].staged.clone();
         let sql = !self.is_mongo();
         if !self.hook_gate(&format!("UPDATE {}.{} ({} staged change(s))", tab.schema, tab.name, tab.staged.len())) {
             let msg = self.tabs.get(i).map(|t| t.banner.clone()).unwrap_or_default();
@@ -136,23 +144,16 @@ impl Worker {
                 return fail(&self.w, e.to_string());
             }
         }
-        let mut running: Vec<(Vec<Cell>, Vec<Cell>)> = Vec::new();
+        let mut running: std::collections::HashMap<&Vec<Cell>, Vec<Cell>> = Default::default();
         for s in &tab.staged {
-            let pos = match running.iter().position(|(o, _)| *o == s.orig) {
-                Some(p) => p,
-                None => {
-                    running.push((s.orig.clone(), s.orig.clone()));
-                    running.len() - 1
-                }
-            };
-            let now = running[pos].1.clone();
-            if let Err(e) = conn.edit_cell(&tab.schema, &tab.name, &now, &s.col, s.new.clone()).await {
+            let now = running.entry(&s.orig).or_insert_with(|| s.orig.clone());
+            if let Err(e) = conn.edit_cell(&tab.schema, &tab.name, now, &s.col, s.new.clone()).await {
                 if own_tx {
                     let _ = conn.rollback().await;
                 }
                 return fail(&self.w, format!("{e} — nothing was changed."));
             }
-            running[pos].1[s.c] = s.new.clone();
+            now[s.c] = s.new.clone();
         }
         if own_tx {
             if let Err(e) = conn.commit().await {
@@ -212,5 +213,15 @@ mod tests {
         ];
         Worker::overlay_staged(&mut t);
         assert_eq!(t.rows[0], row("5", "q"));
+    }
+
+    #[test]
+    fn duplicate_rows_overlay_only_the_first_match() {
+        let mut t = Tab::new(Kind::Table, "t", 100);
+        t.rows = vec![row("1", "a"), row("1", "a")];
+        t.staged = vec![Staged { orig: row("1", "a"), c: 1, col: "name".into(), new: Some("edited".into()) }];
+        Worker::overlay_staged(&mut t);
+        assert_eq!(t.rows, vec![row("1", "edited"), row("1", "a")]);
+        assert_eq!(Worker::pending_cells(&t), HashSet::from([(0, 1)]));
     }
 }
