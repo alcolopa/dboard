@@ -9,6 +9,10 @@ on:
       tag:
         description: "Version tag to release (e.g. v1.0.0)"
         required: true
+      arch_only:
+        description: "Rebuild only the Arch package for an existing release"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -19,6 +23,7 @@ env:
 jobs:
   # ---- macOS: one app bundle per architecture ----
   build-macos:
+    if: ${{ !inputs.arch_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,6 +89,7 @@ jobs:
 
   # ---- Linux: tar.gz + .deb + .rpm per architecture (built natively) ----
   build-linux:
+    if: ${{ !inputs.arch_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -125,6 +131,7 @@ jobs:
 
   # ---- Arch Linux (x86_64 only: there is no official aarch64 Arch container; the PKGBUILD also builds on aarch64) ----
   build-arch:
+    if: ${{ always() && !cancelled() && (needs.build-linux.result == 'success' || inputs.arch_only) }}
     needs: build-linux # the release/tag must exist: the PKGBUILD downloads the tag tarball
     runs-on: ubuntu-latest
     container: archlinux:base-devel
@@ -148,6 +155,7 @@ jobs:
 
   # ---- Windows: setup.exe per architecture ----
   build-windows:
+    if: ${{ !inputs.arch_only }}
     strategy:
       fail-fast: false
       matrix:

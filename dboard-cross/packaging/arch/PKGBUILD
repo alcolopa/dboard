@@ -8,6 +8,9 @@ pkgdesc='Native database client for PostgreSQL, MySQL and MongoDB'
 arch=('x86_64' 'aarch64')
 url='https://github.com/alcolopa/dboard'
 license=('MIT')
+# makepkg's GCC LTO produces C objects Rust's LLVM linker cannot read (bundled
+# SQLite/ring). Cargo still applies its own optimized release profile and LTO.
+options=('!lto')
 depends=('fontconfig' 'libxkbcommon' 'libx11' 'libxcb' 'wayland' 'libxkbcommon-x11')
 optdepends=('gnome-keyring: store passwords in the Secret Service' 'kwallet: store passwords in the Secret Service')
 makedepends=('cargo')
