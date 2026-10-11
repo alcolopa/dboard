@@ -1,22 +1,49 @@
 export global Theme {
-    in-out property <bool> dark: true;
+    // Stable indices match config::Theme and the Preferences picker.
+    in-out property <int> variant: 0;
+    out property <bool> dark: variant == 0 || variant == 2;
     in-out property <length> row-h: 26px;
-    out property <color> bg: dark ? #181a1f : #f5f6f8;
-    out property <color> panel: dark ? #202228 : #ffffff;
-    out property <color> panel2: dark ? #282b32 : #f0f2f5;
-    out property <color> hover: dark ? #30343c : #e9edf2;
-    out property <color> line: dark ? #353941 : #dde1e7;
-    out property <color> text: dark ? #eceef2 : #252a33;
-    out property <color> dim: dark ? #a1a7b3 : #697382;
+    out property <color> bg: variant == 2 ? #14221c : variant == 3 ? #f6f1e7 : dark ? #181a1f : #f5f6f8;
+    out property <color> panel: variant == 2 ? #1c2d24 : variant == 3 ? #fffaf0 : dark ? #202228 : #ffffff;
+    out property <color> panel2: variant == 2 ? #25382d : variant == 3 ? #eee6d6 : dark ? #282b32 : #f0f2f5;
+    out property <color> hover: variant == 2 ? #304838 : variant == 3 ? #e5dac6 : dark ? #30343c : #e9edf2;
+    out property <color> line: variant == 2 ? #405a48 : variant == 3 ? #d8cbb3 : dark ? #353941 : #dde1e7;
+    out property <color> text: variant == 2 ? #edf4ec : variant == 3 ? #383126 : dark ? #eceef2 : #252a33;
+    out property <color> dim: variant == 2 ? #afc3b3 : variant == 3 ? #786c59 : dark ? #a1a7b3 : #697382;
     /// Modifier shown in hints; the app maps Cmd (macOS) and Ctrl (elsewhere) to the same shortcut.
     in property <string> mod: "Ctrl";
-    out property <color> accent: #6489db;
-    out property <color> text-selection: dark ? #405c91 : #b9cff4;
-    out property <color> sel: dark ? #34435e : #e2ebfa;
-    out property <color> ok: #55b795;
-    out property <color> err: #e77575;
+    out property <color> accent: variant == 2 ? #83bb75 : variant == 3 ? #597d42 : dark ? #55b795 : #25775b;
+    out property <color> accent-hover: variant == 2 ? #6a9f5e : variant == 3 ? #476634 : dark ? #409b7c : #1d6049;
+    out property <color> accent-text: variant == 2 ? #a4d494 : variant == 3 ? #476634 : dark ? #55b795 : #25775b;
+    out property <color> bracket-highlight: accent.with-alpha(0.33);
+    out property <color> text-selection: variant == 2 ? #44643c : variant == 3 ? #c9d9b7 : dark ? #305f4f : #b9e4d4;
+    out property <color> sel: variant == 2 ? #30492b : variant == 3 ? #dfe8d2 : dark ? #294438 : #e2f3eb;
+    out property <color> ok: dark ? #55b795 : #25775b;
+    out property <color> err: dark ? #e77575 : #b94040;
     out property <color> warn: dark ? #f5c46b : #9a6b00;
     out property <color> warn-bg: dark ? #3a2a10 : #fdf1d6;
     out property <color> ok-bg: dark ? #10291f : #d8f5e8;
     out property <color> err-bg: dark ? #3a1519 : #fde3e3;
+    out property <color> clear: transparent;
+    out property <color> on-accent: dark ? #14221c : #ffffff;
+    out property <color> on-warning: dark ? #181a1f : #ffffff;
+    out property <color> danger-hover: #d63b3b;
+    out property <color> tooltip-bg: #000000b0;
+    out property <color> modal-overlay: #000000a0;
+    out property <color> shadow: #00000066;
+    out property <color> inspector-shadow: #00000055;
+    out property <color> toast-text: #ffffff;
+    out property <color> toast-bg: dark ? #1f2937 : #383126;
+    out property <color> syntax-string: dark ? #9ece6a : #2b8a3e;
+    out property <color> syntax-number: dark ? #ff9e64 : #d9480f;
+    out property <color> syntax-operator: dark ? #8cdbc0 : #287a61;
+    out property <color> syntax-variable: dark ? #e0af68 : #9c6b00;
+    out property <color> environment-production: dark ? #ef4444 : #c43c3c;
+    out property <color> environment-staging: dark ? #f59e0b : #8e630d;
+    out property <color> environment-development: accent;
+    out property <color> environment-local: dark ? #10b981 : #16724f;
+    public pure function environment-color(index: int) -> color {
+        index == 0 ? environment-production : index == 1 ? environment-staging
+        : index == 2 ? environment-development : environment-local
+    }
 }

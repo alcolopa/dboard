@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dboard — Your databases. One native workspace.</title>
+<title>dboard — Open the table. Fix the thing.</title>
 <meta name="description" content="An open-source native database client for PostgreSQL, MySQL, MariaDB, SQLite and MongoDB. Query, inspect and edit from macOS, Windows or Linux.">
-<meta property="og:title" content="dboard — Your databases. One native workspace.">
+<meta property="og:title" content="dboard — Open the table. Fix the thing.">
 <meta property="og:description" content="Query, inspect and edit your data with an open-source Rust desktop client.">
 <meta property="og:type" content="website">
-<meta name="theme-color" content="#0b0d11">
+<meta name="theme-color" content="#181a1f">
 <link rel="icon" href="AppIcon-1024.png">
 <script>
 // Apply an explicit preference before paint; absent/invalid storage follows the OS.
@@ -18,12 +18,12 @@ try {
 </script>
 <style>
 :root {
-  --bg:#fafafa;
+  --bg:#f5f6f8;
   --bg-elev:#fff;
-  --text:#14171c;
-  --text-dim:#5b6472;
-  --accent:#3860e0;
-  --border:#e6e8ec;
+  --text:#252a33;
+  --text-dim:#697382;
+  --accent:#25775b;
+  --border:#dde1e7;
   --radius:14px}
 * {
   box-sizing:border-box}
@@ -41,7 +41,7 @@ a {
 a:hover {
   text-decoration:underline}
 a:focus-visible,summary:focus-visible {
-  outline:3px solid #c78a22;
+  outline:3px solid var(--accent);
   outline-offset:5px}
 .wrap {
   max-width:1160px;
@@ -87,8 +87,8 @@ a:focus-visible,summary:focus-visible {
   text-decoration:none;
   font-size:14px}
 .btn-primary {
-  background:var(--accent);
-  color:white;
+  background:#25775b;
+  color:#fff;
   border-color:var(--accent)}
 .btn-ghost {
   background:var(--bg-elev);
@@ -125,21 +125,21 @@ h1 span {
   font-size:13px;
   color:var(--text-dim)}
 .workspace {
-  background:#0b0d11;
-  border:1px solid #22262f;
+  background:#181a1f;
+  border:1px solid #353941;
   border-radius:14px;
-  color:#e9edf3;
+  color:#eceef2;
   overflow:hidden;
-  box-shadow:0 25px 60px #14171c20;
+  box-shadow:0 25px 60px #252a3320;
   transform:rotate(-1deg);
   font:12px/1.6 ui-monospace,monospace}
 .bar {
   padding:12px 16px;
-  border-bottom:1px solid #22262f;
+  border-bottom:1px solid #353941;
   display:flex;
   justify-content:space-between}
 .lights {
-  color:#7da2ff;
+  color:#55b795;
   letter-spacing:4px}
 .sample {
   display:grid;
@@ -147,16 +147,16 @@ h1 span {
   min-height:270px}
 .sidebar {
   padding:18px 12px;
-  border-right:1px solid #22262f;
-  color:#9aa4b2}
+  border-right:1px solid #353941;
+  color:#a1a7b3}
 .sidebar b {
   display:block;
-  color:#c5d7ff;
+  color:#eceef2;
   padding:8px 0}
 .query {
   padding:22px 16px}
 .query code {
-  color:#9dbaff;
+  color:#55b795;
   white-space:normal}
 .result {
   width:100%;
@@ -166,14 +166,14 @@ h1 span {
 .result td,.result th {
   padding:10px 8px;
   text-align:left;
-  border-bottom:1px solid #22262f}
+  border-bottom:1px solid #353941}
 .result th {
-  color:#9aa4b2;
+  color:#a1a7b3;
   font-weight:400}
 .status {
   padding:10px 16px;
-  border-top:1px solid #22262f;
-  color:#9dbaff}
+  border-top:1px solid #353941;
+  color:#55b795}
 .caption {
   text-align:center;
   font-size:11px;
@@ -226,20 +226,20 @@ p {
   grid-template-columns:1fr 1fr;
   gap:64px}
 .dark {
-  background:#0b0d11;
-  color:#e9edf3}
+  background:#181a1f;
+  color:#eceef2}
 .dark p {
-  color:#9aa4b2}
+  color:#a1a7b3}
 .dark a {
-  color:#9dbaff}
+  color:#55b795}
 .dark .eyebrow {
-  color:#9dbaff}
+  color:#55b795}
 .dark pre {
-  background:#12151b;
-  border:1px solid #22262f;
+  background:#202228;
+  border:1px solid #353941;
   padding:24px;
   border-radius:12px;
-  color:#c5d7ff;
+  color:#eceef2;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
   font-size:13px}
@@ -248,7 +248,7 @@ p {
   list-style:none}
 .list li {
   padding:14px 0;
-  border-bottom:1px solid #22262f}
+  border-bottom:1px solid #353941}
 .dl-row {
   display:flex;
   flex-wrap:wrap;
@@ -349,14 +349,14 @@ h2 {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg:#0b0d11; --bg-elev:#12151b; --text:#e9edf3;
-    --text-dim:#9aa4b2; --accent:#5b8cff; --border:#22262f;
+    --bg:#181a1f; --bg-elev:#202228; --text:#eceef2;
+    --text-dim:#a1a7b3; --accent:#55b795; --border:#353941;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg:#0b0d11; --bg-elev:#12151b; --text:#e9edf3;
-  --text-dim:#9aa4b2; --accent:#5b8cff; --border:#22262f;
+  --bg:#181a1f; --bg-elev:#202228; --text:#eceef2;
+  --text-dim:#a1a7b3; --accent:#55b795; --border:#353941;
 }
 button, select { font:inherit; }
 button { cursor:pointer; }
@@ -369,6 +369,44 @@ button:focus-visible,select:focus-visible { outline:3px solid var(--accent); out
   .nav-links { flex-wrap:wrap; gap:10px; }
   .nav-links .btn { max-width:200px; text-align:center; }
 }
+
+/* A workbench and field notes, rather than a marketing card grid. */
+.hero.intro { display:block; max-width:850px; padding:64px 0 44px; }
+.intro h1 { font-size:clamp(40px,6vw,66px); }
+.intro .lede { max-width:720px; }
+.intro .subnote { margin-top:18px; }
+.card,.workspace { box-shadow:none; border-radius:5px; }
+.section-head { max-width:800px; }
+.reasons { display:grid; grid-template-columns:1fr 1fr; gap:32px 48px; }
+.reasons article { border-top:1px solid var(--border); padding-top:22px; }
+.reasons h3 { margin:12px 0; }
+.reasons p { color:var(--text-dim); margin:0; }
+@media(max-width:700px) { .reasons { grid-template-columns:1fr; } }
+.switch-note { padding:26px 0 0; max-width:750px; }
+
+.product-shot { margin:28px 0 48px; }
+.product-shot > a { display:block; overflow:hidden; border:1px solid var(--border); border-radius:8px; }
+.product-shot img { display:block; width:100%; height:auto; transform:translateY(-3.95%); margin-bottom:-2.5%; }
+.product-shot a:focus-visible { display:block; }
+.product-shot figcaption { margin-top:14px; color:var(--text-dim); font-size:14px; max-width:850px; }
+.product-shot figcaption strong { color:var(--text); }
+.gallery-controls { display:flex; flex-wrap:wrap; gap:20px; align-items:end; }
+.gallery-controls label { display:grid; gap:6px; font-size:13px; color:var(--text-dim); }
+.feature-index { border-top:1px solid var(--border); padding-top:24px; }
+.feature-index dl { display:grid; grid-template-columns:150px 1fr; gap:16px 24px; }
+.feature-index dt { font-weight:650; }
+.feature-index dd { margin:0; color:var(--text-dim); }
+@media(max-width:600px) { .feature-index dl { grid-template-columns:1fr; gap:8px; } .feature-index dd { margin-bottom:16px; } }
+.segments { display:inline-flex; align-items:center; gap:3px; padding:4px; border:1px solid var(--border); border-radius:12px; background:var(--bg-elev); }
+.segments button { border:0; background:transparent; color:var(--text-dim); border-radius:8px; padding:7px 11px; font-size:13px; line-height:1.4; transition:background .15s,color .15s; }
+.segments button:hover { color:var(--text); background:var(--bg); }
+.segments button[aria-pressed="true"] { background:var(--accent); color:#181a1f; font-weight:650; }
+:root[data-theme="light"] .segments button[aria-pressed="true"] { color:white; }
+@media(prefers-color-scheme:light) { :root:not([data-theme="dark"]) .segments button[aria-pressed="true"] { color:white; } }
+.gallery-controls { justify-content:space-between; gap:12px; }
+.workflow-control { flex-wrap:wrap; }
+@media(max-width:900px) { .theme-control span { display:none; } .theme-control button { min-width:32px; } }
+@media(prefers-reduced-motion:reduce) { .segments button { transition:none; } }
 </style>
 </head>
 <body>
@@ -378,13 +416,9 @@ button:focus-visible,select:focus-visible { outline:3px solid var(--accent); out
 <a class="brand" href="#main">
 <img src="AppIcon-1024.png" alt="">dboard</a>
 <nav class="nav-links" aria-label="Main navigation">
-<select id="theme" aria-label="Color theme">
-<option value="system">System</option>
-<option value="light">Light</option>
-<option value="dark">Dark</option>
-</select>
+<div id="theme" class="segments theme-control" role="group" aria-label="Color theme"><button type="button" data-value="system" aria-pressed="true" title="Follow system theme">◐ <span>System</span></button><button type="button" data-value="light" aria-pressed="false" title="Light theme">☀ <span>Light</span></button><button type="button" data-value="dark" aria-pressed="false" title="Dark theme">☾ <span>Dark</span></button></div>
+<a class="optional" href="#product">The app</a>
 <a class="optional" href="#features">Why dboard</a>
-<a class="optional" href="#opensource">Open source</a>
 <a class="source" href="https://github.com/alcolopa/dboard">GitHub ↗</a>
 <a class="btn btn-primary" id="dl-nav" href="#download">Download</a>
 </nav>
@@ -392,97 +426,39 @@ button:focus-visible,select:focus-visible { outline:3px solid var(--accent); out
 </header>
 <main id="main">
 <div class="wrap">
-<section class="hero">
-<div>
-<span class="eyebrow">Native desktop · MIT licensed</span>
-<h1>Your databases.<br>
-<span>One workspace.</span>
-</h1>
-<p class="lede">Query, inspect and edit your data without switching tools. An open-source database client built with Rust for macOS, Windows and Linux.</p>
-<div class="cta-row">
-<a class="btn btn-primary" id="dl-hero" href="#download">Download dboard</a>
-<a class="btn btn-ghost" href="https://github.com/alcolopa/dboard">Explore the source ↗</a>
-</div>
-<p class="subnote" style="margin-top:16px">Local desktop app. Connect directly to your own databases.</p>
-</div>
-<div>
-<div class="workspace" aria-label="Illustrative query workflow using example data">
-<div class="bar">
-<span class="lights" aria-hidden="true">● ● ●</span>
-<span>dboard / local</span>
-</div>
-<div class="sample">
-<div class="sidebar">Connections<b>● local</b>▾ public<br> &nbsp; users<br> &nbsp; orders<br> &nbsp; products</div>
-<div class="query">
-<code>SELECT name, role<br>FROM users<br>ORDER BY name;</code>
-<table class="result">
-<thead>
-<tr>
-<th>id</th>
-<th>name</th>
-<th>role</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1</td>
-<td>Alex</td>
-<td>engineer</td>
-</tr>
-<tr>
-<td>2</td>
-<td>Sam</td>
-<td>designer</td>
-</tr>
-<tr>
-<td>3</td>
-<td>Taylor</td>
-<td>founder</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="status">Query → inspect → edit → review</div>
-</div>
-<p class="caption">Illustrative workflow · example data, not an app screenshot</p>
-</div>
+<section class="hero intro">
+<span class="eyebrow">dboard / an open-source database workbench</span>
+<h1>Open the table.<br><span>Fix the thing.</span></h1>
+<p class="lede">For the everyday database jobs: investigate a row, run a query, review a change. PostgreSQL, MySQL / MariaDB, SQLite and MongoDB in a native Rust desktop app.</p>
+<div class="cta-row"><a class="btn btn-primary" href="#product">See the actual app ↓</a><a class="btn btn-ghost" id="dl-hero" href="#download">Download dboard</a></div>
+<p class="subnote">MIT licensed, including commercial use. macOS / Windows / Linux.</p>
 </section>
-<div class="engine-strip" aria-label="Supported databases">
-<span>CONNECT TO</span>
-<span>PostgreSQL</span>
-<span>MySQL / MariaDB</span>
-<span>SQLite</span>
-<span>MongoDB</span>
 </div>
+<section class="section" id="product"><div class="wrap">
+<div class="section-head"><span class="eyebrow">The actual desktop app</span><h2>This is dboard.</h2><p>Captured from the running macOS app, connected to a local SQLite database with sample data. Open an image to inspect the interface at full size.</p></div>
+<div class="gallery-controls"><div id="feature-view" class="segments workflow-control" role="group" aria-label="Explore a workflow"><button type="button" data-value="table" aria-pressed="true">Tables &amp; activity</button><button type="button" data-value="sql-editor" aria-pressed="false">SQL editor</button><button type="button" data-value="relationships" aria-pressed="false">Relationships</button><button type="button" data-value="palette" aria-pressed="false">Command palette</button></div><div id="capture-theme" class="segments" role="group" aria-label="Screenshot theme"><button type="button" data-value="auto" aria-pressed="true">Auto</button><button type="button" data-value="light" aria-pressed="false">Light</button><button type="button" data-value="dark" aria-pressed="false">Dark</button></div></div>
+<figure class="product-shot"><a id="capture-link" href="screenshots/table-light.jpg" target="_blank" rel="noopener"><img id="capture-image" src="screenshots/table-light.jpg" width="2560" height="1624" alt="dboard light theme table browser with demo customers and the activity inspector" fetchpriority="high"></a><figcaption id="capture-caption" aria-live="polite"><strong>Browse and inspect.</strong> Object navigation, column types, filters, sorting, pagination, row controls and the pinned activity inspector.</figcaption></figure>
+<div class="feature-index"><h3>The rest of the toolbox</h3><p>These are desktop capabilities. Availability depends on the database engine; the screenshots above use SQLite. <a href="https://github.com/alcolopa/dboard/blob/main/dboard-cross/README.md#features">Read the feature guide and limitations ↗</a></p>
+<dl><dt>Connect</dt><dd>PostgreSQL, MySQL / MariaDB, SQLite and MongoDB; multiple connection tabs, environment labels, database switching, read-only sessions, SSH tunnels, TLS certificates and password references.</dd>
+<dt>Browse &amp; edit</dt><dd>Type-aware cells, JSON editor, row forms, copy/paste ranges, sorting and filters, staged changes, transaction controls, edit history and undo.</dd>
+<dt>Query</dt><dd>Syntax colors, autocomplete, snippets, variables, run selection, saved queries and folders, query history, EXPLAIN plans, stop and timeouts. MongoDB find and aggregation workflows.</dd>
+<dt>Inspect</dt><dd>Schema and DDL, routine definitions, object and column search, ER diagrams with SVG export, schema diff, pinned results and result comparison.</dd>
+<dt>Move data</dt><dd>CSV / TSV / JSON import with mapping and preview; database import/export; results in CSV, JSON, SQL and Excel; sample row generation; manual and scheduled backups.</dd>
+<dt>Review &amp; protect</dt><dd>Activity inspector, local write audit, production confirmations, write hooks and server users/access. MongoDB is tested; its user management remains unverified.</dd>
+<dt>Make it yours</dt><dd>Light and dark themes, compact rows, page size, editor font size, keyboard commands, persistent workspace and OS-keyring credentials.</dd></dl></div>
+<noscript><p>Browse the <a href="screenshots/table-dark.jpg">dark table view</a>, <a href="screenshots/sql-editor-light.jpg">light SQL editor</a>, <a href="screenshots/relationships-light.jpg">relationship diagram</a> and <a href="screenshots/palette-dark.jpg">command palette</a>.</p></noscript>
+</div></section>
+
+<section class="section" id="features"><div class="wrap">
+<div class="section-head"><span class="eyebrow">Built for everyday database work</span><h2>From a question to a change, in one workspace.</h2><p>Find the row you need, understand how it connects, and review what you’re about to write. dboard keeps the data and the tools to work on it together.</p></div>
+<div class="reasons">
+<article><span class="eyebrow">01 / Investigate</span><h3>Follow the data.</h3><p>Filter a table, run a query, inspect its schema and trace relationships in an ER diagram. Keep several connections and query tabs open as you work.</p></article>
+<article><span class="eyebrow">02 / Make a change</span><h3>See what you’re writing.</h3><p>Enable staged edits to review old and new values before applying them in a transaction. Use read-only connections, production confirmations and the activity inspector to keep the context visible.</p></article>
+<article><span class="eyebrow">03 / Keep your workflow</span><h3>Pick up where you left off.</h3><p>Save queries in folders, reuse snippets, revisit query history and reopen your connections. Reach commands and database objects from the keyboard.</p></article>
+<article><span class="eyebrow">04 / Own the tool</span><h3>Make it part of your work.</h3><p>A native Rust desktop client for macOS, Windows and Linux, with MIT-licensed source you can inspect, modify and use commercially. Connect directly to your databases.</p></article>
 </div>
-<section class="section" id="features">
-<div class="wrap">
-<div class="section-head">
-<span class="eyebrow">Less tool switching. More doing.</span>
-<h2>From a question to a data change.</h2>
-<p>For developers who need to understand a schema, debug a query, or fix a row — all in the same workspace.</p>
-</div>
-<div class="grid">
-<article class="card">
-<span class="number">01 / EXPLORE</span>
-<h3>Find your way around.</h3>
-<p>Browse tables and database objects, inspect structure, and view relationships in an ER diagram. Use the command palette to move through your workspace.</p>
-</article>
-<article class="card">
-<span class="number">02 / QUERY</span>
-<h3>Get to the answer.</h3>
-<p>Write SQL with syntax colors, run a selection, inspect an execution plan, and keep useful queries in history or saved folders.</p>
-</article>
-<article class="card">
-<span class="number">03 / EDIT</span>
-<h3>Make changes deliberately.</h3>
-<p>Edit cells in place, or stage edits to review before applying. Environment labels, read-only connections and destructive-query confirmations support careful work.</p>
-</article>
-</div>
-<p class="subnote" style="margin-top:20px">Guardrails support your workflow; database permissions and backups remain essential. Undo covers supported edits, not every SQL statement.</p>
-</div>
-</section>
+<div class="switch-note"><a class="btn btn-primary" href="#download">Get dboard ↓</a><p class="subnote">Start with a development database and a query you use every day.</p></div>
+</div></section>
 <section class="section dark" id="opensource">
 <div class="wrap split">
 <div>
@@ -607,13 +583,20 @@ cargo run --locked -p dboard</code>
 <script>
 (function () {
   var theme = document.getElementById('theme');
-  theme.value = document.documentElement.dataset.theme || 'system';
-  theme.addEventListener('change', function () {
-    if (theme.value === 'system') delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = theme.value;
+  function showTheme(value) {
+    theme.querySelectorAll('button').forEach(function (button) { button.setAttribute('aria-pressed', String(button.dataset.value === value)); });
+  }
+  showTheme(document.documentElement.dataset.theme || 'system');
+  theme.addEventListener('click', function (event) {
+    var button = event.target.closest('button');
+    if (!button) return;
+    var value = button.dataset.value;
+    if (value === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = value;
+    showTheme(value);
     try {
-      if (theme.value === 'system') localStorage.removeItem('dboard-theme');
-      else localStorage.setItem('dboard-theme', theme.value);
+      if (value === 'system') localStorage.removeItem('dboard-theme');
+      else localStorage.setItem('dboard-theme', value);
     } catch (_) {}
   });
   document.getElementById('copy-address').addEventListener('click', async function () {
@@ -676,5 +659,6 @@ cargo run --locked -p dboard</code>
     .then(function (rel) { assets = rel.assets || []; render(); }).catch(function () {});
 })();
 </script>
+<script src="gallery.js" defer></script>
 </body>
 </html>

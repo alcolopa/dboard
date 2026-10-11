@@ -21,16 +21,6 @@ impl Environment {
         }
     }
 
-    /// Badge colour as 0xRRGGBB (same palette as the Mac app).
-    pub fn color(self) -> u32 {
-        match self {
-            Self::Production => 0xEF4444,
-            Self::Staging => 0xF59E0B,
-            Self::Development => 0x3B82F6,
-            Self::Local => 0x10B981,
-        }
-    }
-
     pub fn requires_destructive_confirmation(self) -> bool {
         matches!(self, Self::Production | Self::Staging)
     }

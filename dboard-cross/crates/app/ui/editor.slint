@@ -32,12 +32,12 @@ export component SqlEditor inherits Rectangle {
     gutter-text := Text { visible: false; text: AppState.gutter(root.line-count); font-family: "JetBrains Mono"; font-size: root.font-size; }
 
     function token-color(kind: int) -> color {
-        kind == 1 ? (Theme.dark ? #7aa2f7 : #3b5bdb)
-        : kind == 2 ? (Theme.dark ? #9ece6a : #2b8a3e)
-        : kind == 3 ? (Theme.dark ? #ff9e64 : #d9480f)
+        kind == 1 ? Theme.accent-text
+        : kind == 2 ? Theme.syntax-string
+        : kind == 3 ? Theme.syntax-number
         : kind == 4 ? Theme.dim
-        : kind == 5 ? (Theme.dark ? #89ddff : #1971c2)
-        : kind == 6 ? (Theme.dark ? #e0af68 : #9c6b00)
+        : kind == 5 ? Theme.syntax-operator
+        : kind == 6 ? Theme.syntax-variable
         : Theme.text
     }
 
@@ -60,11 +60,11 @@ export component SqlEditor inherits Rectangle {
         // bracket pair
         if root.bracket.length == 4: Rectangle {
             x: root.gutter-w + root.pad + root.bracket[1] * root.cw; y: root.pad + root.bracket[0] * root.lh;
-            width: root.cw; height: root.lh; background: #5b7cfa55; border-radius: 2px;
+            width: root.cw; height: root.lh; background: Theme.bracket-highlight; border-radius: 2px;
         }
         if root.bracket.length == 4: Rectangle {
             x: root.gutter-w + root.pad + root.bracket[3] * root.cw; y: root.pad + root.bracket[2] * root.lh;
-            width: root.cw; height: root.lh; background: #5b7cfa55; border-radius: 2px;
+            width: root.cw; height: root.lh; background: Theme.bracket-highlight; border-radius: 2px;
         }
         ed := TextInput {
             x: root.gutter-w + root.pad; y: root.pad;

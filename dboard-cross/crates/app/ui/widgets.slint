@@ -1,4 +1,3 @@
-import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
 import { LineEdit, ScrollView } from "std-widgets.slint";
@@ -10,15 +9,23 @@ export component Btn inherits Rectangle {
     in property <bool> enabled: true;
     in property <length> pad: 12px;
     callback clicked();
-    height: 28px;
+    forward-focus: keyboard;
+    keyboard := FocusScope {
+        enabled: root.enabled;
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " { root.clicked(); return accept; }
+            reject
+        }
+    }
+    height: 30px;
     width: t.preferred-width + 2 * pad;
     border-radius: 5px;
     background: !enabled ? Theme.panel2
-        : primary ? (ta.has-hover ? #4a6af0 : Theme.accent)
-        : danger ? (ta.has-hover ? #d63b3b : Theme.err)
+        : primary ? (ta.has-hover ? Theme.accent-hover : Theme.accent)
+        : danger ? (ta.has-hover ? Theme.danger-hover : Theme.err)
         : (ta.has-hover ? Theme.hover : Theme.panel2);
-    border-width: primary || danger ? 0px : 1px;
-    border-color: Theme.line;
+    border-width: keyboard.has-focus ? 2px : primary || danger ? 0px : 1px;
+    border-color: keyboard.has-focus ? Theme.accent-text : Theme.line;
     opacity: enabled ? 1.0 : 0.5;
     accessible-role: button;
     accessible-label: root.text;
@@ -26,11 +33,11 @@ export component Btn inherits Rectangle {
     accessible-action-default => { if root.enabled { root.clicked(); } }
     t := Text {
         text: root.text;
-        color: (primary || danger) && enabled ? white : Theme.text;
+        color: (primary || danger) && enabled ? Theme.on-accent : Theme.text;
         vertical-alignment: center; horizontal-alignment: center;
         font-size: 12px;
     }
-    ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+    ta := TouchArea { enabled: root.enabled; clicked => { keyboard.focus(); root.clicked(); } }
 }
 
 export component Chip inherits Rectangle {
@@ -55,14 +62,14 @@ export component Badge inherits Rectangle {
     width: t.preferred-width + 14px;
     border-radius: 10px;
     background: fill;
-    t := Text { text: root.text; color: white; font-size: 10px; font-weight: 700; vertical-alignment: center; horizontal-alignment: center; }
+    t := Text { text: root.text; color: Theme.on-accent; font-size: 10px; font-weight: 700; vertical-alignment: center; horizontal-alignment: center; }
 }
 
 export component Modal inherits Rectangle {
     in property <length> box-width: 480px;
     in property <color> border: Theme.line;
     callback dismissed();
-    background: #000000b0;
+    background: Theme.tooltip-bg;
     // Escape closes any dialog, wherever the keyboard focus is inside it.
     FocusScope {
         init => { self.focus(); }
@@ -73,16 +80,22 @@ export component Modal inherits Rectangle {
         TouchArea { clicked => { root.dismissed(); } }
     box := Rectangle {
         width: min(root.box-width, parent.width - 32px);
-        height: min(inner.preferred-height + 2px, parent.height - 32px);
+        height: min(inner.preferred-height + 42px, parent.height - 32px);
         background: Theme.panel;
         border-radius: 10px;
         border-width: 1px;
         border-color: root.border;
         clip: true;
         TouchArea { } // swallow clicks inside the box
-        inner := VerticalLayout {
-            padding: 20px; spacing: 10px;
-            @children
+        ScrollView {
+            x: 20px; y: 20px;
+            width: parent.width - 40px; height: parent.height - 40px;
+            horizontal-scrollbar-policy: always-off;
+            viewport-width: self.visible-width;
+            inner := VerticalLayout {
+                spacing: 14px;
+                @children
+            }
         }
     }
     }
@@ -129,7 +142,7 @@ export component Icon inherits Rectangle {
         stroke-width: 1.7px;
         stroke-line-cap: round;
         stroke-line-join: round;
-        fill: root.filled ? root.tint : transparent;
+        fill: root.filled ? root.tint : Theme.clear;
     }
 }
 
@@ -145,31 +158,41 @@ export component IconBtn inherits Rectangle {
     in property <int> badge: 0;
     in property <length> size: 30px;
     callback clicked();
+    forward-focus: keyboard;
+    keyboard := FocusScope {
+        enabled: root.enabled;
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " { root.clicked(); return accept; }
+            reject
+        }
+    }
+    border-width: keyboard.has-focus ? 2px : 0px;
+    border-color: Theme.accent-text;
     width: size; height: size;
     border-radius: 6px;
     accessible-role: button;
     accessible-label: root.hint;
     accessible-enabled: root.enabled;
     accessible-action-default => { if root.enabled { root.clicked(); } }
-    background: !enabled ? transparent
-        : primary ? (ta.has-hover ? #4a6af0 : Theme.accent)
+    background: !enabled ? Theme.clear
+        : primary ? (ta.has-hover ? Theme.accent-hover : Theme.accent)
         : danger && ta.has-hover ? Theme.err-bg
         : active ? Theme.sel
-        : ta.has-hover ? Theme.hover : transparent;
+        : ta.has-hover ? Theme.hover : Theme.clear;
     opacity: enabled ? 1.0 : 0.35;
     Icon {
         d: root.d; filled: root.filled;
         x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
-        tint: primary ? white : (danger && ta.has-hover ? Theme.err : (active ? Theme.accent : Theme.text));
+        tint: primary ? Theme.on-accent : (danger && ta.has-hover ? Theme.err : (active ? Theme.accent : Theme.text));
     }
     if badge > 0: Rectangle {
         x: parent.width - bt.preferred-width - 8px; y: 1px;
         width: bt.preferred-width + 6px; height: 13px; border-radius: 6.5px; background: Theme.accent;
-        bt := Text { text: root.badge; color: white; font-size: 9px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+        bt := Text { text: root.badge; color: Theme.on-accent; font-size: 9px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
     }
     ta := TouchArea {
         enabled: root.enabled;
-        clicked => { AppState.hint = ""; root.clicked(); }
+        clicked => { keyboard.focus(); AppState.hint = ""; root.clicked(); }
         changed has-hover => { AppState.hint = self.has-hover ? root.hint : ""; }
     }
 }

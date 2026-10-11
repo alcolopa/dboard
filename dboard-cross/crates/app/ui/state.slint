@@ -2,11 +2,11 @@ export struct GridCell { text: string, is-null: bool, state: int }
 export struct ColInfo { name: string, type-name: string, pk: bool, fk: string, is-bool: bool, is-json: bool }
 export struct TreeItem { label: string, level: int, kind: int, expanded: bool, key: string, selected: bool }
 export struct TabInfo { title: string, kind: int, pinned: bool, active: bool }
-export struct SessionTab { name: string, color: color, active: bool }
+export struct SessionTab { name: string, environment: int, active: bool }
 export struct HlToken { line: int, col: int, text: string, kind: int }
 export struct ErBox { x: length, y: length, w: length, h: length, title: string, body: string, schema: string, name: string }
 export struct MetaRow { label: string, value: string }
-export struct ConnItem { id: string, name: string, subtitle: string, color: color, active: bool, header: bool }
+export struct ConnItem { id: string, name: string, subtitle: string, environment: int, active: bool, header: bool }
 export struct HistoryItem { sql: string, meta: string, ok: bool }
 export struct SavedItem { id: string, name: string, folder: string, sql: string }
 export struct PaletteItem { title: string, subtitle: string, kind: string }
@@ -103,6 +103,7 @@ export global AppState {
 
     // ---- open connections (one tab each) ----
     in property <[SessionTab]> sessions;
+    in property <int> active-session-index: -1;
     callback switch-session(int);
     callback close-session(int);
 
@@ -182,7 +183,7 @@ export global AppState {
     // ---- workspace header ----
     in property <string> conn-name;
     in property <string> env-label;
-    in property <color> env-color;
+    in property <int> env-index;
     in property <string> status;
     in property <int> db-type;
     in property <bool> is-protected;
@@ -484,7 +485,7 @@ export global AppState {
 
     // ---- settings ----
     in property <bool> settings-open;
-    in-out property <bool> set-dark: true;
+    in-out property <int> set-theme-index: 0;
     in-out property <bool> set-compact: true;
     in-out property <int> set-page-size-index: 2;
     in-out property <bool> set-confirm: true;
@@ -492,7 +493,7 @@ export global AppState {
     in-out property <int> set-font-size: 13;
     in property <string> set-info;
     callback open-settings();
-    callback settings-changed(bool, bool, int, bool, bool, int);
+    callback settings-changed(int, bool, int, bool, bool, int);
     callback settings-close();
     callback clear-credentials();
 }

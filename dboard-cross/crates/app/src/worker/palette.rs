@@ -283,8 +283,8 @@ impl Worker {
 
     // ---- settings --------------------------------------------------------------------------
 
-    pub(crate) fn settings_changed(&mut self, dark: bool, compact: bool, page_idx: usize, confirm: bool, autocomplete: bool, font: i32) {
-        self.settings.theme = if dark { ThemePref::Dark } else { ThemePref::Light };
+    pub(crate) fn settings_changed(&mut self, theme: i32, compact: bool, page_idx: usize, confirm: bool, autocomplete: bool, font: i32) {
+        self.settings.theme = ThemePref::from_index(theme);
         self.settings.compact_density = compact;
         self.settings.default_page_size = PAGE_SIZES[page_idx.min(PAGE_SIZES.len() - 1)];
         self.settings.confirm_destructive = confirm;

@@ -1,3 +1,4 @@
+import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
 
@@ -5,7 +6,8 @@ import { AppState } from "state.slint";
 export component Diagram inherits Rectangle {
     background: Theme.bg;
     clip: true;
-    Flickable {
+    ScrollView {
+        width: parent.width; height: parent.height;
         content-width: max(AppState.er-width, parent.width);
         content-height: max(AppState.er-height, parent.height);
         for l in AppState.er-lines: Path {

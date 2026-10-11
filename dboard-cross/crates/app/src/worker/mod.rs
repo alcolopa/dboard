@@ -149,9 +149,7 @@ pub enum Cmd {
     ExportCopy(usize, bool),
     ExportSave(usize, bool),
     ExportCancel,
-    OpenSettings,
-    SettingsChanged { dark: bool, compact: bool, page_idx: usize, confirm: bool, autocomplete: bool, font: i32 },
-    SettingsClose,
+    SettingsChanged { theme: i32, compact: bool, page_idx: usize, confirm: bool, autocomplete: bool, font: i32 },
     ClearCredentials,
     // users & access
     OpenUsers,
@@ -592,7 +590,7 @@ pub struct Worker {
     db_entries: Vec<String>,
     db_idx: i32,
     /// Open connections: (name, colour) per tab, and the parked state of every inactive one.
-    sess_meta: Vec<(String, u32)>,
+    sess_meta: Vec<(String, i32)>,
     sess_ids: Vec<String>,
     parked: Vec<Option<Session>>,
     cur: usize,
@@ -769,9 +767,9 @@ impl Worker {
         let w = self.w.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(app) = w.upgrade() {
-                let dark = s.theme == ThemePref::Dark;
+                let dark = s.theme.is_dark();
                 let t = app.global::<crate::Theme>();
-                t.set_dark(dark);
+                t.set_variant(s.theme.index());
                 t.set_row_h(if s.compact_density { 24.0 } else { 30.0 });
                 app.global::<crate::Palette>()
                     .set_color_scheme(if dark { slint::language::ColorScheme::Dark } else { slint::language::ColorScheme::Light });
@@ -780,7 +778,7 @@ impl Worker {
                 st.set_save_mode(s.edits_need_save);
                 st.set_backup_hours(s.backup_every_hours as i32);
                 st.set_backup_keep(s.backup_keep as i32);
-                st.set_set_dark(dark);
+                st.set_set_theme_index(s.theme.index());
                 st.set_set_compact(s.compact_density);
                 st.set_set_page_size_index(idx);
                 st.set_set_confirm(s.confirm_destructive);
@@ -823,24 +821,24 @@ impl Worker {
         }).collect();
         // Grouped by environment (Production first), most recently used first within a group.
         list.sort_by_cached_key(|c| (c.environment.index(), std::cmp::Reverse(c.last_used), c.display_name().to_lowercase()));
-        let mut items: Vec<(String, String, String, u32, bool, bool)> = Vec::new();
+        let mut items: Vec<(String, String, String, i32, bool, bool)> = Vec::new();
         let mut last_env = None;
         for c in &list {
             if last_env != Some(c.environment) {
                 last_env = Some(c.environment);
-                items.push((String::new(), c.environment.label().to_string(), String::new(), c.environment.color(), false, true));
+                items.push((String::new(), c.environment.label().to_string(), String::new(), c.environment.index() as i32, false, true));
             }
             let who = if c.db_type == DbType::Sqlite { c.database.clone() } else if c.username.is_empty() { c.host.clone() } else { format!("{}@{}", c.username, c.host) };
-            items.push((c.id.clone(), c.display_name(), format!("{} • {}", c.db_type.label(), who), c.environment.color(), c.id == sel, false));
+            items.push((c.id.clone(), c.display_name(), format!("{} • {}", c.db_type.label(), who), c.environment.index() as i32, c.id == sel, false));
         }
         ui(&self.w, move |st| {
             let v: Vec<ConnItem> = items
                 .into_iter()
-                .map(|(id, name, sub, col, active, header)| ConnItem {
+                .map(|(id, name, sub, environment, active, header)| ConnItem {
                     id: id.into(),
                     name: name.into(),
                     subtitle: sub.into(),
-                    color: slint::Color::from_rgb_u8((col >> 16) as u8, (col >> 8) as u8, col as u8),
+                    environment,
                     active,
                     header,
                 })

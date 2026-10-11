@@ -19,7 +19,7 @@ cargo test --locked --workspace
 
 Database integration tests need disposable local services and their environment variables. See the [developer guide](dboard-cross/README.md#build--test). Never point those tests at a production database. CI runs PostgreSQL 16 and MariaDB 10.11 integration tests and builds desktop binaries for all three platforms.
 
-The `core` crate owns database behavior; the `app` crate owns the UI and workers. Slint files are under `crates/app/ui/`. Keep database operations off the UI thread.
+The `core` crate owns database behavior; the `app` crate owns the UI and workers. Slint files are under `crates/app/ui/`. Keep database operations off the UI thread. Performance is our number one engineering priority: read [the agent rules](AGENTS.md) and [the performance review](dboard-cross/PERFORMANCE.md), and preserve the documented optimizations when making changes.
 
 ## Make a pull request
 

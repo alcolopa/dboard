@@ -2,6 +2,8 @@
 
 These are contribution directions, not release promises. Discuss scope in an issue before starting a large change.
 
+See [Future features](FUTURE_FEATURES.md) for the planned feature backlog, priorities, detailed scope, completion criteria, and suggested delivery order.
+
 - **Validate more environments.** Manually test Windows x64 / ARM64 and verify MongoDB user management. Record versions and reproducible results.
 - **Strengthen data-change reliability.** Expand regression coverage for staged edits, cancellation, undo and differences between database engines.
 - **Make first use easier.** Improve installation instructions, connection errors and platform troubleshooting based on actual user reports.

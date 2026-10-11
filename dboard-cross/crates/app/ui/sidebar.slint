@@ -14,6 +14,7 @@ component KindBadge inherits Rectangle {
 }
 
 export component Sidebar inherits Rectangle {
+    property <bool> maintenance-open: false;
     background: Theme.panel;
     VerticalLayout {
         padding: 8px; spacing: 8px;
@@ -62,7 +63,7 @@ export component Sidebar inherits Rectangle {
                 height: 26px;
                 // 1 = Ctrl/Cmd held when the button went down, 2 = Shift
                 property <int> sel-mode;
-                background: item.selected ? Theme.sel : ta.has-hover ? Theme.hover : transparent;
+                background: item.selected ? Theme.sel : ta.has-hover ? Theme.hover : Theme.clear;
                 border-radius: 4px;
 
                 if item.kind <= 1: Text {
@@ -105,6 +106,14 @@ export component Sidebar inherits Rectangle {
 
             }
         }
-        if AppState.tree.length > 0: Btn { text: "Drop all tables…"; danger: true; clicked => { AppState.tree-drop-all(); } }
+        if AppState.tree.length > 0: Btn {
+            text: root.maintenance-open ? "▾ Database maintenance" : "▸ Database maintenance";
+            clicked => { root.maintenance-open = !root.maintenance-open; }
+        }
+        if root.maintenance-open && AppState.tree.length > 0: Btn {
+            text: "Drop all tables…"; danger: true;
+            enabled: !AppState.read-only && !AppState.busy;
+            clicked => { AppState.tree-drop-all(); }
+        }
     }
 }

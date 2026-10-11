@@ -4,24 +4,44 @@ import { Icons, Icon, IconBtn } from "widgets.slint";
 
 // One tab per open connection, above everything else.
 export component SessionBar inherits Rectangle {
-    height: 36px;
+    height: 42px;
     background: Theme.bg;
     property <length> tab-w: max(120px, min(200px, (root.width - 60px) / max(AppState.sessions.length, 1) - 4px));
     Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
-    Flickable {
+    property <int> active-session: AppState.active-session-index;
+    function reveal() {
+        if root.active-session < 0 { return; }
+        let left = 8px + root.active-session * (root.tab-w + 4px);
+        if left < -strip.content-x { strip.content-x = -left; }
+        else if left + root.tab-w > -strip.content-x + strip.width {
+            strip.content-x = -(left + root.tab-w - strip.width);
+        }
+    }
+    changed active-session => { root.reveal(); }
+    changed tab-w => { root.reveal(); }
+    strip := Flickable {
         x: 0px; width: parent.width - 44px; height: parent.height;
-        content-width: AppState.sessions.length * (root.tab-w + 4px) + 8px;
+        content-width: max(self.width, AppState.sessions.length * (root.tab-w + 4px) + 8px);
         content-height: self.height;
         for s[i] in AppState.sessions: Rectangle {
-            x: 8px + i * (root.tab-w + 4px); y: 5px;
-            width: root.tab-w; height: 28px;
-            border-radius: 6px;
-            background: s.active ? Theme.panel : (ta.has-hover ? Theme.hover : transparent);
-            border-width: s.active ? 1px : 0px;
-            border-color: Theme.line;
-            Rectangle { x: 10px; y: 10px; width: 8px; height: 8px; border-radius: 4px; background: s.color; }
+            x: 8px + i * (root.tab-w + 4px); y: 6px;
+            width: root.tab-w; height: 36px;
+            background: Theme.clear;
+            // The active tab flows into the toolbar, with Chrome-style bottom shoulders.
+            if s.active: Path {
+                width: parent.width; height: parent.height;
+                viewbox-width: 200; viewbox-height: 36;
+                commands: "M0 36 C5 36 8 33 8 28 L8 12 Q8 0 20 0 L180 0 Q192 0 192 12 L192 28 C192 33 195 36 200 36 Z";
+                fill: Theme.panel;
+            }
+            if !s.active: Rectangle {
+                x: 8px; width: parent.width - 16px; height: 30px;
+                border-radius: 8px;
+                background: ta.has-hover ? Theme.hover : Theme.clear;
+            }
+            Rectangle { x: 18px; y: 13px; width: 8px; height: 8px; border-radius: 4px; background: Theme.environment-color(s.environment); }
             Text {
-                x: 26px; width: parent.width - 26px - 26px;
+                x: 34px; width: parent.width - 68px; height: 34px;
                 text: s.name; overflow: elide; vertical-alignment: center; font-size: 12px;
                 font-weight: s.active ? 700 : 400;
                 color: s.active ? Theme.text : Theme.dim;
@@ -35,15 +55,15 @@ export component SessionBar inherits Rectangle {
                 }
             }
             Rectangle {
-                x: parent.width - 24px; y: 6px; width: 16px; height: 16px; border-radius: 8px;
-                background: xa.has-hover ? Theme.panel2 : transparent;
-                Icon { d: Icons.close; size: 10px; tint: Theme.dim; x: 3px; y: 3px; }
+                x: parent.width - 30px; y: 8px; width: 20px; height: 20px; border-radius: 10px;
+                background: xa.has-hover ? Theme.panel2 : Theme.clear;
+                Icon { d: Icons.close; size: 10px; tint: s.active ? Theme.text : Theme.dim; x: 5px; y: 5px; }
                 xa := TouchArea { clicked => { AppState.close-session(i); } }
             }
         }
     }
     IconBtn {
-        x: parent.width - 38px; y: 3px; size: 30px;
+        x: parent.width - 38px; y: 6px; size: 30px;
         d: Icons.plus; hint: "New connection (open another database)";
         clicked => { AppState.connected = false; AppState.new-conn(); }
     }

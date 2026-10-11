@@ -25,7 +25,7 @@ component Workspace inherits VerticalLayout {
     if AppState.tab-kind == 0: VerticalLayout {
         HorizontalLayout {
             height: 44px; padding: 8px; spacing: 8px;
-            Text { text: AppState.table-title; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+            Text { text: AppState.table-title; max-width: 180px; overflow: elide; font-weight: 700; color: Theme.text; vertical-alignment: center; }
             EditLine {
                 placeholder-text: AppState.db-type == 2 ? "Filter as JSON, e.g. {\"age\": {\"$gt\": 30}}" : "WHERE clause, e.g. id > 10";
                 text <=> AppState.filter-text;
@@ -44,8 +44,16 @@ component Workspace inherits VerticalLayout {
         vertical-stretch: 1;
         VerticalLayout {
             alignment: center; spacing: 8px;
-            Text { text: "Open a table from the sidebar, or press " + Theme.mod + "+N for a new query."; color: Theme.dim; horizontal-alignment: center; }
-            Text { text: Theme.mod + "+K command palette   ·   " + Theme.mod + "+P search objects   ·   " + Theme.mod + "+Tab next tab"; color: Theme.dim; font-size: 11px; horizontal-alignment: center; }
+            Text { text: "Open a table from the sidebar, or press " + Theme.mod + "+N for a new query."; color: Theme.dim; wrap: word-wrap; horizontal-alignment: center; }
+            Text { text: Theme.mod + "+K command palette   ·   " + Theme.mod + "+P search objects   ·   " + Theme.mod + "+Tab next tab"; color: Theme.dim; font-size: 11px; wrap: word-wrap; horizontal-alignment: center; }
+        }
+    }
+    if AppState.tab-kind == 1 && AppState.cols.length == 0: Rectangle {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: center; padding: 20px; spacing: 8px;
+            Text { text: AppState.running ? "Running query…" : "Your results appear here"; color: Theme.text; font-size: 15px; font-weight: 600; horizontal-alignment: center; wrap: word-wrap; }
+            Text { text: "Run SQL with " + Theme.mod + "+Enter, or choose a saved query from History."; color: Theme.dim; font-size: 12px; horizontal-alignment: center; wrap: word-wrap; }
         }
     }
     if AppState.tab-kind == 4: Diagram { vertical-stretch: 1; }
@@ -81,15 +89,15 @@ component Workspace inherits VerticalLayout {
             }
             if AppState.tab-kind == 4: Btn { text: "Export diagram…"; clicked => { AppState.export-er(); } }
             if AppState.tab-kind == 3: Slot { IconBtn { d: Icons.copy; hint: "Copy definition"; clicked => { AppState.copy-text(AppState.ddl-text); } } }
-            if AppState.tab-kind == 0 && AppState.db-type == 2: Slot { IconBtn { d: Icons.edit; hint: "Edit document"; enabled: AppState.selected-row >= 0; clicked => { AppState.open-doc(AppState.selected-row); } } }
+            if AppState.tab-kind == 0 && AppState.db-type == 2: Slot { IconBtn { d: Icons.edit; hint: "Edit document"; enabled: AppState.selected-row >= 0 && !AppState.read-only; clicked => { AppState.open-doc(AppState.selected-row); } } }
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
-            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.plus; hint: "Add row"; primary: true; clicked => { AppState.open-insert(); } } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.plus; hint: "Add row"; primary: true; enabled: !AppState.read-only && !AppState.running; clicked => { AppState.open-insert(); } } }
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.trash; hint: "Delete selected row"; danger: true; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.delete-row(AppState.selected-row); } } }
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { Btn { text: AppState.stage-on ? "Edits: on Save" : "Edits: automatic"; clicked => { AppState.stage-toggle(); } } }
             if AppState.tab-kind == 0 && AppState.pending-count > 0: Slot { Btn { text: "Save " + AppState.pending-count + " change(s)"; primary: true; clicked => { AppState.review-open-request(); } } }
             if (AppState.tab-kind == 0 && AppState.db-type != 2) || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.search; hint: "Column filters (type in a column, press Enter)"; active: AppState.filter-row-open; clicked => { AppState.filter-row-open = !AppState.filter-row-open; } } }
             if AppState.tab-kind == 0: Slot { Sep { } }
-            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; clicked => { AppState.open-transfer(2); } } }
+            if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.download; hint: "Import rows from a file"; enabled: !AppState.read-only && !AppState.running; clicked => { AppState.open-transfer(2); } } }
             if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.pin; hint: "Pin this result so you can compare against it later"; enabled: AppState.rows.length > 0; clicked => { AppState.pin-result(); } } }
             if AppState.tab-kind == 0 || AppState.tab-kind == 1: Slot { Btn { text: "Compare with pinned"; clicked => { AppState.compare-result(); } } }
             if AppState.tab-kind == 0 || AppState.tab-kind == 1 || AppState.tab-kind == 5: Slot { IconBtn { d: Icons.upload; hint: "Export these rows"; enabled: AppState.rows.length > 0; clicked => { AppState.open-export(); } } }
@@ -253,12 +261,11 @@ export component App inherits Window {
 
         if AppState.connected: VerticalLayout {
             SessionBar { }
-            // Production gets an unmissable banner; every other environment a thin coloured strip.
+            // Production keeps its safety banner; other environments use the tab dot and toolbar badge.
             if AppState.env-label == "Production": Rectangle {
-                height: 18px; background: AppState.env-color;
-                Text { text: "PRODUCTION DATABASE — changes here affect real data"; color: white; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                height: 18px; background: Theme.environment-color(AppState.env-index);
+                Text { text: "PRODUCTION DATABASE — changes here affect real data"; color: #ffffff; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
             }
-            if AppState.env-label != "Production": Rectangle { height: 2px; background: AppState.env-color; }
             // ---- top bar ----
             Rectangle {
                 height: 52px; background: Theme.panel;
@@ -266,8 +273,8 @@ export component App inherits Window {
                     width: parent.width; height: parent.height;
                     Slot {
                         Rectangle {
-                            width: envl.preferred-width + 18px; height: 22px; border-radius: 11px; background: AppState.env-color;
-                            envl := Text { text: AppState.env-label; color: white; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                            width: envl.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.environment-color(AppState.env-index);
+                            envl := Text { text: AppState.env-label; color: AppState.env-index == 0 ? #ffffff : Theme.on-accent; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
                         }
                     }
                     if AppState.databases.length > 0: Slot {
@@ -295,7 +302,7 @@ export component App inherits Window {
                     if AppState.in-tx: Slot {
                         Rectangle {
                             width: txl.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.warn;
-                            txl := Text { text: "IN TRANSACTION"; color: black; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                            txl := Text { text: "IN TRANSACTION"; color: Theme.on-warning; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
                         }
                     }
                     if AppState.in-tx: Slot { Btn { text: "Commit"; primary: true; clicked => { AppState.tx-commit(); } } }
@@ -317,23 +324,25 @@ export component App inherits Window {
                 vertical-stretch: 1;
                 // Reserve space in both modes so the inspector never covers workspace actions.
                 property <bool> docked: AppState.inspector-open && AppState.inspector-pinned;
-                property <length> inspector-w: AppState.inspector-open ? 321px : 0px;
+                property <length> sidebar-w: self.width < 1100px ? 220px : 270px;
+                property <length> inspector-size: self.width < 1100px ? 280px : 320px;
+                property <length> inspector-w: AppState.inspector-open ? self.inspector-size + 1px : 0px;
                 // Blank workspace clicks dismiss the unpinned inspector. Keep this behind
                 // the workspace so buttons, editors and scrollbars receive their own input.
                 if AppState.inspector-open && !AppState.inspector-pinned: TouchArea {
-                    x: 271px; width: parent.width - 271px - parent.inspector-w; height: parent.height;
+                    x: parent.sidebar-w + 1px; width: parent.width - parent.sidebar-w - 1px - parent.inspector-w; height: parent.height;
                     clicked => { AppState.inspector-changed(false, false); }
                 }
-                Sidebar { x: 0px; width: 270px; height: parent.height; }
-                Rectangle { x: 270px; width: 1px; height: parent.height; background: Theme.line; }
+                Sidebar { x: 0px; width: parent.sidebar-w; height: parent.height; }
+                Rectangle { x: parent.sidebar-w; width: 1px; height: parent.height; background: Theme.line; }
                 Rectangle {
-                    x: 271px;
-                    width: parent.width - 271px - parent.inspector-w;
+                    x: parent.sidebar-w + 1px;
+                    width: parent.width - parent.sidebar-w - 1px - parent.inspector-w;
                     height: parent.height;
                     Workspace { width: parent.width; height: parent.height; }
                 }
-                if docked: Rectangle { x: parent.width - 321px; width: 1px; height: parent.height; background: Theme.line; }
-                if AppState.inspector-open: Inspector { x: parent.width - 320px; height: parent.height; }
+                if docked: Rectangle { x: parent.width - parent.inspector-w; width: 1px; height: parent.height; background: Theme.line; }
+                if AppState.inspector-open: Inspector { x: parent.width - parent.inspector-size; width: parent.inspector-size; height: parent.height; }
             }
         }
 

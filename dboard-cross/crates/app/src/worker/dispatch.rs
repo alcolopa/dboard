@@ -411,12 +411,7 @@ impl Worker {
             Cmd::ExportCopy(f, h) => self.export_copy(f, h),
             Cmd::ExportSave(f, h) => self.export_save(f, h),
             Cmd::ExportCancel => ui(&self.w, |st| st.set_export_open(false)),
-            Cmd::OpenSettings => ui(&self.w, |st| {
-                st.set_set_info("".into());
-                st.set_settings_open(true);
-            }),
-            Cmd::SettingsChanged { dark, compact, page_idx, confirm, autocomplete, font } => self.settings_changed(dark, compact, page_idx, confirm, autocomplete, font),
-            Cmd::SettingsClose => ui(&self.w, |st| st.set_settings_open(false)),
+            Cmd::SettingsChanged { theme, compact, page_idx, confirm, autocomplete, font } => self.settings_changed(theme, compact, page_idx, confirm, autocomplete, font),
             Cmd::ClearCredentials => self.clear_credentials(),
 
             Cmd::Ctx(kind, i, j, x, y) => self.open_ctx(&kind, i, j, x, y),

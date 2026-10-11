@@ -7,6 +7,16 @@
   <p><a href="https://github.com/alcolopa/dboard/actions/workflows/cross.yml"><img src="https://github.com/alcolopa/dboard/actions/workflows/cross.yml/badge.svg" alt="Build and test status"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3860e0" alt="MIT license"></a></p>
 </div>
 
+## The actual app
+
+![dboard table browser in dark mode with sample SQLite data](docs/screenshots/table-dark.jpg)
+
+![dboard table browser and pinned inspector in light mode](docs/screenshots/table-light.jpg)
+
+[Explore light and dark screenshots and the full feature tour](https://alcolopa.github.io/dboard/#product).
+
+Captured from the running macOS desktop app using a local sample database.
+
 ## Why dboard?
 
 For developers who need to understand a schema, debug a query, or fix a row without switching between tools. dboard brings browsing, SQL, inline editing and an inspector into one native workspace, built with [Rust](https://www.rust-lang.org/) and [Slint](https://slint.dev/).

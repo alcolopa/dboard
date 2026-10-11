@@ -68,3 +68,35 @@ and arbitrary queries still retain their returned data before the UI's 5,000-row
 display cap. Slow database statements also occupy the session's serial command
 worker. Further changes to these areas should preserve editing, result counts,
 export completeness and operation ordering, and be guided by runtime profiles.
+
+## Preservation review — 2026-10-11
+
+A static review of the current working tree found all optimization mechanisms
+listed above still present. This review does not rerun the 2026-10-09 benchmarks
+or certify runtime performance of the current UI changes.
+
+| Principle | Current implementation |
+| --- | --- |
+| Lazy grid editors and virtualized rows/lists | `crates/app/ui/grid.slint`, `query.slint`, `connections.slint` |
+| Shared cached syntax/bracket analysis and visible-line drawing | `crates/app/src/highlight.rs`, `main.rs`, `ui/editor.slint` |
+| Borrowed metadata and eight unique autocomplete suggestions | `crates/app/src/suggest.rs`, `worker/query.rs` |
+| Stable top-50 palette results and one-time query normalization | `crates/app/src/worker/palette.rs` |
+| Adjacent transient command coalescing with ordering barriers | `crates/app/src/worker/mod.rs`, `main.rs` |
+| Minimal request/display snapshots and moved cell values | `crates/app/src/worker/mod.rs`, `tabs.rs`, `transfer.rs`, `editing.rs` |
+| One-pass schema grouping, in-place selection and cached connection sort keys | `crates/app/src/worker/tree.rs`, `mod.rs` |
+| Indexed staging/review, reverse-pass undo availability and in-place activity | `crates/app/src/worker/staging.rs`, `palette.rs`, `mod.rs`, `crates/core/src/edit.rs` |
+| Direct export formatting and once-per-export type classification | `crates/app/src/export.rs` |
+| Buffered borrowed configuration serialization and limited audit parsing | `crates/core/src/config.rs` |
+| Pipelined PostgreSQL catalog reads and four concurrent MongoDB inspections | `crates/core/src/pg.rs`, `mongo.rs` |
+| Streamed PostgreSQL/MySQL driver-result conversion | `crates/core/src/pg.rs`, `mysql.rs` |
+
+The runtime checks and limitations above still apply. SQLite also performs an
+exact `COUNT(*)` when loading a table page (`crates/core/src/sqlite.rs`); this can
+add latency on large tables or expensive filters and should be profiled before
+changing count behavior. Audit parsing is limited to requested newest entries,
+but the underlying audit files are still read into strings; it is not bounded
+file I/O.
+
+Repository-wide [agent instructions](../AGENTS.md) now make performance the number
+one engineering priority and require preserving these mechanisms, avoiding
+unnecessary work and measuring relevant changes without compromising correctness.

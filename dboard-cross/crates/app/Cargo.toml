@@ -22,4 +22,4 @@ slint-build = "1.18"
 winresource = "0.1"
 
 [dev-dependencies]
-i-slint-backend-testing = "1.18"
+i-slint-backend-testing = { version = "1.18", features = ["renderer-software"] }

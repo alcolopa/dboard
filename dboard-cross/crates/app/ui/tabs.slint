@@ -30,9 +30,9 @@ export component TabBar inherits Rectangle {
             x: 6px + i * (root.tab-w + 2px);
             width: root.tab-w;
             height: strip.height;
-            background: tab.active ? Theme.panel : (ta.has-hover ? Theme.hover : transparent);
+            background: tab.active ? Theme.panel : (ta.has-hover ? Theme.hover : Theme.clear);
             border-radius: 6px;
-            Rectangle { y: parent.height - 2px; height: 2px; background: tab.active ? Theme.accent : transparent; }
+            Rectangle { y: parent.height - 2px; height: 2px; background: tab.active ? Theme.accent : Theme.clear; }
             Text {
                 x: 10px; width: parent.width - 36px;
                 text: (tab.pinned ? "● " : "") + tab.title;
@@ -52,7 +52,7 @@ export component TabBar inherits Rectangle {
             }
             if !tab.pinned: Rectangle {
                 x: parent.width - 22px; y: 8px; width: 16px; height: 16px; border-radius: 8px;
-                background: xa.has-hover ? Theme.panel2 : transparent;
+                background: xa.has-hover ? Theme.panel2 : Theme.clear;
                 Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
                 xa := TouchArea { clicked => { AppState.close-tab(i); } }
             }
@@ -62,20 +62,20 @@ export component TabBar inherits Rectangle {
     Rectangle {
         x: root.strip-w; width: 22px; height: parent.height;
         opacity: root.content-w > root.strip-w ? 1.0 : 0.25;
-        background: la.has-hover ? Theme.hover : transparent; border-radius: 6px;
+        background: la.has-hover ? Theme.hover : Theme.clear; border-radius: 6px;
         Text { text: "‹"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
         la := TouchArea { clicked => { strip.content-x = min(0px, strip.content-x + 3 * (root.tab-w + 2px)); } }
     }
     Rectangle {
         x: root.strip-w + 22px; width: 22px; height: parent.height;
         opacity: root.content-w > root.strip-w ? 1.0 : 0.25;
-        background: ra.has-hover ? Theme.hover : transparent; border-radius: 6px;
+        background: ra.has-hover ? Theme.hover : Theme.clear; border-radius: 6px;
         Text { text: "›"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
         ra := TouchArea { clicked => { strip.content-x = max(-(max(root.content-w - root.strip-w, 0px)), strip.content-x - 3 * (root.tab-w + 2px)); } }
     }
     Rectangle {
         x: root.strip-w + 44px; width: 32px; height: parent.height;
-        background: pa.has-hover ? Theme.hover : transparent; border-radius: 6px;
+        background: pa.has-hover ? Theme.hover : Theme.clear; border-radius: 6px;
         Text { text: "+"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
         pa := TouchArea { clicked => { AppState.new-query-tab(); } }
     }

@@ -199,7 +199,7 @@ impl Worker {
             self.parked.clear();
             self.cur = 0;
         }
-        self.sess_meta.push((cfg.display_name(), cfg.environment.color()));
+        self.sess_meta.push((cfg.display_name(), cfg.environment.index() as i32));
         self.sess_ids.push(cfg.id.clone());
         self.parked.push(None);
         self.env = cfg.environment;
@@ -266,12 +266,13 @@ impl Worker {
     }
 
     pub(crate) fn push_sessions(&self) {
-        let v: Vec<(String, u32, bool)> = self.sess_meta.iter().enumerate().map(|(i, (n, c))| (n.clone(), *c, i == self.cur)).collect();
+        let v: Vec<(String, i32, bool)> = self.sess_meta.iter().enumerate().map(|(i, (n, c))| (n.clone(), *c, i == self.cur)).collect();
         ui(&self.w, move |st| {
             let items: Vec<SessionTab> = v
                 .into_iter()
-                .map(|(n, c, active)| SessionTab { name: n.into(), color: slint::Color::from_rgb_u8((c >> 16) as u8, (c >> 8) as u8, c as u8), active })
+                .map(|(n, environment, active)| SessionTab { name: n.into(), environment, active })
                 .collect();
+            st.set_active_session_index(items.iter().position(|s| s.active).map(|i| i as i32).unwrap_or(-1));
             st.set_sessions(ModelRc::new(VecModel::from(items)));
         });
     }
@@ -303,8 +304,7 @@ impl Worker {
     /// Show the active session: header, databases, tree, tabs, grid and inspector.
     pub(crate) fn show_session(&mut self) {
         let Some(conn) = &self.conn else { return };
-        let (name, color) = self.sess_meta.get(self.cur).cloned().unwrap_or_default();
-        let _ = color;
+        let (name, _) = self.sess_meta.get(self.cur).cloned().unwrap_or_default();
         let (env, protected, db) = (self.env, self.protected(), conn.db_type().index() as i32);
         let status = self.status_line();
         let act = self.activity.clone();
@@ -320,8 +320,7 @@ impl Worker {
         ui(&self.w, move |st| {
             st.set_conn_name(name.into());
             st.set_env_label(env.label().into());
-            let c = env.color();
-            st.set_env_color(slint::Color::from_rgb_u8((c >> 16) as u8, (c >> 8) as u8, c as u8));
+            st.set_env_index(env.index() as i32);
             st.set_status(status.into());
             st.set_db_type(db);
             st.set_is_protected(protected);

@@ -1,7 +1,7 @@
 import { LineEdit, ComboBox, CheckBox, ScrollView, ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge, Icons, IconBtn, EditLine, EditArea } from "widgets.slint";
+import { Btn, Badge, Icons, IconBtn, EditLine, EditArea, Toolbar } from "widgets.slint";
 
 component Field inherits VerticalLayout {
     in property <string> label;
@@ -30,22 +30,22 @@ export component ConnectionManager inherits Rectangle {
                 }
                 EditLine { placeholder-text: "Search connections"; edited(t) => { AppState.conn-filter(t); } }
                 if AppState.connections.length == 0: Text {
-                    text: "No saved connections yet.\nFill in the form to add one.";
+                    text: "No matching connections. Create a connection with + or adjust your search.";
                     color: Theme.dim; wrap: word-wrap;
                 }
                 ListView {
                     for c in AppState.connections: Rectangle {
                         height: c.header ? 30px : 60px;
                         border-radius: 6px;
-                        background: c.header ? transparent : (c.active ? Theme.panel2 : (ta.has-hover ? Theme.hover : transparent));
+                        background: c.header ? Theme.clear : (c.active ? Theme.panel2 : (ta.has-hover ? Theme.hover : Theme.clear));
                         border-width: c.active && !c.header ? 1px : 0px;
                         border-color: Theme.line;
                         if c.header: HorizontalLayout {
                             padding-left: 4px; spacing: 6px; alignment: start;
-                            Rectangle { width: 8px; height: 8px; y: 9px; border-radius: 4px; background: c.color; }
+                            Rectangle { width: 8px; height: 8px; y: 9px; border-radius: 4px; background: Theme.environment-color(c.environment); }
                             Text { text: c.name; color: Theme.dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
                         }
-                        if !c.header: Rectangle { x: 10px; y: 19px; width: 10px; height: 10px; border-radius: 5px; background: c.color; }
+                        if !c.header: Rectangle { x: 10px; y: 19px; width: 10px; height: 10px; border-radius: 5px; background: Theme.environment-color(c.environment); }
                         if !c.header: VerticalLayout {
                             x: 30px; width: parent.width - 40px; alignment: center; spacing: 2px;
                             Text { text: c.name; color: Theme.text; font-weight: 600; overflow: elide; }
@@ -158,13 +158,15 @@ export component ConnectionManager inherits Rectangle {
                 if AppState.form-error != "": Text { text: AppState.form-error; color: Theme.err; wrap: word-wrap; }
                 if AppState.form-info != "": Text { text: AppState.form-info; color: AppState.form-info.character-count > 60 ? Theme.warn : Theme.ok; wrap: word-wrap; }
                 HorizontalLayout {
-                    spacing: 8px; alignment: start;
+                    spacing: 12px;
+                    Toolbar {
+                        height: 44px; horizontal-stretch: 1;
                     Btn { text: AppState.form-busy ? "Working…" : "Test connection"; enabled: !AppState.form-busy; clicked => { AppState.test-conn(AppState.form); } }
                     Btn { text: "Save"; enabled: !AppState.form-busy; clicked => { AppState.save-conn(AppState.form); } }
-                    if !AppState.form-is-new: Btn { text: "Duplicate"; clicked => { AppState.duplicate-conn(AppState.form.id); } }
-                    if !AppState.form-is-new: Btn { text: "Delete"; danger: true; clicked => { AppState.delete-conn(AppState.form.id); } }
-                    Rectangle { width: 16px; }
-                    Btn { text: AppState.busy ? "Connecting…" : "Connect"; primary: true; enabled: !AppState.busy && !AppState.form-busy; clicked => { AppState.connect-conn(AppState.form); } }
+                    if !AppState.form-is-new: Btn { text: "Duplicate"; enabled: !AppState.form-busy && !AppState.busy; clicked => { AppState.duplicate-conn(AppState.form.id); } }
+                    if !AppState.form-is-new: Btn { text: "Delete"; danger: true; enabled: !AppState.form-busy && !AppState.busy; clicked => { AppState.delete-conn(AppState.form.id); } }
+                    }
+                    Btn { height: 36px; text: AppState.busy ? "Connecting…" : "Connect"; primary: true; enabled: !AppState.busy && !AppState.form-busy; clicked => { AppState.connect-conn(AppState.form); } }
                 }
             }
         }

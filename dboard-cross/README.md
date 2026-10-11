@@ -131,3 +131,7 @@ can still prompt when it is locked or its access policy changes. Launch subseque
 builds through `run-local.sh`; `cargo run` launches an ad-hoc binary with a different
 identity. The local certificate is for development and does not provide Developer ID
 notarization. The bundler automatically reuses it when no release identity is supplied.
+
+### App themes
+
+Open **Settings → Theme** to choose **Green Dark**, **Green Light**, **Forest**, or **Sand**. Changes apply immediately and are saved between launches. The shared palette lives in `crates/app/ui/theme.slint`, including selections, SQL syntax, environment badges, and standard controls.

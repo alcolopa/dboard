@@ -20,22 +20,23 @@ export component QueryEditor inherits VerticalLayout {
     }
     Toolbar {
         height: 44px;
-        Btn { text: "▶ Run"; primary: true; clicked => { AppState.run-query(AppState.query-text); } }
+        Btn { text: AppState.running ? "Running…" : "▶ Run"; primary: true; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.run-query(AppState.query-text); } }
         Btn {
-            text: "Run selection";
+            text: "Run selection"; enabled: !AppState.running && AppState.query-text != "";
             // The editor widget doesn't expose its selection, so copy it through the clipboard
             // (the Rust side stashes and restores the user's clipboard around this).
             clicked => { AppState.stash-clipboard(); editor.copy(); AppState.run-selection(AppState.query-text); }
         }
-        Btn { text: "Explain"; clicked => { AppState.explain-query(AppState.query-text, false); } }
-        if AppState.db-type != 2: Btn { text: "Explain analyze"; clicked => { AppState.explain-query(AppState.query-text, true); } }
-        Btn { text: "Save…"; clicked => { AppState.open-save-query(); } }
+        Btn { text: "Explain"; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.explain-query(AppState.query-text, false); } }
+        if AppState.db-type != 2: Btn { text: "Explain analyze"; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.explain-query(AppState.query-text, true); } }
+        if AppState.running: Btn { text: "Stop"; danger: true; clicked => { AppState.stop-query(); } }
+        Btn { text: "Save…"; enabled: AppState.query-text != ""; clicked => { AppState.open-save-query(); } }
         Btn { text: "History & saved"; clicked => { AppState.inspector-tab = 3; AppState.inspector-changed(true, AppState.inspector-pinned); } }
         Rectangle { horizontal-stretch: 1; }
         Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
     }
-    if AppState.result-labels.length > 1: HorizontalLayout {
-        spacing: 6px; alignment: start;
+    if AppState.result-labels.length > 1: Toolbar {
+        height: 36px;
         Text { text: "Results:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for l[i] in AppState.result-labels: Chip {
             text: l;
@@ -43,18 +44,18 @@ export component QueryEditor inherits VerticalLayout {
             clicked => { AppState.pick-result(i); }
         }
     }
-    if AppState.db-type == 2: HorizontalLayout {
-        spacing: 6px; alignment: start;
+    if AppState.db-type == 2: Toolbar {
+        height: 36px;
         Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Chip { text: t; clicked => { AppState.insert-template(t); } }
     }
-    if AppState.db-type != 2: HorizontalLayout {
-        spacing: 6px; alignment: start;
+    if AppState.db-type != 2: Toolbar {
+        height: 36px;
         Text { text: "Snippets:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for t in [{ k: "select", l: "SELECT" }, { k: "count", l: "COUNT" }, { k: "group", l: "GROUP BY" }, { k: "join", l: "JOIN on FK" }, { k: "insert", l: "INSERT" }, { k: "update", l: "UPDATE" }, { k: "delete", l: "DELETE" }, { k: "cte", l: "WITH (CTE)" }]: Chip { text: t.l; clicked => { AppState.insert-template(t.k); } }
     }
-    if AppState.suggestions.length > 0: HorizontalLayout {
-        spacing: 6px; alignment: start;
+    if AppState.suggestions.length > 0: Toolbar {
+        height: 36px;
         Text { text: "Suggest:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
         for s in AppState.suggestions: Chip { text: s; clicked => { AppState.apply-suggestion(s); } }
     }
@@ -72,7 +73,7 @@ export component HistoryPanel inherits Rectangle {
             max-height: 200px;
             for s[i] in AppState.saved: Rectangle {
                 height: 36px; border-radius: 4px;
-                background: sa.has-hover ? Theme.hover : transparent;
+                background: sa.has-hover ? Theme.hover : Theme.clear;
                 VerticalLayout {
                     x: 8px; width: parent.width - 40px; alignment: center;
                     Text { text: s.name; color: Theme.text; overflow: elide; }
@@ -81,7 +82,7 @@ export component HistoryPanel inherits Rectangle {
                 sa := TouchArea { clicked => { AppState.load-saved(i); } }
                 Rectangle {
                     x: parent.width - 26px; width: 20px; height: 20px; y: 8px; border-radius: 10px;
-                    background: da.has-hover ? Theme.panel2 : transparent;
+                    background: da.has-hover ? Theme.panel2 : Theme.clear;
                     Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
                     da := TouchArea { clicked => { AppState.delete-saved(i); } }
                 }
@@ -93,11 +94,12 @@ export component HistoryPanel inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
             Btn { text: "Clear"; clicked => { AppState.clear-history(); } }
         }
+        if AppState.history.length == 0: Text { text: "Queries you run appear here."; color: Theme.dim; font-size: 11px; wrap: word-wrap; }
         ListView {
             vertical-stretch: 1;
             for h[i] in AppState.history: Rectangle {
                 height: 38px; border-radius: 4px;
-                background: ha.has-hover ? Theme.hover : transparent;
+                background: ha.has-hover ? Theme.hover : Theme.clear;
                 VerticalLayout {
                     x: 8px; width: parent.width - 16px; alignment: center;
                     Text { text: h.sql; color: h.ok ? Theme.text : Theme.err; overflow: elide; font-size: 12px; }

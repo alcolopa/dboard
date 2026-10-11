@@ -48,6 +48,22 @@ impl SyntaxCache {
     }
 }
 
+// Local dialogs must remain responsive while the worker reconnects or runs SQL.
+fn wire_local_preferences(app: &App) {
+    let weak = app.as_weak();
+    app.global::<AppState>().on_open_settings(move || {
+        if let Some(app) = weak.upgrade() {
+            let state = app.global::<AppState>();
+            state.set_set_info("".into());
+            state.set_settings_open(true);
+        }
+    });
+    let weak = app.as_weak();
+    app.global::<AppState>().on_settings_close(move || {
+        if let Some(app) = weak.upgrade() { app.global::<AppState>().set_settings_open(false); }
+    });
+}
+
 fn main() {
     let app = App::new().expect("create window");
     let (tx, mut rx) = unbounded_channel::<Cmd>();
@@ -244,9 +260,8 @@ fn main() {
     wire!(on_export_copy, |f, h| Cmd::ExportCopy(f as usize, h));
     wire!(on_export_save, |f, h| Cmd::ExportSave(f as usize, h));
     wire!(on_export_cancel, | | Cmd::ExportCancel);
-    wire!(on_open_settings, | | Cmd::OpenSettings);
-    wire!(on_settings_changed, |d, c, p, cf, ac, f| Cmd::SettingsChanged { dark: d, compact: c, page_idx: p as usize, confirm: cf, autocomplete: ac, font: f });
-    wire!(on_settings_close, | | Cmd::SettingsClose);
+    wire_local_preferences(&app);
+    wire!(on_settings_changed, |d, c, p, cf, ac, f| Cmd::SettingsChanged { theme: d, compact: c, page_idx: p as usize, confirm: cf, autocomplete: ac, font: f });
     wire!(on_clear_credentials, | | Cmd::ClearCredentials);
     wire!(on_ctx, |k, i, j, x, y| Cmd::Ctx(k.to_string(), i as usize, j as usize, x, y));
     wire!(on_ctx_pick, |a, r0, c0, r1, c1| Cmd::CtxPick(a.to_string(), [r0, c0, r1, c1]));
@@ -310,6 +325,122 @@ fn main() {
 #[cfg(test)]
 mod ui_tests {
     use super::*;
+
+    #[test]
+    fn theme_switch_updates_standard_controls_and_environment_badges() {
+        slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
+            i_slint_backend_testing::TestingBackendOptions {
+                mock_time: true,
+                threading: false,
+                renderer_name: Some("software".into()),
+            },
+        ))).unwrap();
+        let app = App::new().unwrap();
+        let theme = app.global::<Theme>();
+        let palette = app.global::<Palette>();
+        let mut backgrounds = Vec::new();
+        app.window().set_size(slint::PhysicalSize::new(1200, 800));
+        let state = app.global::<AppState>();
+        state.set_settings_open(true);
+        state.set_page_sizes(slint::ModelRc::new(slint::VecModel::from(vec!["25".into(), "50".into(), "100".into()])));
+        app.show().unwrap();
+        for index in 0..4 {
+            theme.set_variant(index);
+            assert_eq!(theme.get_dark(), index == 0 || index == 2);
+            assert_eq!(palette.get_background(), slint::Brush::from(theme.get_bg()));
+            assert_eq!(palette.get_accent_background(), slint::Brush::from(theme.get_accent()));
+            assert_eq!(palette.get_selection_background(), slint::Brush::from(theme.get_text_selection()));
+            assert_eq!(theme.invoke_environment_color(2), theme.get_accent());
+            backgrounds.push(theme.get_bg());
+            state.set_set_theme_index(index);
+            i_slint_backend_testing::testing_backend::mock_elapsed_time(250);
+            slint::platform::update_timers_and_animations();
+            if let Some(dir) = std::env::var_os("DBOARD_THEME_PREVIEW_DIR") {
+                let image = app.window().take_snapshot().unwrap();
+                let mut ppm = format!("P6\n{} {}\n255\n", image.width(), image.height()).into_bytes();
+                for pixel in image.as_slice() { ppm.extend_from_slice(&[pixel.r, pixel.g, pixel.b]); }
+                std::fs::write(std::path::PathBuf::from(dir).join(format!("theme-{index}.ppm")), ppm).unwrap();
+            }
+        }
+        for i in 0..backgrounds.len() {
+            for j in i + 1..backgrounds.len() { assert_ne!(backgrounds[i], backgrounds[j]); }
+        }
+    }
+
+    // Optional render pass for reviewing responsive layouts without a database.
+    #[test]
+    fn preferences_navigation_and_responsive_layouts() {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        use slint::{ModelRc, VecModel};
+        slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
+            i_slint_backend_testing::TestingBackendOptions {
+                mock_time: true, threading: false, renderer_name: Some("software".into()),
+            },
+        ))).unwrap();
+        let app = App::new().unwrap();
+        let state = app.global::<AppState>();
+        let cleared = std::rc::Rc::new(std::cell::Cell::new(0));
+        let count = cleared.clone();
+        state.on_clear_credentials(move || count.set(count.get() + 1));
+        app.show().unwrap();
+        let snapshot = |name: &str| {
+            slint::platform::update_timers_and_animations();
+            if let Some(dir) = std::env::var_os("DBOARD_UI_PREVIEW_DIR") {
+                let image = app.window().take_snapshot().unwrap();
+                let mut ppm = format!("P6\n{} {}\n255\n", image.width(), image.height()).into_bytes();
+                for pixel in image.as_slice() { ppm.extend_from_slice(&[pixel.r, pixel.g, pixel.b]); }
+                std::fs::write(std::path::PathBuf::from(dir).join(format!("{name}.ppm")), ppm).unwrap();
+            }
+        };
+        let click = |x: f32, y: f32| {
+            let position = slint::LogicalPosition::new(x, y);
+            app.window().dispatch_event(WindowEvent::PointerMoved { position });
+            app.window().dispatch_event(WindowEvent::PointerPressed { position, button: PointerEventButton::Left });
+            app.window().dispatch_event(WindowEvent::PointerReleased { position, button: PointerEventButton::Left });
+            slint::platform::update_timers_and_animations();
+        };
+        for (width, height) in [(900, 560), (1280, 780)] {
+            app.window().set_size(slint::PhysicalSize::new(width, height));
+            for theme in [0, 1] {
+                app.global::<Theme>().set_variant(theme);
+                state.set_set_theme_index(theme);
+                state.set_connected(false);
+                state.set_settings_open(false);
+                snapshot(&format!("connections-{width}-{theme}"));
+                state.set_settings_open(true);
+                snapshot(&format!("preferences-{width}-{theme}"));
+                let center = width as f32 / 2.0;
+                let tab_y = height as f32 / 2.0 - 126.0;
+                click(center, tab_y);
+                snapshot(&format!("editor-settings-{width}-{theme}"));
+                click(center + 190.0, tab_y);
+                snapshot(&format!("safety-settings-{width}-{theme}"));
+                assert_eq!(cleared.get(), 0, "opening safety must never clear credentials");
+                state.set_settings_open(false);
+                state.set_connected(true);
+                state.set_tab_kind(1);
+                state.set_query_text("SELECT id, name, email FROM customers\nWHERE active = true\nORDER BY name;".into());
+                state.set_inspector_open(true);
+                state.set_inspector_tab(3);
+                state.set_cols(ModelRc::new(VecModel::from(vec![ColInfo { name: "name".into(), type_name: "text".into(), ..Default::default() }])));
+                state.set_col_widths(ModelRc::new(VecModel::from(vec![240.0])));
+                state.set_grid_width(240.0);
+                state.set_rows(ModelRc::new(VecModel::from(vec![ModelRc::new(VecModel::from(vec![GridCell { text: "Sample customer".into(), ..Default::default() }]))])));
+                snapshot(&format!("query-{width}-{theme}"));
+                state.set_tab_kind(0);
+                state.set_table_title("customers_with_a_long_descriptive_table_name".into());
+                snapshot(&format!("table-{width}-{theme}"));
+                state.set_inspector_open(false);
+                state.set_json_open(true);
+                state.set_json_text("{\n  \"name\": \"Sample customer\"\n}".into());
+                snapshot(&format!("json-dialog-{width}-{theme}"));
+                state.set_json_open(false);
+                state.set_users_open(true);
+                snapshot(&format!("users-dialog-{width}-{theme}"));
+                state.set_users_open(false);
+            }
+        }
+    }
 
     #[test]
     fn syntax_viewport_limits_items_and_invalidates_after_editing() {
@@ -387,6 +518,12 @@ mod ui_tests {
         assert!(!st.get_connected());
         assert!(!st.get_in_tx());
         assert_eq!(slint::Model::row_count(&st.get_sessions()), 0);
+
+        wire_local_preferences(&app);
+        st.invoke_open_settings();
+        assert!(st.get_settings_open(), "preferences opens without a database worker");
+        st.invoke_settings_close();
+        assert!(!st.get_settings_open(), "preferences closes without a database worker");
 
         // Callbacks the Rust side wires must exist and be invocable without a worker attached.
         st.invoke_new_conn();

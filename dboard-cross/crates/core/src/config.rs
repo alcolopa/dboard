@@ -180,6 +180,18 @@ pub enum Theme {
     #[default]
     Dark,
     Light,
+    Forest,
+    Sand,
+}
+
+impl Theme {
+    pub fn index(self) -> i32 {
+        match self { Self::Dark => 0, Self::Light => 1, Self::Forest => 2, Self::Sand => 3 }
+    }
+    pub fn from_index(index: i32) -> Self {
+        match index { 1 => Self::Light, 2 => Self::Forest, 3 => Self::Sand, _ => Self::Dark }
+    }
+    pub fn is_dark(self) -> bool { matches!(self, Self::Dark | Self::Forest) }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -459,6 +471,21 @@ mod tests {
         let st = s.load_settings();
         assert_eq!(st.theme, Theme::Light);
         assert_eq!(st.default_page_size, 100);
+    }
+
+    #[test]
+    fn themes_persist_and_keep_legacy_preferences() {
+        let store = tmp();
+        for theme in [Theme::Dark, Theme::Light, Theme::Forest, Theme::Sand] {
+            assert_eq!(Theme::from_index(theme.index()), theme);
+            store.save_settings(&Settings { theme, ..Default::default() }).unwrap();
+            assert_eq!(store.load_settings().theme, theme);
+        }
+        assert_eq!(Theme::from_index(-1), Theme::Dark);
+        assert_eq!(Theme::from_index(99), Theme::Dark);
+        assert!(Theme::Forest.is_dark());
+        assert!(!Theme::Sand.is_dark());
+        std::fs::remove_dir_all(store.dir()).unwrap();
     }
 
     #[test]

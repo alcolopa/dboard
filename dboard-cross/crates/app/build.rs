@@ -1,5 +1,14 @@
 fn main() {
-    slint_build::compile("ui/app.slint").unwrap();
+    // Slint's standard widget sources use internal menu types. Allow those types
+    // in our local copy so every control can share the app's palette.
+    std::env::set_var("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1");
+    let config = slint_build::CompilerConfiguration::new()
+        .with_include_paths(vec![
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui/styles"),
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui/styles/dboard"),
+        ])
+        .with_style("dboard".into());
+    slint_build::compile_with_config("ui/app.slint", config).unwrap();
     embed_windows_icon();
 }
 
