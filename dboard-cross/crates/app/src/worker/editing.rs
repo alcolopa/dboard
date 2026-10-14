@@ -426,11 +426,24 @@ impl Worker {
             Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop).await,
             Some(Pending::ImportRows(path, header)) => self.run_import_rows(path, header).await,
             Some(Pending::GenerateRows(n)) => self.generate_rows(n, true).await,
-            Some(Pending::DownloadUpdate(url, name)) => {
+            Some(Pending::RestartUpdate(staged)) => match crate::update::relaunch(&staged) {
+                Ok(()) => {
+                    let _ = slint::quit_event_loop();
+                }
+                Err(e) => self.toast(format!("Could not restart: {e}")),
+            },
+            Some(Pending::DownloadUpdate(url, name, size)) => {
                 self.toast(format!("Downloading {name}…"));
                 let tx = self.tx.clone();
                 std::thread::spawn(move || {
-                    let r = crate::update::download(&url, &name, &downloads_dir());
+                    let r = crate::update::download(&url, &name, &downloads_dir()).and_then(|p| {
+                        let got = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                        if size > 0 && got != size {
+                            let _ = std::fs::remove_file(&p);
+                            return Err(format!("downloaded {got} of {size} bytes"));
+                        }
+                        crate::update::apply(&p)
+                    });
                     let _ = tx.send(Cmd::UpdateDownloaded(r));
                 });
             }

@@ -29,8 +29,8 @@ impl Worker {
                     };
                     match crate::update::pick_asset(&assets, os, arch) {
                         Some((name, dl, size)) => {
-                            let text = format!("dboard {tag} is available (you have v{}). Download {name} ({:.1} MB) to your Downloads folder?", env!("CARGO_PKG_VERSION"), *size as f64 / 1_048_576.0);
-                            self.ask_plain(Pending::DownloadUpdate(dl.clone(), name.clone()), "Update available".into(), text);
+                            let text = format!("dboard {tag} is available (you have v{}). Download {name} ({:.1} MB) and update dboard now?", env!("CARGO_PKG_VERSION"), *size as f64 / 1_048_576.0);
+                            self.ask_plain(Pending::DownloadUpdate(dl.clone(), name.clone(), *size), "Update available".into(), text);
                         }
                         None => {
                             let _ = crate::clipboard::set(&url);
@@ -42,8 +42,8 @@ impl Worker {
                 Err(e) => self.toast(format!("Could not check for updates: {e}")),
             },
             Cmd::UpdateDownloaded(r) => match r {
-                Ok(path) => {
-                    self.toast(format!("Downloaded {}. Quit dboard and open it to finish updating.", path.display()));
+                Ok(crate::update::Staged::Manual(path, why)) => {
+                    self.toast(format!("Downloaded {} but could not patch in place: {why}.", path.display()));
                     #[cfg(target_os = "macos")]
                     let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
                     #[cfg(target_os = "windows")]
@@ -53,7 +53,8 @@ impl Worker {
                         let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
                     }
                 }
-                Err(e) => self.toast(format!("Download failed: {e}")),
+                Ok(staged) => self.ask_plain(Pending::RestartUpdate(staged), "Update ready".into(), "dboard has been updated. Restart now to use the new version? Unsaved work in open tabs and pending staged edits will be lost.".into()),
+                Err(e) => self.toast(format!("Update failed: {e}")),
             },
             Cmd::OpenLink(url) => {
                 if url.starts_with("https://") {
