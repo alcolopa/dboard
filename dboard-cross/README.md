@@ -119,6 +119,8 @@ Linux build dependencies (Debian/Ubuntu): `libfontconfig1-dev libxkbcommon-dev l
 
 Release bundles without a signing certificate are ad-hoc signed with a designated requirement pinned to `com.alcolopa.dboard`, so Keychain keeps recognizing the app across updates. The first update from an older release (whose requirement was a per-build hash) may still prompt once per saved password; choose **Always Allow**.
 
+To remove the shared-identifier tradeoff, run `packaging/macos/setup-ci-signing.sh` once as a repository admin. It stores a persistent self-signed certificate in the release secrets, and later releases are signed with it. Do not regenerate it: a new identity means one more Keychain prompt.
+
 Use a persistent local signing identity to keep Keychain authorization across updates:
 
 ```sh
