@@ -117,6 +117,8 @@ Linux build dependencies (Debian/Ubuntu): `libfontconfig1-dev libxkbcommon-dev l
 
 ### Local macOS builds and Keychain access
 
+Release bundles without a signing certificate are ad-hoc signed with a designated requirement pinned to `com.alcolopa.dboard`, so Keychain keeps recognizing the app across updates. The first update from an older release (whose requirement was a per-build hash) may still prompt once per saved password; choose **Always Allow**.
+
 Use a persistent local signing identity to keep Keychain authorization across updates:
 
 ```sh

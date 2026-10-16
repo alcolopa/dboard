@@ -24,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-# Ad-hoc sign the whole bundle (no Developer ID needed). Without a sealed signature, Apple Silicon
+# Sign the whole bundle (no Developer ID needed). Without a sealed signature, Apple Silicon
 # Macs report a downloaded app as "damaged and can't be opened". Gatekeeper still warns (not notarized).
 # Local builds automatically reuse the dedicated identity once it is installed.
 if [ -z "${MACOS_SIGN_IDENTITY:-}" ] && security find-identity -p codesigning | grep -Fq '"dboard Local Development"'; then
@@ -40,8 +40,10 @@ if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
   fi
   codesign --force --deep --options runtime "$timestamp_flag" --sign "$MACOS_SIGN_IDENTITY" "$APP"
 else
-  echo "Warning: ad-hoc signing changes Keychain identity on every build. Run packaging/macos/setup-local-signing.sh for local updates." >&2
-  codesign --force --deep --sign - "$APP"
+  # Ad-hoc signatures default to a requirement pinned to the binary hash, so every release looks like
+  # a different app to Keychain and macOS asks for the login password again after each update.
+  # Pin the designated requirement to the bundle identifier instead; it is stable across builds.
+  codesign --force --deep --sign - -r='designated => identifier "com.alcolopa.dboard"' "$APP"
 fi
 codesign --verify --deep --strict "$APP"
 echo "Built $APP"
