@@ -305,7 +305,6 @@ fn main() {
                     }
                 });
             }
-            w.restore_sessions().await;
             let mut pending = None;
             loop {
                 let next = match pending.take() { Some(cmd) => Some(cmd), None => rx.recv().await };

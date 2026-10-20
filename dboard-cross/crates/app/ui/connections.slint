@@ -145,9 +145,12 @@ export component ConnectionManager inherits Rectangle {
                     Field { label: "SSH user"; horizontal-stretch: 1; EditLine { text <=> AppState.form.ssh-user; } }
                     Field { label: "Private key file (optional, else ssh-agent)"; horizontal-stretch: 1; EditLine { placeholder-text: "~/.ssh/id_ed25519"; text <=> AppState.form.ssh-key; } }
                 }
+                Field { label: "Folder"; EditLine { placeholder-text: "e.g. Client projects"; text <=> AppState.form.folder; } }
+                Field { label: "Tags (comma separated)"; EditLine { placeholder-text: "e.g. analytics, customer"; text <=> AppState.form.tags; } }
+                CheckBox { text: "Require confirmation for destructive actions"; checked <=> AppState.form.protect-destructive; }
                 CheckBox { text: "Read-only connection"; checked <=> AppState.form.read-only; }
                 if AppState.form.type-index != 3: CheckBox { text: "Save password securely in the system keychain"; checked <=> AppState.form.remember; }
-                if AppState.form.env-index <= 1: Rectangle {
+                if AppState.form.env-index <= 1 || AppState.form.protect-destructive: Rectangle {
                     height: 30px; background: Theme.warn-bg; border-radius: 5px;
                     Text {
                         x: 10px; width: parent.width - 20px;

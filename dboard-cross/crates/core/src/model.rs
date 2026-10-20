@@ -108,6 +108,9 @@ pub struct ConnectionConfig {
     pub database: String,
     pub username: String,
     pub environment: Environment,
+    pub folder: String,
+    pub tags: Vec<String>,
+    pub protect_destructive: bool,
     pub ssl: SslMode,
     /// MongoDB only: full connection string (overrides host/port/user).
     pub mongo_uri: String,
@@ -138,6 +141,9 @@ impl Default for ConnectionConfig {
             database: String::new(),
             username: String::new(),
             environment: Environment::Local,
+            folder: String::new(),
+            tags: Vec::new(),
+            protect_destructive: false,
             ssl: SslMode::Prefer,
             mongo_uri: String::new(),
             remember_password: true,
@@ -368,4 +374,31 @@ pub struct UserAccess {
     pub tables: Vec<(String, String, i32)>,
     pub manage: bool,
     pub password: bool,
+}
+
+#[cfg(test)]
+mod connection_organization_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_connections_keep_safe_defaults() {
+        let c: ConnectionConfig = serde_json::from_str(r#"{"environment":"Production"}"#).unwrap();
+        assert!(c.folder.is_empty());
+        assert!(c.tags.is_empty());
+        assert!(!c.protect_destructive);
+        assert!(c.environment.requires_destructive_confirmation());
+    }
+
+    #[test]
+    fn organization_and_protection_round_trip() {
+        let c = ConnectionConfig {
+            folder: "Client projects".into(),
+            tags: vec!["analytics".into(), "customer".into()],
+            protect_destructive: true,
+            read_only: true,
+            ..Default::default()
+        };
+        let restored: ConnectionConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(restored, c);
+    }
 }

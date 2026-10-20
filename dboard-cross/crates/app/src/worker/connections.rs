@@ -41,6 +41,12 @@ impl Worker {
             ssh_user: f.ssh_user.trim().to_string(),
             ssh_key: f.ssh_key.trim().to_string(),
             read_only: f.read_only,
+            folder: f.folder.trim().to_string(),
+            tags: {
+                let mut seen = HashSet::new();
+                f.tags.split(',').map(str::trim).filter(|t| !t.is_empty()).filter(|t| seen.insert(t.to_lowercase())).map(str::to_string).collect()
+            },
+            protect_destructive: f.protect_destructive,
             ssl_ca: f.ssl_ca.trim().to_string(),
             ssl_cert: f.ssl_cert.trim().to_string(),
             ssl_key: f.ssl_key.trim().to_string(),
@@ -71,6 +77,9 @@ impl Worker {
                 ssh_user: c.ssh_user.into(),
                 ssh_key: c.ssh_key.into(),
                 read_only: c.read_only,
+                folder: c.folder.into(),
+                tags: c.tags.join(", ").into(),
+                protect_destructive: c.protect_destructive,
                 ssl_ca: c.ssl_ca.into(),
                 ssl_cert: c.ssl_cert.into(),
                 ssl_key: c.ssl_key.into(),
@@ -523,29 +532,7 @@ impl Worker {
         }
     }
 
-    /// Reopen the connections that were open when the app last quit (only those whose password is
-    /// in the keyring, or that need none). Failures are skipped quietly.
-    pub async fn restore_sessions(&mut self) {
-        let ids = self.settings.open_connections.clone();
-        let mut failed = Vec::new();
-        for id in ids {
-            let Some(cfg) = self.connections.iter().find(|c| c.id == id).cloned() else { continue };
-            let pw = if cfg.remember_password { secrets::get(&cfg).unwrap_or_default() } else { String::new() };
-            if cfg.remember_password && pw.is_empty() && cfg.db_type != DbType::Mongo {
-                failed.push(cfg.display_name());
-                continue;
-            }
-            ui(&self.w, |st| st.set_busy(true));
-            match Conn::connect(cfg.clone(), &pw).await {
-                Ok(conn) => self.on_connected(cfg, conn, pw).await,
-                Err(_) => failed.push(cfg.display_name()),
-            }
-            ui(&self.w, |st| st.set_busy(false));
-        }
-        if !failed.is_empty() {
-            self.toast(format!("Could not reopen: {}", failed.join(", ")));
-        }
-    }
+
 }
 
 impl Worker {

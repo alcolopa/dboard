@@ -662,11 +662,7 @@ impl Worker {
         self.push_settings();
         self.push_saved_and_history();
         self.push_connections();
-        let last = self.connections.iter().find(|c| c.id == self.settings.last_connection_id).or_else(|| self.connections.iter().max_by_key(|c| c.last_used)).map(|c| c.id.clone());
-        match last {
-            Some(id) => self.select_conn(&id),
-            None => self.new_conn(),
-        }
+        self.new_conn();
     }
 
     fn persist_settings(&self) {
@@ -807,7 +803,7 @@ impl Worker {
     }
 
     fn protected(&self) -> bool {
-        self.settings.confirm_destructive && self.env.requires_destructive_confirmation()
+        self.conn.as_ref().is_some_and(|c| c.config.protect_destructive) || (self.settings.confirm_destructive && self.env.requires_destructive_confirmation())
     }
 
     // ---------------------------------------------------------------------------------------
@@ -818,19 +814,20 @@ impl Worker {
         let sel = self.form_id_hint();
         let q = &self.conn_filter;
         let mut list: Vec<_> = self.connections.iter().filter(|c| {
-            q.is_empty() || format!("{} {} {}", c.display_name(), c.host, c.environment.label()).to_lowercase().contains(q)
+            q.is_empty() || format!("{} {} {} {} {}", c.display_name(), c.host, c.environment.label(), c.folder, c.tags.join(" ")).to_lowercase().contains(q)
         }).collect();
-        // Grouped by environment (Production first), most recently used first within a group.
-        list.sort_by_cached_key(|c| (c.environment.index(), std::cmp::Reverse(c.last_used), c.display_name().to_lowercase()));
+        // Cache folder/environment sort keys once; most recently used first within each group.
+        list.sort_by_cached_key(|c| (c.folder.clone(), if c.folder.is_empty() { c.environment.index() } else { 0 }, std::cmp::Reverse(c.last_used), c.display_name().to_lowercase()));
         let mut items: Vec<(String, String, String, i32, bool, bool)> = Vec::new();
-        let mut last_env = None;
+        let mut last_group = None;
         for c in &list {
-            if last_env != Some(c.environment) {
-                last_env = Some(c.environment);
-                items.push((String::new(), c.environment.label().to_string(), String::new(), c.environment.index() as i32, false, true));
+            let group = (c.folder.as_str(), if c.folder.is_empty() { c.environment.index() } else { 0 });
+            if last_group != Some(group) {
+                last_group = Some(group);
+                items.push((String::new(), if c.folder.is_empty() { c.environment.label().to_string() } else { c.folder.clone() }, String::new(), c.environment.index() as i32, false, true));
             }
             let who = if c.db_type == DbType::Sqlite { c.database.clone() } else if c.username.is_empty() { c.host.clone() } else { format!("{}@{}", c.username, c.host) };
-            items.push((c.id.clone(), c.display_name(), format!("{} • {}", c.db_type.label(), who), c.environment.index() as i32, c.id == sel, false));
+            items.push((c.id.clone(), c.display_name(), format!("{} • {}{}", c.db_type.label(), who, if c.tags.is_empty() { String::new() } else { format!(" • {}", c.tags.join(", ")) }), c.environment.index() as i32, c.id == sel, false));
         }
         ui(&self.w, move |st| {
             let v: Vec<ConnItem> = items
@@ -848,7 +845,7 @@ impl Worker {
         });
     }
 
-    /// The id currently shown in the form (kept in `settings.last_connection_id` while browsing).
+    /// The id currently shown in the form.
     fn form_id_hint(&self) -> String {
         self.form_id.clone()
     }
@@ -876,6 +873,26 @@ mod context;
 #[cfg(test)]
 mod performance_regressions {
     use super::*;
+
+    #[test]
+    fn startup_ignores_previous_sessions_and_connection() {
+        let dir = std::env::temp_dir().join(format!("dboard-startup-{}", config::new_id()));
+        let store = Store::at(&dir);
+        let mut c = ConnectionConfig::new_blank();
+        c.last_used = 100;
+        store.save_connections(&[c.clone()]).unwrap();
+        let mut settings = store.load_settings();
+        settings.last_connection_id = c.id.clone();
+        settings.open_connections = vec![c.id.clone()];
+        store.save_settings(&settings).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut worker = Worker::new(Weak::default(), tx, store);
+        worker.init();
+        assert!(worker.conn.is_none());
+        assert!(worker.sess_ids.is_empty());
+        assert_ne!(worker.form_id, c.id);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn transient_commands_keep_action_and_column_boundaries() {

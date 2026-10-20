@@ -19,6 +19,7 @@ export struct ConnForm {
     user: string, password: string, env-index: int, ssl-index: int, uri: string, remember: bool,
     ssh-host: string, ssh-port: string, ssh-user: string, ssh-key: string, read-only: bool,
     ssl-ca: string, ssl-cert: string, ssl-key: string,
+    folder: string, tags: string, protect-destructive: bool,
 }
 
 // Everything the Rust worker pushes to the UI, and every action the UI can request.
