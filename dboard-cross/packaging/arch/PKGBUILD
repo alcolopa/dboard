@@ -10,7 +10,8 @@ url='https://github.com/alcolopa/dboard'
 license=('MIT')
 # makepkg's GCC LTO produces C objects Rust's LLVM linker cannot read (bundled
 # SQLite/ring). Cargo still applies its own optimized release profile and LTO.
-options=('!lto')
+# !debug: makepkg's -C debuginfo=2 plus fat LTO gets rustc SIGKILLed (OOM) on CI runners; the release profile strips anyway.
+options=('!lto' '!debug')
 depends=('fontconfig' 'libxkbcommon' 'libx11' 'libxcb' 'wayland' 'libxkbcommon-x11')
 optdepends=('gnome-keyring: store passwords in the Secret Service' 'kwallet: store passwords in the Secret Service')
 makedepends=('cargo')
