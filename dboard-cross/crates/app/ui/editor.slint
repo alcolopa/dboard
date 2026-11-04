@@ -72,8 +72,10 @@ export component SqlEditor inherits Rectangle {
             height: max(fl.height - 2 * root.pad, self.preferred-height);
             single-line: false; wrap: no-wrap;
             font-family: "JetBrains Mono"; font-size: root.font-size;
-            color: Theme.text;
-            selection-foreground-color: Theme.text;
+            // The token layer below draws the visible glyphs; drawing them twice at different
+            // sub-pixel offsets is what made long queries blurry.
+            color: transparent;
+            selection-foreground-color: transparent;
             selection-background-color: Theme.text-selection;
             edited => { root.edited(self.text); }
             changed has-focus => { AppState.text-focus = max(0, AppState.text-focus + (self.has-focus ? 1 : -1)); }
@@ -85,6 +87,10 @@ export component SqlEditor inherits Rectangle {
                 if p.x + root.gutter-w < -fl.content-x { fl.content-x = -(p.x + root.gutter-w); }
                 else if p.x + root.gutter-w + root.pad + 8px > -fl.content-x + fl.width { fl.content-x = -(p.x + root.gutter-w + root.pad + 8px - fl.width); }
             }
+        }
+        if ed.has-focus: Rectangle {
+            x: root.gutter-w + root.pad + root.caret-x; y: root.pad + root.caret-y;
+            width: 1px; height: root.lh; background: Theme.text;
         }
         for t in root.toks: Text {
             x: root.gutter-w + root.pad + t.col * root.cw;

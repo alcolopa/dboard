@@ -162,7 +162,8 @@ impl Default for ConnectionConfig {
 
 impl ConnectionConfig {
     pub fn new_blank() -> Self {
-        Self { id: crate::config::new_id(), ..Default::default() }
+        // New connections start read-only so a mis-picked prod/staging connection can't write; existing saved ones keep their setting.
+        Self { id: crate::config::new_id(), read_only: true, ..Default::default() }
     }
 
     pub fn display_name(&self) -> String {
