@@ -17,6 +17,17 @@ impl From<mongodb::error::Error> for Error {
     }
 }
 
+fn mongo_connection_error(error: mongodb::error::Error) -> Error {
+    use mongodb::error::ErrorKind;
+    let stage = match error.kind.as_ref() {
+        ErrorKind::Authentication { .. } => "Database login failed",
+        ErrorKind::InvalidTlsConfig { .. } => "TLS configuration failed",
+        ErrorKind::Io(io) if io.get_ref().is_some_and(|cause| cause.is::<rustls::Error>()) => "TLS negotiation failed",
+        _ => "MongoDB connection failed",
+    };
+    Error::Db(format!("{stage}: {error}"))
+}
+
 pub struct Mongo {
     client: Client,
     default_db: Option<String>,
@@ -345,14 +356,14 @@ fn json_to_docs(s: &str) -> std::result::Result<Vec<Document>, String> {
 impl Mongo {
     pub async fn connect(c: &ConnectionConfig, password: &str) -> Result<Self> {
         let uri = build_uri(c, password);
-        let mut opts = ClientOptions::parse(&uri).await?;
+        let mut opts = ClientOptions::parse(&uri).await.map_err(mongo_connection_error)?;
         opts.app_name = Some("dboard".into());
         opts.server_selection_timeout = Some(Duration::from_secs(10));
         opts.connect_timeout = Some(Duration::from_secs(10));
         let default_db = opts.default_database.clone().or_else(|| Some(c.database.clone()).filter(|d| !d.is_empty()));
-        let client = Client::with_options(opts)?;
+        let client = Client::with_options(opts).map_err(mongo_connection_error)?;
         // Force a round trip so bad credentials / hosts fail here, not on first use.
-        client.database("admin").run_command(mongodb::bson::doc! { "ping": 1 }).await?;
+        client.database("admin").run_command(mongodb::bson::doc! { "ping": 1 }).await.map_err(mongo_connection_error)?;
         Ok(Self { client, default_db })
     }
 

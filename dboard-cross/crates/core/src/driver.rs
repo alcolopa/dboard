@@ -635,8 +635,32 @@ impl Conn {
         }
     }
 
+    pub async fn preflight_mysql_restore(&mut self, path: &Path) -> Result<crate::mysql_restore::MyRestore> {
+        let Inner::My(driver) = &mut self.inner else { return Err(Error::Db("MySQL restore preflight requires a MySQL connection.".into())) };
+        driver.preflight(path).await
+    }
+
+    pub async fn restore_mysql(
+        &mut self,
+        plan: crate::mysql_restore::MyRestore,
+        opts: &ImportOptions,
+        progress: &mut dyn FnMut(Progress),
+    ) -> Result<ImportStats> {
+        let Inner::My(driver) = &mut self.inner else { return Err(Error::Db("MySQL restore requires a MySQL connection.".into())) };
+        if self.config.read_only {
+            return Err(Error::Db("This connection is read-only.".into()));
+        }
+        let result = driver.restore(plan, opts, progress).await;
+        let _ = self.refresh_metadata().await;
+        result
+    }
+
     /// Run an exported script (or a dboard MongoDB export) against the current database.
     pub async fn import_database(&mut self, path: &Path, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
+        if self.config.db_type == DbType::MySql {
+            let plan = self.preflight_mysql_restore(path).await?;
+            return self.restore_mysql(plan, opts, progress).await;
+        }
         let file = std::fs::File::open(path).map_err(|e| Error::Db(format!("Cannot read {}: {e}", path.display())))?;
         // Progress of an import is how much of the file has been read.
         let size = file.metadata().map(|m| m.len()).unwrap_or(0);
@@ -655,7 +679,7 @@ impl Conn {
                 d.set_user_tx(in_tx);
                 d.import(&mut reader, opts, progress).await
             }
-            Inner::My(d) => d.import(&mut reader, opts, progress).await,
+            Inner::My(_) => unreachable!("MySQL restores use a prepared script"),
             Inner::Sqlite(d) => d.import(&mut reader, opts, progress).await,
             Inner::Mongo(m) => {
                 let target = m.current_database();

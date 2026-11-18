@@ -48,10 +48,17 @@ A native desktop UI without a web view. See the [project README](../README.md) f
   with constraints, data, functions, views, indexes, triggers, foreign keys; MySQL / MariaDB: `CREATE TABLE`, data, views,
   routines, triggers, events) or, for MongoDB, one JSON file (documents and indexes). *Import database…* runs a SQL script
   (including `pg_dump` files with `COPY` blocks and `mysqldump` files with `DELIMITER`) or restores a MongoDB export; on
-  PostgreSQL it is all-or-nothing. *Import rows…* loads a CSV / TSV / JSON file into the open table.
+  PostgreSQL it is all-or-nothing. Before a MySQL / MariaDB restore, dboard shows the current database and checks
+  existing tables in targets named by standard `USE`, `CREATE DATABASE`, `CREATE TABLE` and `INSERT INTO` statements. It blocks dboard
+  SQL exports that insert values into generated columns declared in the dump or already present in the target.
+  Use an empty database for a clean restore. If execution fails, dboard shows the statement number, SQL (an excerpt
+  for long statements) and how many statements succeeded, with guidance on when to reset the target or use a fresh one.
+  *Import rows…* loads a CSV / TSV / JSON file into the open table.
 - **Query editor**: run (Ctrl+Enter), EXPLAIN / EXPLAIN ANALYZE plan tree, autocomplete chips, persistent history,
   saved queries in folders. MongoDB: `db.coll.find({...}).sort({...}).limit(n)`, `aggregate([...])`, stage templates,
   whole-document JSON editor.
+- **Connection diagnostics**: connection failures identify SSH authentication, TLS setup or negotiation, and database
+  login errors when the driver or SSH client reports those causes.
 - **Safety**: destructive statements on Production/Staging require typing `CONFIRM`.
 - **Also**: structure + DDL view, routine definitions, inspector (activity log, changes, metadata, query history and saved queries; **pin** it to
   keep it open across restarts, otherwise it closes when you click away; both modes reserve workspace space),
@@ -102,6 +109,7 @@ Linux build dependencies (Debian/Ubuntu): `libfontconfig1-dev libxkbcommon-dev l
 - **Editor**: syntax colours, line numbers, bracket matching, `{{variables}}` that prompt for values, SQL snippets, *Run selection*.
 - **Safety**: Production banner, read-only connections (the session itself is read-only on PostgreSQL / MySQL / SQLite), staged edits you review as old → new and apply in one transaction, transaction mode (Begin / Commit / Rollback), Stop button and a statement timeout (View → Query Timeout), and a local audit log of every write (View → Audit Log, stored in `audit.log` in the config folder).
 - **Connections**: opens on the connections dashboard without reconnecting; several connections can be opened manually as tabs. Custom folders group connections, comma-separated tags are searchable, and per-connection destructive confirmation extends production safeguards to any environment. Read-only connections block all writes. Includes SSH tunnel through your system `ssh`, TLS CA / client certificates, paste a `postgres://` / `mysql://` URL, SQLite files.
+  To select an SSH private key, open **Advanced options**, enter the SSH host, then click **Browse…** beside **Private key file**.
 - **Password references**: the password field accepts `env:NAME`, `op://vault/item/field` (1Password CLI), `aws-rds-iam[:region]` (AWS CLI) or `gcloud-sql-iam` (gcloud CLI), resolved each time you connect.
 - **ER diagrams**: use **Export diagram…** in the diagram footer to save the complete canvas as an SVG image.
 - **Data**: import wizard with column mapping, preview and an error report; generate sample rows (database menu); pin a result and compare against it; export to CSV / JSON / SQL / Excel; ER diagram; schema diff (right-click a connection tab); plan view that flags the slowest node.

@@ -50,9 +50,14 @@ impl Worker {
             }
             1 => {
                 let kind = if mongo { "a dboard MongoDB export (.json)" } else { "a SQL script (.sql), including pg_dump and mysqldump files" };
+                let note = if conn.db_type() == DbType::MySql {
+                    "Choose a SQL script to check the target and review the restore before it starts.".into()
+                } else {
+                    format!("Runs {kind} against this database. Existing objects with the same names will make statements fail, so use an empty database for a clean restore.")
+                };
                 (
                     format!("Import into {db}"),
-                    format!("Runs {kind} against this database. Existing objects with the same names will make statements fail, so use an empty database for a clean restore."),
+                    note,
                     String::new(),
                     true,
                 )
@@ -123,11 +128,13 @@ impl Worker {
             0 if self.xfer_format == 0 && self.xfer_tables.is_empty() => self.run_export(path, a, b).await,
             0 => self.run_export_tables(path).await,
             1 => {
-                if self.protected() {
+                if self.dialect() == Dialect::My {
+                    self.preflight_mysql(path, a).await;
+                } else if self.protected() {
                     let env = self.env.label();
                     self.ask(Pending::ImportDatabase(path.clone(), a), format!("Import into {env}"), format!("Run every statement in {path} against this {env} database?"));
                 } else {
-                    self.run_import_db(path, a).await;
+                    self.run_import_db(path, a, None).await;
                 }
             }
             _ => {
@@ -274,7 +281,25 @@ impl Worker {
         }
     }
 
-    pub(crate) async fn run_import_db(&mut self, path: String, stop: bool) {
+    async fn preflight_mysql(&mut self, path: String, stop: bool) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        ui(&self.w, |st| {
+            st.set_xfer_busy(true);
+            st.set_xfer_info("Checking restore script…".into());
+            st.set_xfer_error("".into());
+            st.set_xfer_progress(-1.0);
+        });
+        match conn.preflight_mysql_restore(std::path::Path::new(&path)).await {
+            Ok(plan) => {
+                let summary = format!("{path}\n\n{}", plan.summary);
+                self.xfer_done(String::new(), String::new());
+                self.ask(Pending::RestoreMysql(path, stop, plan), "Confirm MySQL restore".into(), summary);
+            }
+            Err(error) => self.xfer_done(String::new(), error.to_string()),
+        }
+    }
+
+    pub(crate) async fn run_import_db(&mut self, path: String, stop: bool, plan: Option<dboard_core::mysql_restore::MyRestore>) {
         ui(&self.w, |st| {
             st.set_xfer_busy(true);
             st.set_xfer_error("".into());
@@ -282,9 +307,12 @@ impl Worker {
             st.set_xfer_progress(0.0);
         });
         let mut progress = self.xfer_progress();
-        let res = match self.conn.as_mut() {
-            Some(c) => c.import_database(std::path::Path::new(&path), &ImportOptions { stop_on_error: stop }, &mut progress).await,
-            None => return,
+        let Some(conn) = self.conn.as_mut() else { return };
+        let opts = ImportOptions { stop_on_error: stop };
+        let mysql = plan.is_some();
+        let res = match plan {
+            Some(plan) => conn.restore_mysql(plan, &opts, &mut progress).await,
+            None => conn.import_database(std::path::Path::new(&path), &opts, &mut progress).await,
         };
         match res {
             Ok(st) => {
@@ -293,19 +321,28 @@ impl Worker {
                 if st.rows_copied > 0 {
                     info.push_str(&format!(", {} row(s) loaded", st.rows_copied));
                 }
-                let err = if st.errors.is_empty() {
+                let err = if mysql {
+                    if !st.errors.is_empty() {
+                        info = format!("Restore finished with errors after {} statement(s).", st.statements);
+                    }
+                    st.errors.join("\n\n")
+                } else if st.errors.is_empty() {
                     String::new()
                 } else {
                     format!("{} problem(s):\n{}", st.errors.len(), st.errors.iter().take(5).cloned().collect::<Vec<_>>().join("\n"))
                 };
                 self.xfer_done(info, err);
-                self.rebuild_tree();
                 self.load_databases().await;
                 self.load_active().await;
             }
             Err(e) => {
                 self.xfer_done(String::new(), e.to_string());
-                self.rebuild_tree();
+                if mysql {
+                    self.load_databases().await;
+                    self.load_active().await;
+                } else {
+                    self.rebuild_tree();
+                }
             }
         }
     }
@@ -521,6 +558,9 @@ async fn write_tables(
         None
     } else {
         let mut w = open(target)?;
+        if format == 0 && d == Dialect::My {
+            w.write_all(b"-- dboard table export\n").map_err(werr)?;
+        }
         if format == 2 {
             w.write_all(export::html_start().as_bytes()).map_err(werr)?;
         }

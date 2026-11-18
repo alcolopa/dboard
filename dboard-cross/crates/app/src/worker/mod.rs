@@ -52,6 +52,7 @@ pub enum Cmd {
     SetSaveMode(bool),
     TxRollback,
     ParseConnUrl(String),
+    BrowseSshKey,
     ConnFilter(String),
     SelectConn(String),
     SaveConn(ConnForm),
@@ -464,6 +465,7 @@ pub(crate) enum Pending {
     /// (top-left row, top-left column, values)
     Paste(usize, usize, Vec<Vec<String>>),
     ImportDatabase(String, bool),
+    RestoreMysql(String, bool, dboard_core::mysql_restore::MyRestore),
     ImportRows(String, bool),
     GenerateRows(usize),
     DownloadUpdate(String, String, u64),

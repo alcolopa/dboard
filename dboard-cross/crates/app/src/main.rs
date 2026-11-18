@@ -138,6 +138,7 @@ fn main() {
     wire!(on_tx_commit, | | Cmd::TxCommit);
     wire!(on_tx_rollback, | | Cmd::TxRollback);
     wire!(on_parse_conn_url, |u| Cmd::ParseConnUrl(u.to_string()));
+    wire!(on_browse_ssh_key, | | Cmd::BrowseSshKey);
     wire!(on_conn_filter, |q| Cmd::ConnFilter(q.to_string()));
     wire!(on_select_conn, |id| Cmd::SelectConn(id.to_string()));
     wire!(on_save_conn, |f| Cmd::SaveConn(f));

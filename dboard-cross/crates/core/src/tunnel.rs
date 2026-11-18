@@ -51,6 +51,7 @@ pub async fn open(spec: TunnelSpec<'_>) -> Result<Tunnel> {
     let local_port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).and_then(|l| l.local_addr()).map_err(|e| Error::Db(format!("No free local port: {e}")))?.port();
     let mut child = Command::new("ssh")
         .args(ssh_args(&spec, local_port))
+        .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -65,13 +66,21 @@ pub async fn open(spec: TunnelSpec<'_>) -> Result<Tunnel> {
                 let _ = e.read_to_string(&mut msg);
             }
             let msg = msg.trim();
-            return Err(Error::Db(format!("SSH tunnel failed ({status}){}", if msg.is_empty() { String::new() } else { format!(": {msg}") })));
+            let stage = if msg.lines().any(|line| line.contains(": Permission denied (") || line.contains("Too many authentication failures")) {
+                "SSH authentication failed"
+            } else if msg.contains("Host key verification failed") {
+                "SSH host key verification failed"
+            } else {
+                "SSH tunnel failed"
+            };
+            return Err(Error::Db(format!("{stage} ({status}){}", if msg.is_empty() { String::new() } else { format!(": {msg}") })));
         }
         if TcpStream::connect_timeout(&(Ipv4Addr::LOCALHOST, local_port).into(), Duration::from_millis(200)).is_ok() {
             return Ok(Tunnel { child, local_port });
         }
         if Instant::now() > deadline {
             let _ = child.kill();
+            let _ = child.wait();
             return Err(Error::Db("SSH tunnel timed out after 15 s.".into()));
         }
         tokio::time::sleep(Duration::from_millis(150)).await;

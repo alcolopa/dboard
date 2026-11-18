@@ -237,6 +237,23 @@ async fn mysql() {
     }
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn mysql_displays_points() {
+    let Some((c, pw)) = cfg("DBOARD_TEST_MYSQL", DbType::MySql) else { return };
+    let schema = c.database.clone();
+    let mut d = Conn::connect(c, &pw).await.unwrap();
+    d.execute_query("DROP TABLE IF EXISTS dboard_points").await.unwrap();
+    d.execute_query("CREATE TABLE dboard_points (id int primary key, location POINT)").await.unwrap();
+    d.execute_query("INSERT INTO dboard_points VALUES (1, POINT(1.25, -2.5)), (2, NULL)").await.unwrap();
+    d.refresh_metadata().await.unwrap();
+
+    let expected: Vec<Vec<Cell>> = vec![vec![Some("1".into()), Some("POINT(1.25 -2.5)".into())], vec![Some("2".into()), None]];
+    let page = Page { limit: 10, offset: 0, sort_column: Some("id".into()), sort_ascending: true, filter: None };
+    assert_eq!(d.fetch_page(&schema, "dboard_points", &page).await.unwrap().rows, expected);
+    assert_eq!(d.execute_query("SELECT id, location AS p FROM dboard_points ORDER BY id").await.unwrap().rows, expected);
+    d.drop_table(&schema, "dboard_points").await.unwrap();
+}
+
 /// MongoDB scenario: DBOARD_TEST_MONGO=host:port:user:password:database
 #[tokio::test(flavor = "current_thread")]
 async fn mongo() {
@@ -485,7 +502,7 @@ async fn mysql_dump_import_users() {
     let at = |db: &str| ConnectionConfig { database: db.into(), ..base.clone() };
     let mut src = Conn::connect(at("dboard_src"), &pw).await.unwrap();
     for sql in [
-        "CREATE TABLE customers (id int AUTO_INCREMENT PRIMARY KEY, name varchar(60) NOT NULL, note text, raw blob, born date, score decimal(8,2) DEFAULT 1.50, ok tinyint(1), mood enum('sad','it''s great'), at datetime(3), big bigint unsigned)",
+        "CREATE TABLE customers (id int AUTO_INCREMENT PRIMARY KEY, name varchar(60) NOT NULL, note text, raw blob, born date, score decimal(8,2) DEFAULT 1.50, ok tinyint(1), mood enum('sad','it''s great'), at datetime(3), big bigint unsigned, location POINT, name_upper varchar(60) GENERATED ALWAYS AS (UPPER(name)) STORED, name_length int GENERATED ALWAYS AS (CHAR_LENGTH(name)) VIRTUAL)",
         "CREATE TABLE orders (id int AUTO_INCREMENT PRIMARY KEY, customer_id int NOT NULL, total double, CONSTRAINT fk_cust FOREIGN KEY (customer_id) REFERENCES customers(id), INDEX orders_total (total))",
         "CREATE VIEW z_last AS SELECT * FROM orders WHERE total > 10",
         "CREATE VIEW a_first AS SELECT * FROM z_last",
@@ -497,6 +514,7 @@ async fn mysql_dump_import_users() {
             ('Bob; DROP TABLE x;', NULL, NULL, NULL, NULL, NULL, NULL, NULL), \
             ('Ünïcode ✓', '', '', NULL, 0, 'sad', NULL, 0)",
         "INSERT INTO orders (customer_id, total) VALUES (1, 5.5), (1, 20.25), (2, 0)",
+        "UPDATE customers SET location = ST_GeomFromText('POINT(1.25 -2.5)', 3857) WHERE id = 1",
     ] {
         src.execute_query(sql).await.unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
@@ -524,7 +542,7 @@ async fn mysql_dump_import_users() {
     let r = dst.import_database(&file, &ImportOptions::default(), &mut |_| {}).await.unwrap();
     assert!(r.errors.is_empty(), "{r:?}");
     for q in [
-        "SELECT id, name, note, HEX(raw), born, score, ok, mood, at, big FROM customers ORDER BY id",
+        "SELECT id, name, note, HEX(raw), born, score, ok, mood, at, big, HEX(location), name_upper, name_length FROM customers ORDER BY id",
         "SELECT * FROM orders ORDER BY id",
         "SELECT * FROM a_first",
         "SELECT add_one(41)",
@@ -582,4 +600,61 @@ async fn mysql_dump_import_users() {
         admin.execute_query(&format!("DROP DATABASE {db}")).await.unwrap();
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn mysql_restore_preflight_and_partial_failure() {
+    use dboard_core::dump::ImportOptions;
+    let Some((base, pw)) = cfg("DBOARD_TEST_MYSQL", DbType::MySql) else { return };
+    let mut conn = Conn::connect(base.clone(), &pw).await.unwrap();
+    let table = format!("dboard_restore_{}", uuid::Uuid::new_v4().simple());
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("restore.sql");
+    let definition = format!("CREATE TABLE `{table}` (`n` int, `doubled` int GENERATED ALWAYS AS (n * 2) STORED);");
+
+    std::fs::write(&file, format!(
+        "-- dboard dump\n{definition}\nINSERT INTO `{table}` (`n`, `doubled`) VALUES (2, 4);"
+    )).unwrap();
+    let error = conn.preflight_mysql_restore(&file).await.err().unwrap().to_string();
+    assert!(error.contains("Statement 2") && error.contains("generated column") && error.contains(&base.database), "{error}");
+    assert!(conn.execute_query(&format!("SELECT * FROM `{table}`")).await.is_err());
+
+    std::fs::write(&file, format!(
+        "-- dboard dump\nSET FOREIGN_KEY_CHECKS = 0;\n{definition}\nINSERT INTO `{table}` (`n`) VALUES (2);\nINSERT INTO `{table}` (`missing`) VALUES (3);"
+    )).unwrap();
+    let plan = conn.preflight_mysql_restore(&file).await.unwrap();
+    assert!(plan.summary.contains(&base.database) && plan.summary.contains("4 SQL statement(s)"), "{}", plan.summary);
+    // A confirmed plan runs the bytes that were inspected, even if the original file changes.
+    std::fs::write(&file, "SELECT 1;").unwrap();
+    let error = conn.restore_mysql(plan, &ImportOptions::default(), &mut |_| {}).await.unwrap_err().to_string();
+    assert!(error.contains("Statement 4") && error.contains("`missing`") && error.contains("3 of 4") && error.contains("fresh target"), "{error}");
+    assert_eq!(conn.execute_query("SELECT @@SESSION.foreign_key_checks").await.unwrap().rows[0][0].as_deref(), Some("1"));
+    assert_eq!(conn.execute_query(&format!("SELECT doubled FROM `{table}`")).await.unwrap().rows[0][0].as_deref(), Some("4"));
+
+    std::fs::write(&file, format!("-- dboard dump\nINSERT INTO `{table}` (`doubled`) VALUES (6);")).unwrap();
+    let error = conn.preflight_mysql_restore(&file).await.err().unwrap().to_string();
+    assert!(error.contains("generated column") && error.contains("existing table(s)"), "{error}");
+
+    std::fs::write(&file, format!("USE `{}`;\nINSERT INTO `{table}` (`missing`) VALUES (3);\nSELECT 1;", base.database)).unwrap();
+    let plan = conn.preflight_mysql_restore(&file).await.unwrap();
+    assert!(plan.summary.contains("existing table(s)") && plan.summary.contains(&base.database), "{}", plan.summary);
+    let stats = conn.restore_mysql(plan, &ImportOptions { stop_on_error: false }, &mut |_| {}).await.unwrap();
+    assert_eq!(stats.statements, 3);
+    assert!(stats.errors[0].contains("2 of 3") && stats.errors[1].contains("Statement 2"), "{stats:?}");
+
+    conn.execute_query(&format!("DROP TABLE `{table}`")).await.unwrap();
+
+    let plan = conn.preflight_mysql_restore(&file).await.unwrap();
+    let mut other = Conn::connect(base.clone(), &pw).await.unwrap();
+    let error = other.restore_mysql(plan, &ImportOptions::default(), &mut |_| {}).await.unwrap_err().to_string();
+    assert!(error.contains("restore connection changed"), "{error}");
+
+    let ca = dir.path().join("invalid-ca.pem");
+    std::fs::write(&ca, "not a certificate").unwrap();
+    let tls = ConnectionConfig { ssl: SslMode::VerifyFull, ssl_ca: ca.display().to_string(), ..base.clone() };
+    let error = Conn::connect(tls, &pw).await.err().unwrap().to_string();
+    assert!(error.contains("TLS negotiation failed"), "{error}");
+
+    let error = Conn::connect(base, "wrong-dboard-test-password").await.err().unwrap().to_string();
+    assert!(error.contains("Database login failed"), "{error}");
 }

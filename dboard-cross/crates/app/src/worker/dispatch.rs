@@ -139,6 +139,7 @@ impl Worker {
             Cmd::TxCommit => self.tx_action(1).await,
             Cmd::TxRollback => self.tx_action(2).await,
             Cmd::ParseConnUrl(u) => self.parse_conn_url(&u),
+            Cmd::BrowseSshKey => self.browse_ssh_key().await,
             Cmd::ConnFilter(q) => {
                 self.conn_filter = q.to_lowercase();
                 self.push_connections();

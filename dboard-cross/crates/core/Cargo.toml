@@ -17,6 +17,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio-postgres-rustls = "0.14"
 webpki-roots = "1"
 mysql_async = { version = "0.37", default-features = false, features = ["default-rustls-ring"] }
+tempfile = "3"
 mongodb = { version = "3", default-features = false, features = ["rustls-tls", "compat-3-0-0", "dns-resolver"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 [dev-dependencies]

@@ -1,12 +1,14 @@
 use crate::admin;
 use crate::dump::{Progress, hex_literal, is_binary, is_numeric, sql_value, strip_definer, DumpOptions, DumpStats, ImportOptions, ImportStats, InsertWriter};
 use crate::model::*;
-use crate::split::{Splitter, Stmt};
+use crate::mysql_restore::{read_statement, MyRestore};
 use crate::sql::{self, Dialect};
 use crate::{Error, Result};
+use mysql_async::consts::ColumnType;
 use mysql_async::prelude::*;
 use mysql_async::{Conn, OptsBuilder, Params, Row, SslOpts, Value};
-use std::io::{BufRead, Write};
+use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
 const D: Dialect = Dialect::My;
@@ -15,6 +17,7 @@ pub struct My {
     conn: Conn,
     opts: mysql_async::Opts,
     is_mariadb: bool,
+    restore_session: u64,
     /// Only this database is listed (None = every non-system database).
     scope: Option<String>,
 }
@@ -26,6 +29,22 @@ impl From<mysql_async::Error> for Error {
             _ => Error::Db(e.to_string()),
         }
     }
+}
+
+fn connection_error(error: mysql_async::Error) -> Error {
+    use mysql_async::{DriverError, IoError};
+    let stage = match &error {
+        mysql_async::Error::Io(IoError::Tls(_))
+        | mysql_async::Error::Driver(DriverError::NoClientSslFlagFromServer)
+        | mysql_async::Error::Server(mysql_async::ServerError { code: 3159, .. }) => "TLS negotiation failed",
+        mysql_async::Error::Io(IoError::Io(io))
+            if io.get_ref().is_some_and(|cause| cause.is::<rustls::Error>()) => "TLS negotiation failed",
+        mysql_async::Error::Driver(DriverError::UnknownAuthPlugin { .. } | DriverError::MysqlOldPasswordDisabled)
+        | mysql_async::Error::Server(mysql_async::ServerError { code: 1045 | 1130 | 1251 | 1698, .. }) => "Database login failed",
+        mysql_async::Error::Server(mysql_async::ServerError { code: 1044 | 1049, .. }) => "Database selection failed",
+        _ => "MySQL connection failed",
+    };
+    Error::Db(format!("{stage}: {error}"))
 }
 
 fn humanize(code: u16, message: &str) -> String {
@@ -62,8 +81,32 @@ pub fn value_to_cell(v: &Value) -> Cell {
     })
 }
 
-fn rows_to_cells(rows: &[Row], width: usize) -> Vec<Vec<Cell>> {
-    rows.iter().map(|r| (0..width).map(|i| r.as_ref(i).and_then(value_to_cell)).collect()).collect()
+fn point_text(bytes: &[u8]) -> Option<String> {
+    // MySQL's internal format prefixes little-endian WKB with the four-byte SRID.
+    if bytes.len() != 25 || bytes[4..9] != [1, 1, 0, 0, 0] {
+        return None;
+    }
+    let srid = u32::from_le_bytes(bytes[..4].try_into().ok()?);
+    let x = f64::from_le_bytes(bytes[9..17].try_into().ok()?);
+    let y = f64::from_le_bytes(bytes[17..25].try_into().ok()?);
+    if srid == 0 {
+        Some(format!("POINT({x} {y})"))
+    } else {
+        Some(format!("SRID={srid};POINT({x} {y})"))
+    }
+}
+
+fn result_cell(value: &Value, column_type: ColumnType) -> Cell {
+    if let (ColumnType::MYSQL_TYPE_GEOMETRY, Value::Bytes(bytes)) = (column_type, value) {
+        return point_text(bytes).or_else(|| value_to_cell(value));
+    }
+    value_to_cell(value)
+}
+
+fn row_to_cells(row: &Row, width: usize) -> Vec<Cell> {
+    (0..width)
+        .map(|i| row.as_ref(i).and_then(|v| result_cell(v, row.columns_ref()[i].column_type())))
+        .collect()
 }
 
 impl My {
@@ -86,12 +129,12 @@ impl My {
             tokio::time::timeout(Duration::from_secs(10), Conn::new(b))
                 .await
                 .map_err(|_| Error::Db("connection timed out".into()))?
-                .map_err(Error::from)
+                .map_err(connection_error)
         };
         let conn = match c.ssl {
             SslMode::Prefer => match connect(with_ssl(base.clone())).await {
                 Ok(c) => c,
-                Err(_) => connect(base).await?,
+                Err(secure) => connect(base).await.map_err(|plain| Error::Db(format!("TLS attempt: {secure}\nPlain connection attempt: {plain}")))?,
             },
             _ => connect(with_ssl(base)).await?,
         };
@@ -99,7 +142,9 @@ impl My {
         if c.read_only {
             conn.query_drop("SET SESSION TRANSACTION READ ONLY").await?;
         }
-        Ok(Self { opts: conn.opts().clone(), conn, is_mariadb: false, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
+        static NEXT_RESTORE_SESSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let restore_session = NEXT_RESTORE_SESSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(Self { opts: conn.opts().clone(), conn, is_mariadb: false, restore_session, scope: Some(c.database.clone()).filter(|d| !d.is_empty()) })
     }
 
     pub fn canceller(&self) -> crate::driver::Canceller {
@@ -251,7 +296,7 @@ impl My {
         let rows: Vec<Row> = self.conn.query(sql::select_page(D, t, p)).await?;
         Ok(Rows {
             columns: t.columns.iter().map(|c| c.name.clone()).collect(),
-            rows: rows_to_cells(&rows, t.columns.len()),
+            rows: rows.iter().map(|row| row_to_cells(row, t.columns.len())).collect(),
             duration_ms: started.elapsed().as_secs_f64() * 1000.0,
             total_estimate: t.estimated_rows,
         })
@@ -265,7 +310,7 @@ impl My {
         let w = columns.len();
         let mut rows = Vec::new();
         while let Some(row) = res.next().await? {
-            rows.push((0..w).map(|i| row.as_ref(i).and_then(value_to_cell)).collect());
+            rows.push(row_to_cells(&row, w));
         }
         let affected = res.affected_rows();
         drop(res);
@@ -480,6 +525,18 @@ impl My {
         schemas.dedup();
         let multi = schemas.len() > 1;
         let total_tables = tables.iter().filter(|t| t.kind == TableKind::Table).count();
+        // Generated values are restored by evaluating the expression in CREATE TABLE.
+        let mut generated: HashMap<String, HashMap<String, HashSet<String>>> = HashMap::new();
+        if opts.data && total_tables > 0 {
+            let columns: Vec<(String, String, String)> = self.conn.query(format!(
+                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS \
+                 WHERE GENERATION_EXPRESSION <> '' AND {}",
+                self.scoped("TABLE_SCHEMA")
+            )).await?;
+            for (schema, table, column) in columns {
+                generated.entry(schema).or_default().entry(table).or_default().insert(column);
+            }
+        }
         let mut done_tables = 0usize;
         for sch in &schemas {
             // A single-database dump must restore into any database name, so drop the source
@@ -504,10 +561,18 @@ impl My {
                     if t.columns.is_empty() {
                         continue;
                     }
-                    let names: Vec<String> = t.columns.iter().map(|c| c.name.clone()).collect();
-                    let select = names.iter().map(|n| D.quote(n)).collect::<Vec<_>>().join(", ");
-                    let numeric: Vec<bool> = t.columns.iter().map(|c| is_numeric(&c.type_name)).collect();
-                    let binary: Vec<bool> = t.columns.iter().map(|c| is_binary(&c.type_name)).collect();
+                    let excluded = generated.get(sch).and_then(|tables| tables.get(&t.name));
+                    let columns: Vec<_> = t.columns.iter()
+                        .filter(|c| !excluded.is_some_and(|names| names.contains(&c.name)))
+                        .collect();
+                    let names: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
+                    let select = if names.is_empty() {
+                        "1".into() // Preserve row count for tables with only generated columns.
+                    } else {
+                        names.iter().map(|n| D.quote(n)).collect::<Vec<_>>().join(", ")
+                    };
+                    let numeric: Vec<bool> = columns.iter().map(|c| is_numeric(&c.type_name)).collect();
+                    let binary: Vec<bool> = columns.iter().map(|c| is_binary(&c.type_name)).collect();
                     let mut w = InsertWriter::new(D, &unq(t), &names);
                     writeln!(out, "\n-- Data for {}", unq(t))?;
                     {
@@ -551,80 +616,156 @@ impl My {
         Ok(st)
     }
 
-    pub async fn import(&mut self, reader: &mut dyn BufRead, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
-        let mut stats = ImportStats::default();
-        let mut sp = Splitter::new(D);
-        let mut pending: Vec<Stmt> = Vec::new();
-        // Views may be listed before the views they read from; retry those at the end.
-        let mut deferred: Vec<String> = Vec::new();
-        let mut raw = Vec::new();
-        let mut last_report = Instant::now();
-        let mut eof = false;
-        while !eof {
-            raw.clear();
-            if reader.read_until(b'\n', &mut raw)? == 0 {
-                eof = true;
-                sp.finish(&mut pending);
-            } else {
-                sp.feed_line(&String::from_utf8_lossy(&raw), &mut pending);
-            }
-            for stmt in pending.drain(..) {
-                let Stmt::Sql(sql) = stmt else { continue };
-                stats.statements += 1;
-                if let Err(e) = self.conn.query_drop(sql.as_str()).await {
-                    let is_view = sql.to_uppercase().contains(" VIEW ");
-                    let missing = matches!(&e, mysql_async::Error::Server(s) if s.code == 1146 || s.code == 1356);
-                    if is_view && missing {
-                        deferred.push(sql);
-                        continue;
-                    }
-                    let snippet: String = sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect();
-                    let msg = format!("Statement {} failed: {}\n  {snippet}", stats.statements, Error::from(e));
-                    if opts.stop_on_error {
-                        return Err(Error::Db(format!("{msg}\nStatements before this one were already applied (MySQL cannot roll back schema changes).")));
-                    }
-                    if stats.errors.len() < 50 {
-                        stats.errors.push(msg);
-                    }
-                }
-                if last_report.elapsed().as_millis() > 400 {
-                    progress(format!("{} statements run…", stats.statements).into());
-                    last_report = Instant::now();
+    pub(crate) async fn preflight(&mut self, path: &std::path::Path) -> Result<MyRestore> {
+        let database = self.conn.query_first("SELECT DATABASE(), @@lower_case_table_names").await?
+            .ok_or_else(|| Error::Db("Could not determine the MySQL restore target.".into()))?;
+        crate::mysql_restore::inspect(&mut self.conn, path, database, self.restore_session).await
+    }
+
+    pub(crate) async fn restore(&mut self, plan: MyRestore, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
+        if self.restore_session != plan.session || self.conn.id() != plan.connection_id {
+            return Err(Error::Db("The restore connection changed. Run preflight again before importing.".into()));
+        }
+        let session: Option<(Option<String>, u8, u8, String)> = self.conn
+            .query_first("SELECT DATABASE(), @@SESSION.foreign_key_checks, @@SESSION.unique_checks, @@SESSION.sql_mode")
+            .await?;
+        let Some((database, foreign_keys, unique, sql_mode)) = session else {
+            return Err(Error::Db("Could not verify the MySQL restore target.".into()));
+        };
+        if database != plan.database {
+            return Err(Error::Db("The restore target changed. Run preflight again before importing.".into()));
+        }
+        let mut reader = std::io::BufReader::new(plan.script);
+        let mut result = self.import(&mut reader, plan.count, opts, progress).await;
+        // Dumps commonly disable checks before any DDL. Restore the session settings when
+        // a failure may have skipped the matching SET statements at the end of the file.
+        if !matches!(&result, Ok(stats) if stats.errors.is_empty()) {
+            if let Err(error) = self.conn.exec_drop(
+                "SET SESSION foreign_key_checks = ?, SESSION unique_checks = ?, SESSION sql_mode = ?",
+                (foreign_keys, unique, sql_mode),
+            ).await {
+                let warning = format!("Could not restore session settings. Reconnect before running more SQL. {error}");
+                match &mut result {
+                    Ok(stats) => stats.errors.push(warning),
+                    Err(error) => *error = Error::Db(format!("{error}\n{warning}")),
                 }
             }
         }
+        result
+    }
+
+    async fn import(&mut self, reader: &mut dyn Read, count: usize, opts: &ImportOptions, progress: &mut dyn FnMut(Progress)) -> Result<ImportStats> {
+        let mut stats = ImportStats::default();
+        let mut succeeded = 0;
+        let mut failed = 0;
+        // Views may be listed before the views they read from; retry those at the end.
+        let mut deferred = Vec::new();
+        let mut last_report = Instant::now();
+        for number in 1..=count {
+            let sql = match read_statement(reader) {
+                Ok(sql) => sql,
+                Err(error) => return Err(Error::Db(format!("Could not finish reading the restore script. {error}\n{}", restore_outcome(succeeded, stats.statements)))),
+            };
+            stats.statements = number;
+            match self.conn.query_drop(sql.as_str()).await {
+                Ok(()) => succeeded += 1,
+                Err(error) => {
+                    let missing = matches!(&error, mysql_async::Error::Server(s) if s.code == 1146 || s.code == 1356);
+                    if missing && sql.split_whitespace().take_while(|word| !word.eq_ignore_ascii_case("SELECT")).any(|word| word.eq_ignore_ascii_case("VIEW")) {
+                        deferred.push((number, sql, Error::from(error)));
+                        continue;
+                    }
+                    let stop = opts.stop_on_error || error.is_fatal();
+                    let message = restore_failure(number, &sql, &Error::from(error));
+                    if stop {
+                        return Err(Error::Db(format!("{message}\n{}", restore_outcome(succeeded, stats.statements))));
+                    }
+                    failed += 1;
+                    if stats.errors.len() < 5 {
+                        stats.errors.push(message);
+                    }
+                }
+            }
+            if last_report.elapsed().as_millis() > 400 {
+                progress(Progress::at(format!("{number} of {count} statements processed…"), number, count));
+                last_report = Instant::now();
+            }
+        }
         for _ in 0..4 {
-            if deferred.is_empty() {
+            let before = deferred.len();
+            if before == 0 {
                 break;
             }
-            let before = deferred.len();
             let mut still = Vec::new();
-            let mut last_err = String::new();
-            for sql in deferred.drain(..) {
-                if let Err(e) = self.conn.query_drop(sql.as_str()).await {
-                    last_err = Error::from(e).to_string();
-                    still.push(sql);
+            for (number, sql, _) in deferred.drain(..) {
+                match self.conn.query_drop(sql.as_str()).await {
+                    Ok(()) => succeeded += 1,
+                    Err(error) => still.push((number, sql, Error::from(error))),
                 }
             }
             deferred = still;
             if deferred.len() == before {
-                for sql in &deferred {
-                    let msg = format!("View could not be created: {last_err}\n  {}", sql.chars().take(120).collect::<String>());
-                    if opts.stop_on_error {
-                        return Err(Error::Db(msg));
-                    }
-                    stats.errors.push(msg);
-                }
                 break;
             }
         }
+        for (number, sql, error) in deferred {
+            let message = restore_failure(number, &sql, &error);
+            if opts.stop_on_error {
+                return Err(Error::Db(format!("{message}\n{}", restore_outcome(succeeded, stats.statements))));
+            }
+            failed += 1;
+            if stats.errors.len() < 5 {
+                stats.errors.push(message);
+            }
+        }
+        if failed > 0 {
+            stats.errors.insert(0, format!("{failed} statement(s) failed. {}", restore_outcome(succeeded, stats.statements)));
+        }
         Ok(stats)
     }
+
+}
+
+fn restore_failure(number: usize, sql: &str, error: &Error) -> String {
+    let mut chars = sql.chars();
+    let mut preview: String = chars.by_ref().take(600).collect();
+    if chars.next().is_some() {
+        preview.push_str("… [statement excerpt]");
+    }
+    format!("Statement {number} failed: {error}\n{preview}")
+}
+
+fn restore_outcome(succeeded: usize, attempted: usize) -> String {
+    let retry = if attempted == 0 {
+        "The target can be reused."
+    } else {
+        "MySQL may have kept changes, including from a failed statement. For a clean retry, use a fresh target or reset the affected databases to their pre-restore state."
+    };
+    format!("{succeeded} of {attempted} attempted statement(s) succeeded. {retry}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn displays_mysql_points_using_result_column_type() {
+        use ColumnType::{MYSQL_TYPE_BLOB, MYSQL_TYPE_GEOMETRY};
+
+        let mut bytes = vec![0, 0, 0, 0, 1, 1, 0, 0, 0];
+        bytes.extend_from_slice(&1.25_f64.to_le_bytes());
+        bytes.extend_from_slice(&(-2.5_f64).to_le_bytes());
+        assert_eq!(point_text(&bytes).as_deref(), Some("POINT(1.25 -2.5)"));
+
+        bytes[..4].copy_from_slice(&4326_u32.to_le_bytes());
+        let point = Value::Bytes(bytes.clone());
+        assert_eq!(result_cell(&point, MYSQL_TYPE_GEOMETRY).as_deref(), Some("SRID=4326;POINT(1.25 -2.5)"));
+        assert_eq!(result_cell(&point, MYSQL_TYPE_BLOB), value_to_cell(&point));
+        assert_eq!(result_cell(&Value::NULL, MYSQL_TYPE_GEOMETRY), None);
+        assert_eq!(point_text(&bytes[..24]), None);
+        bytes[5] = 2;
+        assert_eq!(point_text(&bytes), None);
+    }
 
     #[test]
     fn converts_values() {

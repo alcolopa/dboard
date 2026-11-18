@@ -335,12 +335,16 @@ component TransferDialog inherits Modal {
         Text { text: round(AppState.xfer-progress * 100) + "%"; color: Theme.dim; font-size: 11px; width: 36px; horizontal-alignment: right; }
     }
     if AppState.xfer-info != "": Text { text: AppState.xfer-info; color: AppState.xfer-busy ? Theme.dim : Theme.ok; wrap: word-wrap; font-size: 12px; }
-    if AppState.xfer-error != "": Text { text: AppState.xfer-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
+    if AppState.xfer-error != "": ScrollView {
+        height: min(200px, details.preferred-height + 4px);
+        horizontal-scrollbar-policy: always-off; viewport-width: self.visible-width;
+        details := Text { width: parent.width; text: AppState.xfer-error; color: Theme.err; wrap: char-wrap; font-size: 12px; }
+    }
     HorizontalLayout {
         spacing: 8px; alignment: end;
         Btn { text: AppState.xfer-busy ? "Working…" : "Close"; enabled: !AppState.xfer-busy; clicked => { AppState.xfer-cancel(); } }
         Btn {
-            text: AppState.xfer-mode == 0 ? "Export" : "Import"; primary: true;
+            text: AppState.xfer-mode == 0 ? "Export" : AppState.xfer-mode == 1 && AppState.db-type == 1 ? "Check restore" : "Import"; primary: true;
             enabled: !AppState.xfer-busy && AppState.xfer-path != "";
             clicked => { AppState.xfer-run(AppState.xfer-path, AppState.xfer-opt-a, AppState.xfer-opt-b); }
         }
@@ -563,7 +567,11 @@ export component Dialogs inherits Rectangle {
         border: Theme.err;
         dismissed => { AppState.confirm-cancel(); }
         Title { text: AppState.confirm-title; color: Theme.err; }
-        Text { text: AppState.confirm-text; color: Theme.text; wrap: word-wrap; font-size: 12px; }
+        ScrollView {
+            height: min(220px, confirmation.preferred-height + 4px);
+            horizontal-scrollbar-policy: always-off; viewport-width: self.visible-width;
+            confirmation := Text { width: parent.width; text: AppState.confirm-text; color: Theme.text; wrap: word-wrap; font-size: 12px; }
+        }
         if AppState.confirm-force-offer: CheckBox { text: "Force: ignore foreign keys and other integrity checks (also removes what depends on it)"; checked <=> AppState.confirm-force; }
         if AppState.confirm-typing: Note { text: "Type CONFIRM to proceed."; }
         if AppState.confirm-typing: EditLine { text <=> AppState.confirm-typed; accepted => { if AppState.confirm-typed == "CONFIRM" { AppState.confirm-run(AppState.confirm-force); } } }

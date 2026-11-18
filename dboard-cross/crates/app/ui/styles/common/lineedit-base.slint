@@ -194,15 +194,29 @@ export component LineEditClearIcon inherits Image {
     }
 }
 
-export component LineEditPasswordIcon inherits Image {
+export component LineEditPasswordIcon inherits Rectangle {
     in-out property <bool> show-password;
     in property <image> show-password-image;
     in property <image> hide-password-image;
+    in property <brush> colorize;
+    in property <brush> hover-colorize;
     callback clicked();
 
-    source: show-password ? hide-password-image : show-password-image;
-    vertical-alignment: center;
-    TouchArea {
+    width: 24px;
+    min-height: 24px;
+    vertical-stretch: 1;
+    Image {
+        width: 20px;
+        height: 20px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.show-password ? root.hide-password-image : root.show-password-image;
+        colorize: hit-area.has-hover ? root.hover-colorize : root.colorize;
+    }
+    hit-area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: pointer;
         clicked => {
             root.show-password = !root.show-password;
             root.clicked();

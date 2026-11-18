@@ -423,7 +423,8 @@ impl Worker {
             Some(Pending::DropMany(items)) => self.drop_many(items).await,
             Some(Pending::DropUser(i)) => self.user_drop(i).await,
             Some(Pending::Paste(r, c, grid)) => self.apply_paste(r, c, grid).await,
-            Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop).await,
+            Some(Pending::ImportDatabase(path, stop)) => self.run_import_db(path, stop, None).await,
+            Some(Pending::RestoreMysql(path, stop, plan)) => self.run_import_db(path, stop, Some(plan)).await,
             Some(Pending::ImportRows(path, header)) => self.run_import_rows(path, header).await,
             Some(Pending::GenerateRows(n)) => self.generate_rows(n, true).await,
             Some(Pending::RestartUpdate(staged)) => match crate::update::relaunch(&staged) {

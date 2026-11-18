@@ -92,6 +92,28 @@ impl Worker {
         self.push_connections();
     }
 
+    pub(crate) async fn browse_ssh_key(&self) {
+        let mut dialog = rfd::AsyncFileDialog::new().set_title("Choose an SSH private key");
+        if let Some(home) = std::env::home_dir() {
+            let ssh = home.join(".ssh");
+            if ssh.is_dir() {
+                dialog = dialog.set_directory(ssh);
+            }
+        }
+        let Some(file) = dialog.pick_file().await else {
+            return;
+        };
+        let Some(path) = file.path().to_str() else {
+            return self.form_error("The SSH key path must be valid Unicode.");
+        };
+        let path: slint::SharedString = path.into();
+        ui(&self.w, move |st| {
+            let mut form = st.get_form();
+            form.ssh_key = path;
+            st.set_form(form);
+        });
+    }
+
     /// Fill the form from a pasted `postgres://` / `mysql://` string.
     pub(crate) fn parse_conn_url(&mut self, text: &str) {
         let Some(p) = dboard_core::url::parse(text) else {

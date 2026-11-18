@@ -16,6 +16,7 @@ export component LineEdit {
     in property <string> placeholder-text <=> base.placeholder-text;
     in property <bool> read-only <=> base.read-only;
     out property <bool> has-focus <=> base.has-focus;
+    out property <bool> password-revealed: base.password-revealed;
     in-out property <string> text <=> base.text;
     callback accepted <=> base.accepted;
     callback edited <=> base.edited;
@@ -88,10 +89,10 @@ export component LineEdit {
             }
 
             if root.input-type == InputType.password && !root.text.is-empty && root.has-focus: LineEditPasswordIcon {
-                width: self.source.width * 1px;
                 show-password-image: @image-url("_eye_show.svg");
                 hide-password-image: @image-url("_eye_hide.svg");
-                colorize: base.text-color;
+                colorize: FluentPalette.text-secondary;
+                hover-colorize: base.text-color;
                 show-password <=> base.password-revealed;
             }
         }

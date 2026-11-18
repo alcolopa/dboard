@@ -20,6 +20,20 @@ pub struct Pg {
     user_tx: bool,
 }
 
+fn pg_connection_error(error: tokio_postgres::Error) -> Error {
+    let stage = match error.code().map(|code| code.code()) {
+        Some(code) if code.starts_with("28") => "Database login failed",
+        Some("3D000") => "Database selection failed",
+        // tokio-postgres exposes SQLSTATEs, but its client-side error kind is private.
+        _ => match error.to_string().as_str() {
+            "authentication error" => "Database login failed",
+            "error performing TLS handshake" => "TLS negotiation failed",
+            _ => "PostgreSQL connection failed",
+        },
+    };
+    Error::Db(format!("{stage}: {}", Error::from(error)))
+}
+
 impl Pg {
     pub async fn connect(c: &ConnectionConfig, password: &str) -> Result<Self> {
         let mut cfg = Config::new();
@@ -35,7 +49,10 @@ impl Pg {
             SslMode::Disable => (Self::plain(&cfg).await?, false),
             SslMode::Prefer => match Self::secure(&cfg, c).await {
                 Ok(cl) => (cl, true),
-                Err(_) => (Self::plain(&cfg).await?, false),
+                Err(secure) => (
+                    Self::plain(&cfg).await.map_err(|plain| Error::Db(format!("TLS attempt: {secure}\nPlain connection attempt: {plain}")))?,
+                    false,
+                ),
             },
             _ => (Self::secure(&cfg, c).await?, true),
         };
@@ -46,7 +63,7 @@ impl Pg {
     }
 
     async fn plain(cfg: &Config) -> Result<Client> {
-        let (client, conn) = cfg.connect(NoTls).await?;
+        let (client, conn) = cfg.connect(NoTls).await.map_err(pg_connection_error)?;
         tokio::spawn(async move {
             let _ = conn.await;
         });
@@ -56,8 +73,8 @@ impl Pg {
     async fn secure(cfg: &Config, c: &ConnectionConfig) -> Result<Client> {
         let mut cfg = cfg.clone();
         cfg.ssl_mode(tokio_postgres::config::SslMode::Require);
-        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(tls::client_config(c)?);
-        let (client, conn) = cfg.connect(connector).await?;
+        let connector = tokio_postgres_rustls::MakeRustlsConnect::new(tls::client_config(c).map_err(|e| Error::Db(format!("TLS configuration failed: {e}")))?);
+        let (client, conn) = cfg.connect(connector).await.map_err(pg_connection_error)?;
         tokio::spawn(async move {
             let _ = conn.await;
         });

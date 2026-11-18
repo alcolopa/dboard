@@ -44,8 +44,11 @@ impl Splitter {
         if text.is_empty() {
             return;
         }
-        let up = text.to_uppercase();
-        if self.dialect == Dialect::Pg && up.starts_with("COPY ") && up.contains(" FROM STDIN") {
+        let copy = self.dialect == Dialect::Pg && {
+            let up = text.to_uppercase();
+            up.starts_with("COPY ") && up.contains(" FROM STDIN")
+        };
+        if copy {
             self.copy = Some((text.to_string(), String::new()));
         } else {
             out.push(Stmt::Sql(text.to_string()));
@@ -70,7 +73,7 @@ impl Splitter {
             if t.starts_with('\\') {
                 return; // psql meta command (\connect, \restrict, ...)
             }
-            if self.dialect == Dialect::My && t.len() > 9 && t[..9].eq_ignore_ascii_case("delimiter") && t[9..].starts_with(char::is_whitespace) {
+            if self.dialect == Dialect::My && t.len() > 9 && t.get(..9).is_some_and(|prefix| prefix.eq_ignore_ascii_case("delimiter")) && t[9..].starts_with(char::is_whitespace) {
                 let d = t[9..].trim();
                 if !d.is_empty() {
                     self.delimiter = d.chars().collect();

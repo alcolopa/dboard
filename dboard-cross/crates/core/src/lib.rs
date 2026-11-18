@@ -11,6 +11,7 @@ pub mod hooks;
 pub mod model;
 pub mod mongo;
 pub mod mysql;
+pub mod mysql_restore;
 pub mod pg;
 pub mod split;
 pub mod safety;
