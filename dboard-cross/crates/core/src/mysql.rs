@@ -450,24 +450,14 @@ impl My {
 
     pub async fn user_access(&mut self, u: &UserInfo) -> Result<UserAccess> {
         let actor: Vec<Row> = self.conn.query("SHOW GRANTS").await?;
-        let manage = actor.iter().filter_map(|r|r.as_ref(0).and_then(value_to_cell)).any(|g| g.starts_with("GRANT ALL PRIVILEGES ON *.* ") && g.contains("WITH GRANT OPTION"));
+        let actor_grants: Vec<String> = actor.iter().filter_map(|r| r.as_ref(0).and_then(value_to_cell)).collect();
         let current: Option<String> = self.conn.query_first("SELECT CURRENT_USER()").await?;
+        let manage = mysql_can_manage(&actor_grants, current.as_deref());
         let db = self.scope.clone().ok_or_else(||Error::Db("Choose a database first.".into()))?;
         let grants = self.user_grants(u).await?;
-        let level_for = |scope: &str| -> i32 {
-            let mut privileges = std::collections::HashSet::new();
-            for g in &grants {
-                if let Some((p, rest)) = g.strip_prefix("GRANT ").and_then(|g|g.split_once(" ON ")) {
-                    if rest.starts_with(&format!("{scope} TO ")) || rest.starts_with("*.* TO ") || rest.starts_with(&format!("{}.* TO ", D.quote(&db))) {
-                        for p in p.split(", ") { privileges.insert(p); }
-                    }
-                }
-            }
-            if privileges.contains("ALL PRIVILEGES") { 3 } else if privileges.contains("SELECT") && ["INSERT","UPDATE","DELETE"].iter().all(|p|privileges.contains(p)) { 2 } else if privileges.contains("SELECT") && !["INSERT","UPDATE","DELETE"].iter().any(|p|privileges.contains(p)) { 1 } else if privileges.is_empty() || privileges.iter().all(|p| *p=="USAGE") { 0 } else { -1 }
-        };
         let rows: Vec<Row> = self.conn.exec("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=? ORDER BY TABLE_NAME", (&db,)).await?;
-        let tables = rows.iter().filter_map(|r|r.as_ref(0).and_then(value_to_cell)).map(|name| { let level=level_for(&format!("{}.{}",D.quote(&db),D.quote(&name))); (db.clone(),name,level) }).collect();
-        Ok(UserAccess { level: level_for(&format!("{}.*",D.quote(&db))), tables, manage, password: manage || current.as_deref()==Some(&format!("{}@{}",u.name,u.origin)) })
+        let tables = rows.iter().filter_map(|r|r.as_ref(0).and_then(value_to_cell)).map(|name| { let level=mysql_level_for(&grants, &db, &format!("{}.{}",D.quote(&db),D.quote(&name))); (db.clone(),name,level) }).collect();
+        Ok(UserAccess { level: mysql_level_for(&grants, &db, &format!("{}.*",D.quote(&db))), tables, manage, password: manage || current.as_deref()==Some(&format!("{}@{}",u.name,u.origin)) })
     }
 
     pub async fn set_table_access(&mut self, u: &UserInfo, schema: &str, table: &str, level: AccessLevel) -> Result<()> {
@@ -744,6 +734,52 @@ fn restore_outcome(succeeded: usize, attempted: usize) -> String {
     format!("{succeeded} of {attempted} attempted statement(s) succeeded. {retry}")
 }
 
+/// Returns true when the current MySQL user can create users and grant access to others.
+/// MySQL 8+ expands `ALL PRIVILEGES` on `*.*` into individual static and dynamic privileges,
+/// so checking only for `GRANT ALL PRIVILEGES ON *.*` misses `root` and cloud admin accounts.
+fn mysql_can_manage(grants: &[String], current_user: Option<&str>) -> bool {
+    if current_user.is_some_and(|cu| cu.starts_with("root@") || cu == "root") {
+        return true;
+    }
+    grants.iter().any(|g| {
+        let has_grant_opt = g.contains("WITH GRANT OPTION");
+        let is_global = g.contains(" ON *.* ");
+        let has_admin_privs = g.contains("ALL PRIVILEGES")
+            || g.contains("GRANT ALL ON *.*")
+            || g.contains("CREATE USER")
+            || g.contains("SUPER");
+        has_grant_opt && is_global && has_admin_privs
+    })
+}
+
+fn mysql_level_for(grants: &[String], db: &str, scope: &str) -> i32 {
+    let mut privileges = std::collections::HashSet::new();
+    let db_scope = format!("{}.* TO ", D.quote(db));
+    let target_scope = format!("{scope} TO ");
+    for g in grants {
+        if let Some((p, rest)) = g.strip_prefix("GRANT ").and_then(|g| g.split_once(" ON ")) {
+            if rest.starts_with(&target_scope) || rest.starts_with("*.* TO ") || rest.starts_with(&db_scope) {
+                for p in p.split(", ") {
+                    privileges.insert(p);
+                }
+            }
+        }
+    }
+    if privileges.contains("ALL PRIVILEGES")
+        || ["SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP"].iter().all(|p| privileges.contains(p))
+    {
+        3
+    } else if privileges.contains("SELECT") && ["INSERT", "UPDATE", "DELETE"].iter().all(|p| privileges.contains(p)) {
+        2
+    } else if privileges.contains("SELECT") && !["INSERT", "UPDATE", "DELETE"].iter().any(|p| privileges.contains(p)) {
+        1
+    } else if privileges.is_empty() || privileges.iter().all(|p| *p == "USAGE") {
+        0
+    } else {
+        -1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -781,6 +817,41 @@ mod tests {
     fn humanizes_errors() {
         assert!(humanize(1062, "x").contains("unique"));
         assert_eq!(humanize(9999, "raw"), "raw");
+    }
+
+    #[test]
+    fn detects_mysql_manage_and_access_levels() {
+        // MySQL 5.7 / MariaDB root grant
+        let my57 = vec!["GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION".into()];
+        assert!(mysql_can_manage(&my57, Some("admin@%")));
+        assert_eq!(mysql_level_for(&my57, "shop", "`shop`.*"), 3);
+
+        // MySQL 8.0+ expanded root / RDS admin grant (no literal "ALL PRIVILEGES")
+        let my8 = vec![
+            "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER ON *.* TO `admin`@`%` WITH GRANT OPTION".into(),
+        ];
+        assert!(mysql_can_manage(&my8, Some("admin@%")));
+        assert_eq!(mysql_level_for(&my8, "shop", "`shop`.*"), 3);
+
+        // Root user even with non-standard grant formatting
+        assert!(mysql_can_manage(&[], Some("root@localhost")));
+        assert!(mysql_can_manage(&[], Some("root@%")));
+
+        // Regular read/write user cannot manage users
+        let regular = vec![
+            "GRANT USAGE ON *.* TO `app`@`%`".into(),
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON `shop`.* TO `app`@`%`".into(),
+        ];
+        assert!(!mysql_can_manage(&regular, Some("app@%")));
+        assert_eq!(mysql_level_for(&regular, "shop", "`shop`.*"), 2);
+
+        // Read-only user
+        let ro = vec!["GRANT SELECT, SHOW VIEW ON `shop`.* TO `ro`@`%`".into()];
+        assert_eq!(mysql_level_for(&ro, "shop", "`shop`.*"), 1);
+
+        // No grants / USAGE only
+        let none = vec!["GRANT USAGE ON *.* TO `u`@`%`".into()];
+        assert_eq!(mysql_level_for(&none, "shop", "`shop`.*"), 0);
     }
 }
 

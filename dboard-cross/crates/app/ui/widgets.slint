@@ -22,10 +22,10 @@ export component Btn inherits Rectangle {
     border-radius: 5px;
     background: !enabled ? Theme.panel2
         : primary ? (ta.has-hover ? Theme.accent-hover : Theme.accent)
-        : danger ? (ta.has-hover ? Theme.danger-hover : Theme.err)
+        : danger ? (ta.has-hover ? Theme.danger-hover : Theme.danger)
         : (ta.has-hover ? Theme.hover : Theme.panel2);
     border-width: keyboard.has-focus ? 2px : primary || danger ? 0px : 1px;
-    border-color: keyboard.has-focus ? Theme.accent-text : Theme.line;
+    border-color: keyboard.has-focus ? (primary || danger ? Theme.text : Theme.accent-text) : Theme.line;
     opacity: enabled ? 1.0 : 0.5;
     accessible-role: button;
     accessible-label: root.text;
@@ -33,7 +33,7 @@ export component Btn inherits Rectangle {
     accessible-action-default => { if root.enabled { root.clicked(); } }
     t := Text {
         text: root.text;
-        color: (primary || danger) && enabled ? Theme.on-accent : Theme.text;
+        color: !enabled ? Theme.text : primary ? Theme.on-accent : danger ? Theme.on-danger : Theme.text;
         vertical-alignment: center; horizontal-alignment: center;
         font-size: 12px;
     }
@@ -43,6 +43,7 @@ export component Btn inherits Rectangle {
 export component Chip inherits Rectangle {
     in property <string> text;
     in property <color> fill: Theme.panel2;
+    in property <bool> active: false;
     callback clicked();
     height: 22px;
     width: t.preferred-width + 16px;
@@ -50,8 +51,8 @@ export component Chip inherits Rectangle {
     accessible-role: button;
     accessible-label: root.text;
     accessible-action-default => { root.clicked(); }
-    background: ta.has-hover ? Theme.hover : fill;
-    t := Text { text: root.text; color: Theme.text; font-size: 11px; vertical-alignment: center; horizontal-alignment: center; }
+    background: active ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? Theme.hover : fill);
+    t := Text { text: root.text; color: root.active ? Theme.on-accent : Theme.text; font-size: 11px; vertical-alignment: center; horizontal-alignment: center; }
     ta := TouchArea { clicked => { root.clicked(); } }
 }
 
@@ -69,7 +70,7 @@ export component Modal inherits Rectangle {
     in property <length> box-width: 480px;
     in property <color> border: Theme.line;
     callback dismissed();
-    background: Theme.tooltip-bg;
+    background: Theme.modal-overlay;
     // Escape closes any dialog, wherever the keyboard focus is inside it.
     FocusScope {
         init => { self.focus(); }
@@ -85,6 +86,9 @@ export component Modal inherits Rectangle {
         border-radius: 10px;
         border-width: 1px;
         border-color: root.border;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        drop-shadow-offset-y: 8px;
         clip: true;
         TouchArea { } // swallow clicks inside the box
         ScrollView {
@@ -167,9 +171,9 @@ export component IconBtn inherits Rectangle {
         }
     }
     border-width: keyboard.has-focus ? 2px : 0px;
-    border-color: Theme.accent-text;
+    border-color: primary ? Theme.text : Theme.accent-text;
     width: size; height: size;
-    border-radius: 6px;
+    border-radius: 5px;
     accessible-role: button;
     accessible-label: root.hint;
     accessible-enabled: root.enabled;
@@ -282,6 +286,7 @@ export component EditArea inherits Rectangle {
 
 /// Keep every action reachable when the row exceeds the available width.
 export component Toolbar inherits ScrollView {
+    in property <length> pad-x: 8px;
     min-width: 0px; min-height: 0px;
     vertical-stretch: 0;
     vertical-scrollbar-policy: always-off;
@@ -290,7 +295,7 @@ export component Toolbar inherits ScrollView {
     content-height: self.visible-height;
     row := HorizontalLayout {
         width: root.content-width; height: root.visible-height;
-        padding-left: 8px; padding-right: 8px; spacing: 4px;
+        padding-left: root.pad-x; padding-right: root.pad-x; spacing: 4px;
         @children
     }
 }

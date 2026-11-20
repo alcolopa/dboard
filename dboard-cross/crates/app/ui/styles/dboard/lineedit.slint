@@ -42,7 +42,7 @@ export component LineEdit {
     vertical-stretch: 0;
     horizontal-stretch: 1;
     min-width: max(160px, layout.min-width);
-    min-height: max(32px, layout.min-height);
+    min-height: max(30px, layout.min-height);
     forward-focus: base;
 
     states [
@@ -59,7 +59,7 @@ export component LineEdit {
     ]
 
     background := Rectangle {
-        border-radius: 4px;
+        border-radius: 5px;
         background: FluentPalette.control-background;
         border-width: 1px;
         border-color: FluentPalette.text-control-border;
@@ -70,7 +70,7 @@ export component LineEdit {
 
             base := LineEditBase {
                 selection-background-color: FluentPalette.selection-background;
-                selection-foreground-color: FluentPalette.accent-foreground;
+                selection-foreground-color: FluentPalette.selection-foreground;
                 text-color: FluentPalette.foreground;
                 placeholder-color: FluentPalette.text-secondary;
                 margin: layout.padding-left + layout.padding-right;

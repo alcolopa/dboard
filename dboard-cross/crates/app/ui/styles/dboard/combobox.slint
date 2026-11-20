@@ -19,8 +19,8 @@ export component ComboBox {
     property <length> popup-scroll-y: -max(0, root.current-index - root.visible-items + 1) * FluentSizeSettings.item-height;
     property <int> visible-items: min(6, model.length);
 
-    min-width: max(160px, layout.min-width);
-    min-height: max(32px, layout.min-height);
+    min-width: max(56px, layout.min-width);
+    min-height: max(30px, layout.min-height);
     horizontal-stretch: 1;
     vertical-stretch: 0;
     forward-focus: base;
@@ -63,7 +63,7 @@ export component ComboBox {
     }
 
     background := Rectangle {
-        border-radius: 3px;
+        border-radius: 5px;
         background: FluentPalette.control-background;
         border-width: 1px;
         border-color: FluentPalette.control-border;

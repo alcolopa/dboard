@@ -1,4 +1,4 @@
-import { LineEdit, ComboBox, CheckBox, TextEdit, ListView, SpinBox, ScrollView } from "std-widgets.slint";
+import { ComboBox, CheckBox, ListView, SpinBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
 import { Btn, Modal, EditLine, EditArea } from "widgets.slint";
@@ -10,15 +10,18 @@ component Note inherits Text { color: Theme.dim; font-size: 12px; wrap: word-wra
 component SettingsRow inherits Rectangle {
     in property <string> label;
     in property <string> detail;
-    min-height: 78px;
+    min-height: 60px;
     HorizontalLayout {
-        padding: 14px; spacing: 18px;
+        padding-left: 14px; padding-right: 14px; padding-top: 12px; padding-bottom: 12px; spacing: 18px;
         VerticalLayout {
-            horizontal-stretch: 1; alignment: center; spacing: 5px;
+            horizontal-stretch: 1; alignment: center; spacing: 4px;
             Text { text: root.label; color: Theme.text; font-size: 13px; font-weight: 600; wrap: word-wrap; }
             Note { text: root.detail; }
         }
-        HorizontalLayout { width: 160px; alignment: center; @children }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout { alignment: end; @children }
+        }
     }
 }
 
@@ -68,7 +71,7 @@ component PreferencesDialog inherits Modal {
                         spacing: 0px;
                         SettingsRow {
                             label: "Color theme"; detail: "Choose your workspace colors.";
-                            ComboBox { model: ["Green Dark", "Green Light", "Forest", "Sand"]; current-index <=> AppState.set-theme-index; selected => { root.persist(); } }
+                            ComboBox { width: 140px; model: ["Green Dark", "Green Light", "Forest", "Sand"]; current-index <=> AppState.set-theme-index; selected => { root.persist(); } }
                         }
                         Rectangle { height: 1px; background: Theme.line; }
                         SettingsRow {
@@ -78,7 +81,7 @@ component PreferencesDialog inherits Modal {
                         Rectangle { height: 1px; background: Theme.line; }
                         SettingsRow {
                             label: "Rows per page"; detail: "Default number of rows loaded per page.";
-                            ComboBox { model: AppState.page-sizes; current-index <=> AppState.set-page-size-index; selected => { root.persist(); } }
+                            ComboBox { width: 84px; model: AppState.page-sizes; current-index <=> AppState.set-page-size-index; selected => { root.persist(); } }
                         }
                     }
                 }
@@ -88,7 +91,7 @@ component PreferencesDialog inherits Modal {
                         spacing: 0px;
                         SettingsRow {
                             label: "Font size"; detail: "Query editor text size, in pixels.";
-                            SpinBox { minimum: 9; maximum: 24; value <=> AppState.set-font-size; edited => { root.persist(); } }
+                            SpinBox { width: 84px; minimum: 9; maximum: 24; value <=> AppState.set-font-size; edited => { root.persist(); } }
                         }
                         Rectangle { height: 1px; background: Theme.line; }
                         SettingsRow {
@@ -130,7 +133,7 @@ component PreferencesDialog inherits Modal {
     HorizontalLayout {
         spacing: 12px;
         Note { text: "Changes are saved automatically."; horizontal-stretch: 1; vertical-alignment: center; }
-        Btn { text: "Done"; width: 80px; height: 32px; primary: true; clicked => { AppState.settings-close(); } }
+        Btn { text: "Done"; width: 80px; primary: true; clicked => { AppState.settings-close(); } }
     }
 }
 
@@ -183,7 +186,18 @@ component UsersDialog inherits Modal {
     HorizontalLayout {
         spacing: 10px;
         Text { text: "Database"; color: Theme.text; vertical-alignment: center; }
-        ComboBox { model: AppState.user-databases; current-index <=> AppState.user-db-index; horizontal-stretch: 1; enabled: !AppState.user-busy; selected => { root.pw-new = ""; if AppState.user-sel >= 0 { AppState.user-select(AppState.user-sel, root.database); } } }
+        ComboBox {
+            model: AppState.user-databases;
+            current-index <=> AppState.user-db-index;
+            horizontal-stretch: 1;
+            enabled: !AppState.user-busy;
+            selected => {
+                root.pw-new = "";
+                if AppState.user-sel >= 0 && self.current-index >= 0 && self.current-index < AppState.user-databases.length {
+                    AppState.user-select(AppState.user-sel, AppState.user-databases[self.current-index]);
+                }
+            }
+        }
     }
     if root.database == "": Note { text: "Select a database to grant access."; }
     HorizontalLayout {
@@ -218,7 +232,7 @@ component UsersDialog inherits Modal {
             if root.advanced && AppState.user-is-mysql: Text { text: "Allowed from host (% = anywhere)"; color: Theme.dim; font-size: 11px; }
             if root.advanced && AppState.user-is-mysql: EditLine { text <=> root.nu-host; }
             Text { text: "Password"; color: Theme.dim; font-size: 11px; }
-            EditLine { text <=> root.nu-pw; input-type: InputType.password; }
+            EditLine { text <=> root.nu-pw; input-type: InputType.password; font-size: self.password-revealed ? 13px : 9px; }
             Text { text: "Access level"; color: Theme.dim; font-size: 11px; }
             AccessCheckboxes { level <=> root.nu-level; editable: !AppState.user-busy; }
             Note { text: root.nu-level == 0 ? "No permissions will be granted." : (root.nu-level == 1 ? "Can view data. Cannot change or delete it." : (root.nu-level == 2 ? "Can view, add, edit and delete data." : "Can manage data and database objects.")); }
@@ -235,10 +249,25 @@ component UsersDialog inherits Modal {
             Text { text: AppState.users[AppState.user-sel].name; font-weight: 700; color: Theme.text; font-size: 15px; overflow: elide; }
             Text { text: AppState.users[AppState.user-sel].detail; color: Theme.dim; font-size: 11px; wrap: word-wrap; }
             HorizontalLayout {
-                spacing: 6px;
-                Btn { text: "Database access"; primary: root.access-tab == 0; clicked => { root.access-tab = 0; } }
-                if AppState.user-is-pg || AppState.user-is-mysql: Btn { text: "Table access"; primary: root.access-tab == 1; clicked => { root.access-tab = 1; } }
-                Btn { text: "Permissions"; primary: root.access-tab == 2; clicked => { root.access-tab = 2; } }
+                spacing: 4px;
+                Rectangle {
+                    height: 32px; horizontal-stretch: 1; min-width: 0px; border-radius: 6px;
+                    background: root.access-tab == 0 ? Theme.sel : (t0.has-hover ? Theme.hover : Theme.clear);
+                    Text { text: "Database access"; color: root.access-tab == 0 ? Theme.accent-text : Theme.dim; font-size: 12px; font-weight: root.access-tab == 0 ? 600 : 400; horizontal-alignment: center; vertical-alignment: center; }
+                    t0 := TouchArea { clicked => { root.access-tab = 0; } }
+                }
+                if AppState.user-is-pg || AppState.user-is-mysql: Rectangle {
+                    height: 32px; horizontal-stretch: 1; min-width: 0px; border-radius: 6px;
+                    background: root.access-tab == 1 ? Theme.sel : (t1.has-hover ? Theme.hover : Theme.clear);
+                    Text { text: "Table access"; color: root.access-tab == 1 ? Theme.accent-text : Theme.dim; font-size: 12px; font-weight: root.access-tab == 1 ? 600 : 400; horizontal-alignment: center; vertical-alignment: center; }
+                    t1 := TouchArea { clicked => { root.access-tab = 1; } }
+                }
+                Rectangle {
+                    height: 32px; horizontal-stretch: 1; min-width: 0px; border-radius: 6px;
+                    background: root.access-tab == 2 ? Theme.sel : (t2.has-hover ? Theme.hover : Theme.clear);
+                    Text { text: "Permissions"; color: root.access-tab == 2 ? Theme.accent-text : Theme.dim; font-size: 12px; font-weight: root.access-tab == 2 ? 600 : 400; horizontal-alignment: center; vertical-alignment: center; }
+                    t2 := TouchArea { clicked => { root.access-tab = 2; } }
+                }
             }
             if root.access-tab == 0: VerticalLayout {
                 spacing: 8px;
@@ -264,7 +293,7 @@ component UsersDialog inherits Modal {
             Rectangle { vertical-stretch: 1; }
             if AppState.user-can-password: HorizontalLayout {
                 spacing: 8px;
-                EditLine { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; horizontal-stretch: 1; enabled: !AppState.user-busy; }
+                EditLine { text <=> root.pw-new; placeholder-text: "New password"; input-type: InputType.password; font-size: self.password-revealed ? 13px : 9px; horizontal-stretch: 1; enabled: !AppState.user-busy; }
                 Btn { text: "Change password"; enabled: root.pw-new != "" && !AppState.user-busy; clicked => { AppState.user-password(AppState.user-sel, root.pw-new); root.pw-new = ""; } }
             }
             if AppState.user-can-manage: Btn { text: "Delete user"; danger: true; enabled: !AppState.user-busy; clicked => { AppState.user-drop(AppState.user-sel); } }
@@ -332,7 +361,7 @@ component TransferDialog inherits Modal {
             horizontal-stretch: 1; height: 8px; y: 3px; border-radius: 4px; background: Theme.panel2; border-width: 1px; border-color: Theme.line;
             Rectangle { x: 0; width: parent.width * AppState.xfer-progress; height: parent.height; border-radius: 4px; background: Theme.accent; }
         }
-        Text { text: round(AppState.xfer-progress * 100) + "%"; color: Theme.dim; font-size: 11px; width: 36px; horizontal-alignment: right; }
+        Text { text: round(AppState.xfer-progress * 100) + "%"; color: Theme.dim; font-size: 11px; width: 36px; horizontal-alignment: right; vertical-alignment: center; }
     }
     if AppState.xfer-info != "": Text { text: AppState.xfer-info; color: AppState.xfer-busy ? Theme.dim : Theme.ok; wrap: word-wrap; font-size: 12px; }
     if AppState.xfer-error != "": ScrollView {
@@ -460,10 +489,7 @@ export component Dialogs inherits Rectangle {
         box-width: 680px;
         dismissed => { AppState.json-cancel(); }
         Title { text: AppState.json-title; }
-        Rectangle {
-            height: 320px; border-width: 1px; border-color: Theme.line; border-radius: 6px;
-            EditArea { width: parent.width; height: parent.height; text <=> AppState.json-text; font-size: 12px; }
-        }
+        EditArea { height: 320px; text <=> AppState.json-text; font-family: "JetBrains Mono"; font-size: 12px; }
         if AppState.json-error != "": Text { text: AppState.json-error; color: Theme.err; wrap: word-wrap; font-size: 12px; }
         HorizontalLayout {
             spacing: 8px;
@@ -540,8 +566,10 @@ export component Dialogs inherits Rectangle {
                         edited(t) => { AppState.editrow-field-edited(i, t); }
                     }
                     Rectangle {
-                        width: 52px; height: 32px; border-radius: 5px;
+                        width: 52px; height: 30px; border-radius: 5px;
                         background: f.is-null ? Theme.accent : (na.has-hover ? Theme.hover : Theme.panel2);
+                        border-width: f.is-null ? 0px : 1px;
+                        border-color: Theme.line;
                         Text { text: "NULL"; font-size: 11px; color: f.is-null ? Theme.on-accent : Theme.text; horizontal-alignment: center; vertical-alignment: center; }
                         na := TouchArea { clicked => { AppState.editrow-set-null(i, !f.is-null); } }
                     }
@@ -596,6 +624,7 @@ export component Dialogs inherits Rectangle {
             Rectangle {
                 y: 80px; width: min(620px, parent.width - 32px); height: min(460px, parent.height - 120px);
                 background: Theme.panel; border-radius: 10px; border-width: 1px; border-color: Theme.line;
+                drop-shadow-blur: 24px; drop-shadow-color: Theme.shadow; drop-shadow-offset-y: 8px;
                 TouchArea { }
                 VerticalLayout {
                     padding: 12px; spacing: 8px;
@@ -608,7 +637,7 @@ export component Dialogs inherits Rectangle {
                     ListView {
                         for it[i] in AppState.palette-items: Rectangle {
                             height: 40px; border-radius: 5px;
-                            background: i == AppState.palette-selected ? Theme.panel2 : (pa.has-hover ? Theme.hover : Theme.clear);
+                            background: i == AppState.palette-selected ? Theme.sel : (pa.has-hover ? Theme.hover : Theme.clear);
                             HorizontalLayout {
                                 padding-left: 10px; padding-right: 10px; spacing: 10px;
                                 VerticalLayout {
@@ -634,6 +663,7 @@ export component Dialogs inherits Rectangle {
         width: min(parent.width - 32px, 640px, tt.preferred-width + 32px);
         height: max(34px, tt.preferred-height + 20px);
         background: Theme.toast-bg; border-radius: 17px; opacity: 0.95;
+        drop-shadow-blur: 12px; drop-shadow-color: Theme.shadow; drop-shadow-offset-y: 4px;
         tt := Text { x: 16px; width: parent.width - 32px; text: AppState.toast; color: Theme.toast-text; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
     }
 }

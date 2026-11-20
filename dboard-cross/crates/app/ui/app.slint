@@ -11,7 +11,6 @@ import { QueryEditor } from "query.slint";
 import { Diagram } from "diagram.slint";
 import { Inspector } from "inspector.slint";
 import { Dialogs } from "dialogs.slint";
-import { TextEdit, LineEdit } from "std-widgets.slint";
 import "fonts/Inter_400Regular.ttf";
 import "fonts/Inter_600SemiBold.ttf";
 import "fonts/Inter_700Bold.ttf";
@@ -24,7 +23,7 @@ component Workspace inherits VerticalLayout {
     TabBar { }
     if AppState.tab-kind == 0: VerticalLayout {
         HorizontalLayout {
-            height: 44px; padding: 8px; spacing: 8px;
+            height: 46px; padding: 8px; spacing: 8px;
             Text { text: AppState.table-title; max-width: 180px; overflow: elide; font-weight: 700; color: Theme.text; vertical-alignment: center; }
             EditLine {
                 placeholder-text: AppState.db-type == 2 ? "Filter as JSON, e.g. {\"age\": {\"$gt\": 30}}" : "WHERE clause, e.g. id > 10";
@@ -62,8 +61,11 @@ component Workspace inherits VerticalLayout {
         vertical-stretch: AppState.tab-kind == 3 ? 1 : 0;
         min-height: 100px;
         preferred-height: AppState.tab-kind == 3 ? 400px : 220px;
-        background: Theme.panel; border-width: 1px; border-color: Theme.line;
-        EditArea { width: parent.width; height: parent.height; read-only: true; text: AppState.ddl-text; font-family: "JetBrains Mono"; font-size: AppState.set-font-size * 1px; }
+        EditArea {
+            x: 8px; y: 8px;
+            width: parent.width - 16px; height: parent.height - 16px;
+            read-only: true; text: AppState.ddl-text; font-family: "JetBrains Mono"; font-size: AppState.set-font-size * 1px;
+        }
     }
     // footer
     if AppState.tab-kind >= 0: Rectangle {
@@ -75,7 +77,7 @@ component Workspace inherits VerticalLayout {
             if AppState.tab-kind == 0: Slot { IconBtn { d: Icons.prev; hint: "Previous page"; enabled: AppState.row-offset > 0; clicked => { AppState.prev-page(); } } }
             if AppState.tab-kind == 0: Slot {
                 ComboBox {
-                    width: 84px; height: 28px; model: AppState.page-sizes; current-index: AppState.page-size-index;
+                    width: 84px; height: 30px; model: AppState.page-sizes; current-index: AppState.page-size-index;
                     selected => { AppState.set-page-size(self.current-index); }
                 }
             }
@@ -87,7 +89,7 @@ component Workspace inherits VerticalLayout {
                 color: AppState.hint != "" ? Theme.text : Theme.dim;
                 vertical-alignment: center; font-size: 12px; overflow: elide; horizontal-stretch: 1; min-width: 40px;
             }
-            if AppState.tab-kind == 4: Btn { text: "Export diagram…"; clicked => { AppState.export-er(); } }
+            if AppState.tab-kind == 4: Slot { Btn { text: "Export diagram…"; clicked => { AppState.export-er(); } } }
             if AppState.tab-kind == 3: Slot { IconBtn { d: Icons.copy; hint: "Copy definition"; clicked => { AppState.copy-text(AppState.ddl-text); } } }
             if AppState.tab-kind == 0 && AppState.db-type == 2: Slot { IconBtn { d: Icons.edit; hint: "Edit document"; enabled: AppState.selected-row >= 0 && !AppState.read-only; clicked => { AppState.open-doc(AppState.selected-row); } } }
             if AppState.tab-kind == 0 && AppState.db-type != 2: Slot { IconBtn { d: Icons.edit; hint: "Edit row in a form"; enabled: AppState.selected-row >= 0 && AppState.editable; clicked => { AppState.open-edit-row(AppState.selected-row); } } }
@@ -264,7 +266,7 @@ export component App inherits Window {
             // Production keeps its safety banner; other environments use the tab dot and toolbar badge.
             if AppState.env-label == "Production": Rectangle {
                 height: 18px; background: Theme.environment-color(AppState.env-index);
-                Text { text: "PRODUCTION DATABASE — changes here affect real data"; color: #ffffff; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                Text { text: "PRODUCTION DATABASE — changes here affect real data"; color: Theme.on-danger; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
             }
             // ---- top bar ----
             Rectangle {
@@ -274,12 +276,12 @@ export component App inherits Window {
                     Slot {
                         Rectangle {
                             width: envl.preferred-width + 18px; height: 22px; border-radius: 11px; background: Theme.environment-color(AppState.env-index);
-                            envl := Text { text: AppState.env-label; color: AppState.env-index == 0 ? #ffffff : Theme.on-accent; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                            envl := Text { text: AppState.env-label; color: AppState.env-index == 0 ? Theme.on-danger : Theme.on-accent; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
                         }
                     }
                     if AppState.databases.length > 0: Slot {
                         ComboBox {
-                            width: 190px; height: 28px;
+                            width: 190px; height: 30px;
                             model: AppState.databases;
                             current-index: AppState.database-index;
                             selected => { AppState.switch-database(self.current-index); }
@@ -319,6 +321,7 @@ export component App inherits Window {
                     Slot { IconBtn { d: Icons.settings; hint: "Settings (" + Theme.mod + "+,)"; clicked => { AppState.open-settings(); } } }
                     Slot { IconBtn { d: Icons.power; hint: "Disconnect"; danger: true; clicked => { AppState.close-session(-1); } } }
                 }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
             }
             Rectangle {
                 vertical-stretch: 1;

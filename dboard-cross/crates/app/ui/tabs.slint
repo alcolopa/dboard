@@ -1,14 +1,16 @@
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
+import { Icons, Icon } from "widgets.slint";
 
 export component TabBar inherits Rectangle {
     height: 34px;
     background: Theme.bg;
 
     // Tabs shrink to a minimum width, then the strip scrolls (arrows, or automatically to the active tab).
-    property <length> tab-w: max(120px, min(190px, (root.width - 96px) / max(AppState.tabs.length, 1) - 2px));
-    property <length> strip-w: root.width - 96px;
+    property <length> tab-w: max(120px, min(190px, (root.width - 80px) / max(AppState.tabs.length, 1) - 2px));
+    property <length> strip-w: root.width - 80px;
     property <length> content-w: AppState.tabs.length * (root.tab-w + 2px) + 6px;
+    property <bool> overflows: root.content-w > root.strip-w;
     property <int> active: AppState.active-tab;
 
     function reveal() {
@@ -51,32 +53,32 @@ export component TabBar inherits Rectangle {
                 }
             }
             if !tab.pinned: Rectangle {
-                x: parent.width - 22px; y: 8px; width: 16px; height: 16px; border-radius: 8px;
+                x: parent.width - 24px; y: 7px; width: 20px; height: 20px; border-radius: 10px;
                 background: xa.has-hover ? Theme.panel2 : Theme.clear;
-                Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+                Icon { d: Icons.close; size: 10px; tint: tab.active ? Theme.text : Theme.dim; x: 5px; y: 5px; }
                 xa := TouchArea { clicked => { AppState.close-tab(i); } }
             }
         }
     }
     // scroll arrows (only useful when the tabs overflow)
     Rectangle {
-        x: root.strip-w; width: 22px; height: parent.height;
-        opacity: root.content-w > root.strip-w ? 1.0 : 0.25;
-        background: la.has-hover ? Theme.hover : Theme.clear; border-radius: 6px;
-        Text { text: "‹"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
-        la := TouchArea { clicked => { strip.content-x = min(0px, strip.content-x + 3 * (root.tab-w + 2px)); } }
+        x: root.strip-w; y: 2px; width: 22px; height: parent.height - 4px;
+        opacity: root.overflows ? 1.0 : 0.25;
+        background: root.overflows && la.has-hover ? Theme.hover : Theme.clear; border-radius: 5px;
+        Icon { d: Icons.prev; size: 14px; tint: Theme.dim; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+        la := TouchArea { enabled: root.overflows; clicked => { strip.content-x = min(0px, strip.content-x + 3 * (root.tab-w + 2px)); } }
     }
     Rectangle {
-        x: root.strip-w + 22px; width: 22px; height: parent.height;
-        opacity: root.content-w > root.strip-w ? 1.0 : 0.25;
-        background: ra.has-hover ? Theme.hover : Theme.clear; border-radius: 6px;
-        Text { text: "›"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
-        ra := TouchArea { clicked => { strip.content-x = max(-(max(root.content-w - root.strip-w, 0px)), strip.content-x - 3 * (root.tab-w + 2px)); } }
+        x: root.strip-w + 22px; y: 2px; width: 22px; height: parent.height - 4px;
+        opacity: root.overflows ? 1.0 : 0.25;
+        background: root.overflows && ra.has-hover ? Theme.hover : Theme.clear; border-radius: 5px;
+        Icon { d: Icons.next; size: 14px; tint: Theme.dim; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+        ra := TouchArea { enabled: root.overflows; clicked => { strip.content-x = max(-(max(root.content-w - root.strip-w, 0px)), strip.content-x - 3 * (root.tab-w + 2px)); } }
     }
     Rectangle {
-        x: root.strip-w + 44px; width: 32px; height: parent.height;
-        background: pa.has-hover ? Theme.hover : Theme.clear; border-radius: 6px;
-        Text { text: "+"; font-size: 16px; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+        x: root.strip-w + 46px; y: 2px; width: 30px; height: parent.height - 4px;
+        background: pa.has-hover ? Theme.hover : Theme.clear; border-radius: 5px;
+        Icon { d: Icons.plus; size: 14px; tint: Theme.dim; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
         pa := TouchArea { clicked => { AppState.new-query-tab(); } }
     }
 }

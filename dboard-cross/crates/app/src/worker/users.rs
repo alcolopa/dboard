@@ -38,7 +38,15 @@ impl Worker {
         }
         databases.sort();
         databases.dedup();
-        let selected = db.as_ref().and_then(|d| databases.iter().position(|x| x == d)).map_or(-1, |i| i as i32);
+        let mut selected = db.as_ref().and_then(|d| databases.iter().position(|x| x == d)).map_or(-1, |i| i as i32);
+        if selected < 0 && !databases.is_empty() {
+            selected = 0;
+        }
+        let active_db = if selected >= 0 {
+            databases.get(selected as usize).cloned()
+        } else {
+            db.clone()
+        };
         let scope = self.user_scope_text();
         ui(&self.w, move |st| {
             st.set_user_is_mysql(ty == DbType::MySql);
@@ -57,7 +65,7 @@ impl Worker {
             st.set_users_open(true);
         });
         self.reload_users(None).await;
-        if !self.users.is_empty() { self.user_select(0, db.as_deref().unwrap_or("")).await; }
+        if !self.users.is_empty() { self.user_select(0, active_db.as_deref().unwrap_or("")).await; }
     }
 
     /// Re-read the user list; keep `select` (by display name) selected when it still exists.

@@ -1,7 +1,7 @@
-import { LineEdit, ComboBox, CheckBox, ScrollView, ListView } from "std-widgets.slint";
+import { ComboBox, CheckBox, ScrollView, ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Badge, Icons, IconBtn, EditLine, EditArea, Toolbar } from "widgets.slint";
+import { Btn, Icons, IconBtn, Slot, EditLine, Toolbar } from "widgets.slint";
 
 component Field inherits VerticalLayout {
     in property <string> label;
@@ -37,9 +37,8 @@ export component ConnectionManager inherits Rectangle {
                     for c in AppState.connections: Rectangle {
                         height: c.header ? 30px : 60px;
                         border-radius: 6px;
-                        background: c.header ? Theme.clear : (c.active ? Theme.panel2 : (ta.has-hover ? Theme.hover : Theme.clear));
-                        border-width: c.active && !c.header ? 1px : 0px;
-                        border-color: Theme.line;
+                        background: c.header ? Theme.clear : (c.active ? Theme.sel : (ta.has-hover ? Theme.hover : Theme.clear));
+                        border-width: 0px;
                         if c.header: HorizontalLayout {
                             padding-left: 4px; spacing: 6px; alignment: start;
                             Rectangle { width: 8px; height: 8px; y: 9px; border-radius: 4px; background: Theme.environment-color(c.environment); }
@@ -73,7 +72,7 @@ export component ConnectionManager inherits Rectangle {
                 }
                 Text {
                     text: "Connect to your database to browse tables and write queries.";
-                    color: Theme.dim; font-size: 11px; wrap: word-wrap;
+                    color: Theme.dim; font-size: 12px; wrap: word-wrap;
                 }
                 Field {
                     label: "Connection name";
@@ -179,13 +178,13 @@ export component ConnectionManager inherits Rectangle {
                 HorizontalLayout {
                     spacing: 12px;
                     Toolbar {
-                        height: 44px; horizontal-stretch: 1;
-                    Btn { text: AppState.form-busy ? "Working…" : "Test connection"; enabled: !AppState.form-busy; clicked => { AppState.test-conn(AppState.form); } }
-                    Btn { text: "Save"; enabled: !AppState.form-busy; clicked => { AppState.save-conn(AppState.form); } }
-                    if !AppState.form-is-new: Btn { text: "Duplicate"; enabled: !AppState.form-busy && !AppState.busy; clicked => { AppState.duplicate-conn(AppState.form.id); } }
-                    if !AppState.form-is-new: Btn { text: "Delete"; danger: true; enabled: !AppState.form-busy && !AppState.busy; clicked => { AppState.delete-conn(AppState.form.id); } }
+                        height: 40px; pad-x: 0px; horizontal-stretch: 1;
+                        Slot { Btn { text: AppState.form-busy ? "Working…" : "Test connection"; enabled: !AppState.form-busy; clicked => { AppState.test-conn(AppState.form); } } }
+                        Slot { Btn { text: "Save"; enabled: !AppState.form-busy; clicked => { AppState.save-conn(AppState.form); } } }
+                        if !AppState.form-is-new: Slot { Btn { text: "Duplicate"; enabled: !AppState.form-busy && !AppState.busy; clicked => { AppState.duplicate-conn(AppState.form.id); } } }
+                        if !AppState.form-is-new: Slot { Btn { text: "Delete"; danger: true; enabled: !AppState.form-busy && !AppState.busy; clicked => { AppState.delete-conn(AppState.form.id); } } }
                     }
-                    Btn { height: 36px; text: AppState.busy ? "Connecting…" : "Connect"; primary: true; enabled: !AppState.busy && !AppState.form-busy; clicked => { AppState.connect-conn(AppState.form); } }
+                    Slot { Btn { height: 34px; pad: 16px; text: AppState.busy ? "Connecting…" : "Connect"; primary: true; enabled: !AppState.busy && !AppState.form-busy; clicked => { AppState.connect-conn(AppState.form); } } }
                 }
             }
         }

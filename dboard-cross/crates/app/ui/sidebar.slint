@@ -1,7 +1,7 @@
-import { LineEdit, ListView } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { AppState, TreeItem } from "state.slint";
-import { Icons, Icon, IconBtn, Slot, EditLine, EditArea, Btn } from "widgets.slint";
+import { AppState } from "state.slint";
+import { Icons, Icon, IconBtn, Slot, EditLine, Btn } from "widgets.slint";
 
 component KindBadge inherits Rectangle {
     in property <int> kind;
@@ -107,10 +107,12 @@ export component Sidebar inherits Rectangle {
             }
         }
         if AppState.tree.length > 0: Btn {
+            width: 100%;
             text: root.maintenance-open ? "▾ Database maintenance" : "▸ Database maintenance";
             clicked => { root.maintenance-open = !root.maintenance-open; }
         }
         if root.maintenance-open && AppState.tree.length > 0: Btn {
+            width: 100%;
             text: "Drop all tables…"; danger: true;
             enabled: !AppState.read-only && !AppState.busy;
             clicked => { AppState.tree-drop-all(); }

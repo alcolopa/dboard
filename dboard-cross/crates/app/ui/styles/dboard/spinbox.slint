@@ -46,7 +46,7 @@ export component SpinBox {
 
     callback edited <=> base.edited;
 
-    min-width: max(128px, layout.min-width);
+    min-width: max(56px, layout.min-width);
     min-height: max(30px, layout.min-height);
     vertical-stretch: 0;
     horizontal-stretch: 1;
@@ -79,7 +79,7 @@ export component SpinBox {
     ]
 
     background := Rectangle {
-        border-radius: 4px;
+        border-radius: 5px;
         background: FluentPalette.control-background;
         border-width: 1px;
         border-color: FluentPalette.text-control-border;
@@ -99,7 +99,7 @@ export component SpinBox {
                     width: 100%;
                     color: FluentPalette.control-foreground;
                     selection-background-color: FluentPalette.selection-background;
-                    selection-foreground-color: FluentPalette.accent-foreground;
+                    selection-foreground-color: FluentPalette.selection-foreground;
                 }
             }
 

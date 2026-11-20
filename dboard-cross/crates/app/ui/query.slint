@@ -1,16 +1,15 @@
-import { TextEdit, ListView } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { AppState } from "state.slint";
-import { Btn, Chip, EditLine, EditArea, Toolbar } from "widgets.slint";
+import { Btn, Chip, Icons, Icon, Slot, Toolbar } from "widgets.slint";
 import { SqlEditor } from "editor.slint";
-import { HlToken } from "state.slint";
 
 export component QueryEditor inherits VerticalLayout {
     spacing: 6px;
     padding: 8px;
     Rectangle {
         height: 150px;
-        border-radius: 6px; border-width: 1px; border-color: Theme.line; background: Theme.panel;
+        border-radius: 6px; border-width: 1px; border-color: editor.has-focus ? Theme.accent : Theme.line; background: Theme.panel;
         editor := SqlEditor {
             width: parent.width; height: parent.height;
             text <=> AppState.query-text;
@@ -19,45 +18,53 @@ export component QueryEditor inherits VerticalLayout {
         }
     }
     Toolbar {
-        height: 44px;
-        Btn { text: AppState.running ? "Running…" : "▶ Run"; primary: true; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.run-query(AppState.query-text); } }
-        Btn {
-            text: "Run selection"; enabled: !AppState.running && AppState.query-text != "";
-            // The editor widget doesn't expose its selection, so copy it through the clipboard
-            // (the Rust side stashes and restores the user's clipboard around this).
-            clicked => { AppState.stash-clipboard(); editor.copy(); AppState.run-selection(AppState.query-text); }
+        height: 40px; pad-x: 0px;
+        Slot { Btn { text: AppState.running ? "Running…" : "▶ Run"; primary: true; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.run-query(AppState.query-text); } } }
+        Slot {
+            Btn {
+                text: "Run selection"; enabled: !AppState.running && AppState.query-text != "";
+                // The editor widget doesn't expose its selection, so copy it through the clipboard
+                // (the Rust side stashes and restores the user's clipboard around this).
+                clicked => { AppState.stash-clipboard(); editor.copy(); AppState.run-selection(AppState.query-text); }
+            }
         }
-        Btn { text: "Explain"; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.explain-query(AppState.query-text, false); } }
-        if AppState.db-type != 2: Btn { text: "Explain analyze"; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.explain-query(AppState.query-text, true); } }
-        if AppState.running: Btn { text: "Stop"; danger: true; clicked => { AppState.stop-query(); } }
-        Btn { text: "Save…"; enabled: AppState.query-text != ""; clicked => { AppState.open-save-query(); } }
-        Btn { text: "History & saved"; clicked => { AppState.inspector-tab = 3; AppState.inspector-changed(true, AppState.inspector-pinned); } }
+        Slot { Btn { text: "Explain"; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.explain-query(AppState.query-text, false); } } }
+        if AppState.db-type != 2: Slot { Btn { text: "Explain analyze"; enabled: !AppState.running && AppState.query-text != ""; clicked => { AppState.explain-query(AppState.query-text, true); } } }
+        if AppState.running: Slot { Btn { text: "Stop"; danger: true; clicked => { AppState.stop-query(); } } }
+        Slot { Btn { text: "Save…"; enabled: AppState.query-text != ""; clicked => { AppState.open-save-query(); } } }
+        Slot { Btn { text: "History & saved"; clicked => { AppState.inspector-tab = 3; AppState.inspector-changed(true, AppState.inspector-pinned); } } }
         Rectangle { horizontal-stretch: 1; }
         Text { text: AppState.timing; color: Theme.dim; vertical-alignment: center; font-size: 12px; }
     }
     if AppState.result-labels.length > 1: Toolbar {
-        height: 36px;
+        height: 32px; pad-x: 0px;
         Text { text: "Results:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
-        for l[i] in AppState.result-labels: Chip {
-            text: l;
-            fill: AppState.result-index == i ? Theme.accent : Theme.panel2;
-            clicked => { AppState.pick-result(i); }
+        for l[i] in AppState.result-labels: Slot {
+            Chip {
+                text: l;
+                active: AppState.result-index == i;
+                clicked => { AppState.pick-result(i); }
+            }
         }
+        Rectangle { horizontal-stretch: 1; }
     }
     if AppState.db-type == 2: Toolbar {
-        height: 36px;
+        height: 32px; pad-x: 0px;
         Text { text: "Templates:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
-        for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Chip { text: t; clicked => { AppState.insert-template(t); } }
+        for t in ["find", "$match", "$group", "$sort", "$project", "$limit"]: Slot { Chip { text: t; clicked => { AppState.insert-template(t); } } }
+        Rectangle { horizontal-stretch: 1; }
     }
     if AppState.db-type != 2: Toolbar {
-        height: 36px;
+        height: 32px; pad-x: 0px;
         Text { text: "Snippets:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
-        for t in [{ k: "select", l: "SELECT" }, { k: "count", l: "COUNT" }, { k: "group", l: "GROUP BY" }, { k: "join", l: "JOIN on FK" }, { k: "insert", l: "INSERT" }, { k: "update", l: "UPDATE" }, { k: "delete", l: "DELETE" }, { k: "cte", l: "WITH (CTE)" }]: Chip { text: t.l; clicked => { AppState.insert-template(t.k); } }
+        for t in [{ k: "select", l: "SELECT" }, { k: "count", l: "COUNT" }, { k: "group", l: "GROUP BY" }, { k: "join", l: "JOIN on FK" }, { k: "insert", l: "INSERT" }, { k: "update", l: "UPDATE" }, { k: "delete", l: "DELETE" }, { k: "cte", l: "WITH (CTE)" }]: Slot { Chip { text: t.l; clicked => { AppState.insert-template(t.k); } } }
+        Rectangle { horizontal-stretch: 1; }
     }
     if AppState.suggestions.length > 0: Toolbar {
-        height: 36px;
+        height: 32px; pad-x: 0px;
         Text { text: "Suggest:"; color: Theme.dim; font-size: 11px; vertical-alignment: center; }
-        for s in AppState.suggestions: Chip { text: s; clicked => { AppState.apply-suggestion(s); } }
+        for s in AppState.suggestions: Slot { Chip { text: s; clicked => { AppState.apply-suggestion(s); } } }
+        Rectangle { horizontal-stretch: 1; }
     }
     if AppState.query-hint != "": Text { text: AppState.query-hint; color: Theme.dim; font-size: 11px; wrap: word-wrap; }
 }
@@ -83,7 +90,7 @@ export component HistoryPanel inherits Rectangle {
                 Rectangle {
                     x: parent.width - 26px; width: 20px; height: 20px; y: 8px; border-radius: 10px;
                     background: da.has-hover ? Theme.panel2 : Theme.clear;
-                    Text { text: "×"; color: Theme.dim; horizontal-alignment: center; vertical-alignment: center; }
+                    Icon { d: Icons.close; size: 10px; tint: Theme.dim; x: 5px; y: 5px; }
                     da := TouchArea { clicked => { AppState.delete-saved(i); } }
                 }
             }
